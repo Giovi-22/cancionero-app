@@ -12,7 +12,8 @@ import {
   KeyboardAvoidingView,
   Platform,
   Keyboard,
-  Modal
+  Modal,
+  Dimensions
 } from 'react-native';
 import { 
   SafeAreaProvider, 
@@ -29,7 +30,13 @@ import {
   ChevronRight,
   Search,
   Users,
-  ArrowLeft
+  ArrowLeft,
+  Home as HomeIcon,
+  Star,
+  TrendingUp,
+  Clock,
+  Radio,
+  Wifi
 } from 'lucide-react-native';
 import { supabase } from './src/lib/supabase';
 import { authService } from './src/services/AuthService';
@@ -40,7 +47,10 @@ import { FileSystemService } from './src/services/FileSystemService';
 import { SongList } from './src/components/SongList';
 import { SetlistList } from './src/components/SetlistList';
 import { SongViewer } from './src/components/SongViewer';
+import { LiveSessionService, LiveSession } from './src/services/LiveSessionService';
 import { SongMetadata } from './src/types';
+
+const { width } = Dimensions.get('window');
 
 const COLORS = {
   background: '#0a0a0a',
@@ -48,28 +58,41 @@ const COLORS = {
   foreground: '#ffffff',
   mutedForeground: '#a0a0a0',
   accent: '#3b82f6',
-  border: '#333333'
+  border: '#333333',
+  card: '#121212'
 };
 
 function MainApp() {
   const insets = useSafeAreaInsets();
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'songs' | 'setlists'>('songs');
+  const [activeTab, setActiveTab] = useState<'home' | 'songs' | 'setlists'>('home');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState('');
   
   // Datos
   const [songs, setSongs] = useState<SongMetadata[]>([]);
+  const [topSongs, setTopSongs] = useState<SongMetadata[]>([]);
   const [setlists, setSetlists] = useState<any[]>([]);
 
   // Estado del Visor
   const [selectedSong, setSelectedSong] = useState<SongMetadata | null>(null);
   const [songContent, setSongContent] = useState<string | null>(null);
   const [songSettings, setSongSettings] = useState<any>(null);
+
+  // Live Session (Modo Director)
+  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
+  const [myDirectorSession, setMyDirectorSession] = useState<LiveSession | null>(null);
+  const [followingSession, setFollowingSession] = useState<LiveSession | null>(null);
+  // Canciones de la lista activa del show (para navegación del Director)
+  const [setlistSongs, setSetlistSongs] = useState<SongMetadata[]>([]);
   
   // Estado de Setlist Activa
   const [activeSetlist, setActiveSetlist] = useState<any | null>(null);
+
+  // Modal Crear Lista
+  const [isCreateSetlistOpen, setIsCreateSetlistOpen] = useState(false);
+  const [newSetlistName, setNewSetlistName] = useState('');
 
   // Estado para el explorador de carpetas
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -85,10 +108,23 @@ function MainApp() {
       setUser(session?.user ?? null);
     });
 
+    // Suscribirse a sesiones live en tiempo real
+    const unsubSessions = LiveSessionService.subscribeToAllSessions((sessions) => {
+      setLiveSessions(sessions);
+    });
+
     return () => {
       authListener.subscription.unsubscribe();
+      unsubSessions();
     };
   }, []);
+
+  // Actualizar "mi sesión de director" cuando cambian las sesiones
+  useEffect(() => {
+    if (!user) return;
+    const mine = liveSessions.find(s => s.director_email === user.email) ?? null;
+    setMyDirectorSession(mine);
+  }, [liveSessions, user]);
 
   const loadInitialData = async () => {
     const savedFolderId = await StorageService.getSetting<string>('drive_folder_id');
@@ -103,8 +139,80 @@ function MainApp() {
   const refreshLocalData = async () => {
     const localSongs = await StorageService.getAllSongs();
     setSongs(localSongs);
+    const top = await StorageService.getTopSongs(5);
+    setTopSongs(top);
     const localSetlists = await StorageService.getAllSetlists();
     setSetlists(localSetlists);
+  };
+
+  // ── Director: Iniciar show con una lista ──────────
+  const handleStartShow = async (setlist: any) => {
+    if (!user) { Alert.alert('Error', 'Debes iniciar sesión para ser director.'); return; }
+    const session = await LiveSessionService.startShow(
+      setlist.id, setlist.name,
+      user.email,
+      user.user_metadata?.full_name || user.email,
+      myDirectorSession?.id
+    );
+    if (session) setMyDirectorSession(session);
+  };
+
+  // ── Director: Iniciar show desde setlist seleccionada (abre primera canción) ──
+  const handleStartShowFromSetlist = async (setlist: any) => {
+    await handleStartShow(setlist);
+    const songsOfList = songs.filter(s => setlist.songIds.includes(s.id));
+    setSetlistSongs(songsOfList);
+    if (songsOfList.length > 0) handleSongPress(songsOfList[0]);
+  };
+
+  // ── Director: Navegar canción siguiente ───────────
+  const handleDirectorNext = async () => {
+    if (!selectedSong || setlistSongs.length === 0) return;
+    const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
+    const next = setlistSongs[idx + 1];
+    if (next) handleSongPress(next);
+  };
+
+  // ── Director: Navegar canción anterior ────────────
+  const handleDirectorPrev = async () => {
+    if (!selectedSong || setlistSongs.length === 0) return;
+    const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
+    const prev = setlistSongs[idx - 1];
+    if (prev) handleSongPress(prev);
+  };
+
+  // ── Director: Terminar show ───────────────────────
+  const handleEndShow = async () => {
+    if (!myDirectorSession) return;
+    await LiveSessionService.endShow(myDirectorSession.id);
+    setMyDirectorSession(null);
+  };
+
+  // ── Músico: Unirse a un show ──────────────────────
+  const handleJoinSession = (session: LiveSession) => {
+    setFollowingSession(session);
+    // Si ya hay una canción activa, abrirla
+    if (session.current_song_id) {
+      const song = songs.find(s => s.id === session.current_song_id);
+      if (song) handleSongPress(song);
+    }
+    Alert.alert('✅ Conectado', `Siguiendo a ${session.director_name}`);
+  };
+
+  const handleLeaveSession = () => {
+    setFollowingSession(null);
+  };
+
+  // ── Seguidor: cuando el director cambia de canción ─
+  const handleFollowSongChange = async (newSongId: string) => {
+    const song = songs.find(s => s.id === newSongId);
+    if (!song) return;
+    const content = await FileSystemService.getSongContent(newSongId);
+    if (!content) return;
+    const settings = await StorageService.getSetting(`song_settings_${newSongId}`);
+    setSongContent(content);
+    setSongSettings(settings);
+    setSelectedSong(song);
   };
 
   const handleSaveConfig = async (newFolderId: string) => {
@@ -135,11 +243,17 @@ function MainApp() {
         return;
       }
       
+      // Incrementar contador de reproducciones
+      await StorageService.incrementSongViewCount(song.id);
+      
       const settings = await StorageService.getSetting(`song_settings_${song.id}`);
       
       setSongContent(content);
       setSongSettings(settings);
       setSelectedSong(song);
+      
+      // Refrescar top para cuando vuelva
+      refreshLocalData();
     } catch (error) {
       Alert.alert('Error', 'No se pudo abrir la canción.');
     }
@@ -148,6 +262,27 @@ function MainApp() {
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
     setActiveTab('songs');
+  };
+
+  const handleDeleteSetlist = async (setlist: any) => {
+    await StorageService.deleteSetlistLocal(setlist.id);
+    await refreshLocalData();
+  };
+
+  const handleCreateSetlist = async () => {
+    const name = newSetlistName.trim();
+    if (!name) return;
+    const newSetlist = {
+      id: `local_${Date.now()}`,
+      name,
+      songIds: [],
+      isPublic: false,
+    };
+    await StorageService.saveSetlist(newSetlist);
+    await refreshLocalData();
+    setNewSetlistName('');
+    setIsCreateSetlistOpen(false);
+    Keyboard.dismiss();
   };
 
   const handleSaveSongSettings = async (settings: any) => {
@@ -201,7 +336,7 @@ function MainApp() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={{ flex: 1 }}
     >
-      <View style={[styles.container, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
+      <View style={[styles.container, { paddingTop: insets.top }]}>
         <StatusBar style="light" />
         
         {/* Header */}
@@ -229,7 +364,10 @@ function MainApp() {
               {user ? (
                 <UserIcon size={24} color={COLORS.accent} />
               ) : (
-                <SettingsIcon size={24} color={COLORS.foreground} />
+                <View>
+                  <UserIcon size={24} color={COLORS.mutedForeground} />
+                  <View style={styles.alertDot} />
+                </View>
               )}
             </TouchableOpacity>
           </View>
@@ -237,7 +375,145 @@ function MainApp() {
 
         {/* Contenido Principal */}
         <View style={styles.content}>
-          {activeTab === 'songs' ? (
+          {activeTab === 'home' && (
+            <ScrollView style={styles.homeContainer} showsVerticalScrollIndicator={false}>
+              <View style={styles.welcomeSection}>
+                <Text style={styles.welcomeTitle}>
+                  ¡Hola, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Invitado'}!
+                </Text>
+                {!user ? (
+                  <View style={styles.connectionWarning}>
+                    <Text style={styles.connectionWarningText}>Sin conexión a Google Drive</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.welcomeSub}>¿Qué vamos a tocar hoy?</Text>
+                )}
+              </View>
+
+              {/* Banner Show en Vivo - DIRECTOR (clickeable → canción actual) */}
+              {myDirectorSession && (
+                <TouchableOpacity
+                  style={styles.directorBanner}
+                  onPress={async () => {
+                    const curId = myDirectorSession.current_song_id;
+                    if (!curId) return;
+                    const song = songs.find(s => s.id === curId);
+                    if (song) handleSongPress(song);
+                  }}
+                >
+                  <View style={styles.bannerLeft}>
+                    <Radio size={18} color="#fff" />
+                    <View>
+                      <Text style={styles.bannerTitle}>🎬 Show en Vivo · {myDirectorSession.setlist_name}</Text>
+                      <Text style={styles.bannerSub}>
+                        {myDirectorSession.current_song_id
+                          ? `▶ ${songs.find(s => s.id === myDirectorSession.current_song_id)?.name || 'Cargando...'}`
+                          : 'Toca para abrir la canción actual'}
+                      </Text>
+                    </View>
+                  </View>
+                  <TouchableOpacity onPress={handleEndShow} style={styles.endShowBtn}>
+                    <Text style={styles.endShowText}>Terminar</Text>
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              )}
+
+              {/* Otros shows activos para unirse (también clickeables) */}
+              {liveSessions.filter(s => s.director_email !== user?.email).map(session => (
+                <TouchableOpacity
+                  key={session.id}
+                  style={[styles.directorBanner, styles.followerBanner]}
+                  onPress={() => handleJoinSession(session)}
+                >
+                  <View style={styles.bannerLeft}>
+                    <Wifi size={18} color="#fff" />
+                    <View>
+                      <Text style={styles.bannerTitle}>📡 {session.setlist_name}</Text>
+                      <Text style={styles.bannerSub}>
+                        {followingSession?.id === session.id
+                          ? `Siguiendo · ${songs.find(s => s.id === session.current_song_id)?.name || '...'}`
+                          : `Director: ${session.director_name} · Toca para unirte`}
+                      </Text>
+                    </View>
+                  </View>
+                  {followingSession?.id === session.id && (
+                    <TouchableOpacity onPress={handleLeaveSession} style={styles.endShowBtn}>
+                      <Text style={styles.endShowText}>Salir</Text>
+                    </TouchableOpacity>
+                  )}
+                </TouchableOpacity>
+              ))}
+
+              <View style={styles.statsRow}>
+                <View style={styles.statCard}>
+                  <Music size={24} color={COLORS.accent} />
+                  <Text style={styles.statValue}>{songs.length}</Text>
+                  <Text style={styles.statLabel}>Canciones</Text>
+                </View>
+                <View style={styles.statCard}>
+                  <List size={24} color="#10b981" />
+                  <Text style={styles.statValue}>{setlists.length}</Text>
+                  <Text style={styles.statLabel}>Listas</Text>
+                </View>
+              </View>
+
+              <View style={styles.sectionHeader}>
+                <TrendingUp size={20} color={COLORS.accent} />
+                <Text style={styles.sectionTitle}>Más Elegidas</Text>
+              </View>
+              
+              <View style={styles.topSongsList}>
+                {topSongs.map((song, index) => (
+                  <TouchableOpacity 
+                    key={song.id} 
+                    style={styles.topSongItem}
+                    onPress={() => handleSongPress(song)}
+                  >
+                    <View style={styles.topSongRank}>
+                      <Text style={styles.topSongRankText}>{index + 1}</Text>
+                    </View>
+                    <Text style={styles.topSongName} numberOfLines={1}>{song.name}</Text>
+                    <ChevronRight size={18} color={COLORS.mutedForeground} />
+                  </TouchableOpacity>
+                ))}
+                {topSongs.length === 0 && (
+                  <Text style={styles.emptyText}>Sincroniza tus canciones para empezar.</Text>
+                )}
+              </View>
+
+              <View style={styles.sectionHeader}>
+                <Star size={20} color="#fbbf24" />
+                <Text style={styles.sectionTitle}>Listas Recientes</Text>
+              </View>
+              
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recentSetlists}>
+                {setlists.slice(0, 5).map((setlist) => (
+                  <View key={setlist.id} style={styles.setlistCard}>
+                    <TouchableOpacity onPress={() => handleSetlistPress(setlist)}>
+                      <View style={styles.setlistCardIcon}>
+                        <List size={24} color="#fff" />
+                      </View>
+                      <Text style={styles.setlistCardName} numberOfLines={2}>{setlist.name}</Text>
+                      <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
+                    </TouchableOpacity>
+                    {user && (
+                      <TouchableOpacity
+                        style={[styles.startShowBtn, myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive]}
+                        onPress={() => handleStartShow(setlist)}
+                      >
+                        <Radio size={12} color="#fff" />
+                        <Text style={styles.startShowText}>
+                          {myDirectorSession?.setlist_id === setlist.id ? 'En Vivo' : 'Iniciar'}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                ))}
+              </ScrollView>
+            </ScrollView>
+          )}
+
+          {activeTab === 'songs' && (
             <View style={{ flex: 1 }}>
               {activeSetlist && (
                 <View style={styles.activeSetlistHeader}>
@@ -245,6 +521,17 @@ function MainApp() {
                     <ArrowLeft size={20} color="#fff" />
                   </TouchableOpacity>
                   <Text style={styles.activeSetlistTitle} numberOfLines={1}>{activeSetlist.name}</Text>
+                  {user && (
+                    <TouchableOpacity
+                      style={[styles.startShowHeaderBtn, myDirectorSession?.setlist_id === activeSetlist.id && styles.startShowHeaderBtnActive]}
+                      onPress={() => handleStartShowFromSetlist(activeSetlist)}
+                    >
+                      <Radio size={14} color="#fff" />
+                      <Text style={styles.startShowHeaderText}>
+                        {myDirectorSession?.setlist_id === activeSetlist.id ? 'En Vivo' : 'Iniciar Show'}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
               <SongList 
@@ -253,29 +540,39 @@ function MainApp() {
                 onSyncPress={handleSync}
               />
             </View>
-          ) : (
+          )}
+
+          {activeTab === 'setlists' && (
             <SetlistList 
               setlists={setlists}
               onSetlistPress={handleSetlistPress}
-              onCreatePress={() => console.log('Create setlist')}
+              onCreatePress={() => setIsCreateSetlistOpen(true)}
+              onDeleteSetlist={handleDeleteSetlist}
             />
           )}
         </View>
 
-        {/* Tabs */}
-        <View style={styles.tabBar}>
+        {/* Tabs - Con mejor diseño y padding inferior para Android */}
+        <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
+          <TouchableOpacity 
+            style={[styles.tab, activeTab === 'home' && styles.activeTab]}
+            onPress={() => setActiveTab('home')}
+          >
+            <HomeIcon size={22} color={activeTab === 'home' ? COLORS.accent : COLORS.mutedForeground} />
+            <Text style={[styles.tabText, activeTab === 'home' && styles.activeTabText]}>Inicio</Text>
+          </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'songs' && styles.activeTab]}
             onPress={() => setActiveTab('songs')}
           >
-            <Music size={20} color={activeTab === 'songs' ? COLORS.accent : COLORS.mutedForeground} />
+            <Music size={22} color={activeTab === 'songs' ? COLORS.accent : COLORS.mutedForeground} />
             <Text style={[styles.tabText, activeTab === 'songs' && styles.activeTabText]}>Canciones</Text>
           </TouchableOpacity>
           <TouchableOpacity 
             style={[styles.tab, activeTab === 'setlists' && styles.activeTab]}
             onPress={() => setActiveTab('setlists')}
           >
-            <List size={20} color={activeTab === 'setlists' ? COLORS.accent : COLORS.mutedForeground} />
+            <List size={22} color={activeTab === 'setlists' ? COLORS.accent : COLORS.mutedForeground} />
             <Text style={[styles.tabText, activeTab === 'setlists' && styles.activeTabText]}>Listas</Text>
           </TouchableOpacity>
         </View>
@@ -289,6 +586,7 @@ function MainApp() {
           {selectedSong && songContent && (
             <SongViewer 
               title={selectedSong.name}
+              songId={selectedSong.id}
               content={songContent}
               onClose={() => {
                 setSelectedSong(null);
@@ -296,13 +594,21 @@ function MainApp() {
               }}
               initialSettings={songSettings}
               onSaveSettings={handleSaveSongSettings}
+              isDirector={!!myDirectorSession}
+              directorSessionId={myDirectorSession?.id}
+              followSessionId={followingSession?.id}
+              onFollowSongChange={handleFollowSongChange}
+              // Navegación de lista para el Director
+              setlistSongs={setlistSongs}
+              onDirectorNext={handleDirectorNext}
+              onDirectorPrev={handleDirectorPrev}
             />
           )}
         </Modal>
 
         {/* Panel de Ajustes */}
         {isSettingsOpen && (
-          <View style={[styles.settingsPanel, { bottom: insets.bottom + 60 }]}>
+          <View style={[styles.settingsPanel, { bottom: insets.bottom + 80 }]}>
             <View style={styles.settingsHeader}>
               <Text style={styles.settingsTitle}>Configuración</Text>
               <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
@@ -422,13 +728,49 @@ function MainApp() {
                   )}
                 </ScrollView>
               )}
-              
-              <View style={styles.pickerFooter}>
-                <Text style={styles.pickerHelp}>Toca el nombre para entrar, la flecha para elegir.</Text>
-              </View>
             </View>
           </View>
         )}
+
+        {/* Modal Crear Lista */}
+        <Modal
+          visible={isCreateSetlistOpen}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setIsCreateSetlistOpen(false)}
+        >
+          <View style={styles.createModalOverlay}>
+            <View style={styles.createModalCard}>
+              <Text style={styles.createModalTitle}>Nueva Lista</Text>
+              <TextInput
+                style={styles.createModalInput}
+                placeholder="Nombre de la lista..."
+                placeholderTextColor={COLORS.mutedForeground}
+                value={newSetlistName}
+                onChangeText={setNewSetlistName}
+                autoFocus
+                returnKeyType="done"
+                onSubmitEditing={handleCreateSetlist}
+              />
+              <View style={styles.createModalActions}>
+                <TouchableOpacity
+                  style={styles.createModalCancel}
+                  onPress={() => setIsCreateSetlistOpen(false)}
+                >
+                  <Text style={styles.createModalCancelText}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.createModalConfirm, !newSetlistName.trim() && { opacity: 0.5 }]}
+                  onPress={handleCreateSetlist}
+                  disabled={!newSetlistName.trim()}
+                >
+                  <Text style={styles.createModalConfirmText}>Crear</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
       </View>
     </KeyboardAvoidingView>
   );
@@ -453,8 +795,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
+    backgroundColor: COLORS.background,
   },
   logo: {
     fontSize: 22,
@@ -467,16 +808,28 @@ const styles = StyleSheet.create({
   iconButton: {
     marginLeft: 15,
     padding: 5,
+    position: 'relative',
+  },
+  alertDot: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#ef4444',
+    borderWidth: 1,
+    borderColor: COLORS.background,
   },
   content: {
     flex: 1,
   },
   tabBar: {
     flexDirection: 'row',
-    height: 60,
     backgroundColor: COLORS.surface,
     borderTopWidth: 1,
     borderTopColor: COLORS.border,
+    paddingTop: 10,
   },
   tab: {
     flex: 1,
@@ -484,17 +837,241 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   activeTab: {
-    borderTopWidth: 2,
-    borderTopColor: COLORS.accent,
+    // borderTopWidth: 2,
+    // borderTopColor: COLORS.accent,
   },
   tabText: {
-    fontSize: 12,
+    fontSize: 10,
     color: COLORS.mutedForeground,
     marginTop: 4,
+    fontWeight: '600',
   },
   activeTabText: {
     color: COLORS.accent,
+  },
+  // Home Styles
+  homeContainer: {
+    flex: 1,
+    padding: 20,
+  },
+  welcomeSection: {
+    marginBottom: 25,
+  },
+  welcomeTitle: {
+    fontSize: 28,
     fontWeight: 'bold',
+    color: COLORS.foreground,
+  },
+  welcomeSub: {
+    fontSize: 16,
+    color: COLORS.mutedForeground,
+    marginTop: 4,
+  },
+  connectionWarning: {
+    backgroundColor: '#ef444420',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+  },
+  connectionWarningText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  directorBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#dc2626',
+    borderRadius: 16,
+    padding: 15,
+    marginBottom: 12,
+  },
+  followerBanner: {
+    backgroundColor: '#7c3aed',
+  },
+  bannerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  bannerTitle: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  bannerSub: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 12,
+    marginTop: 2,
+  },
+  endShowBtn: {
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  endShowText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  joinBtn: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 20,
+  },
+  joinBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+  startShowBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: COLORS.border,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    marginTop: 8,
+  },
+  startShowBtnActive: {
+    backgroundColor: '#dc2626',
+  },
+  startShowText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  startShowHeaderBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    marginLeft: 8,
+  },
+  startShowHeaderBtnActive: {
+    backgroundColor: '#dc2626',
+  },
+  startShowHeaderText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  connectionWarningText: {
+    color: '#ef4444',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    gap: 15,
+    marginBottom: 30,
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+    padding: 20,
+    borderRadius: 20,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  statValue: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.foreground,
+    marginVertical: 4,
+  },
+  statLabel: {
+    fontSize: 12,
+    color: COLORS.mutedForeground,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 15,
+    marginTop: 10,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.foreground,
+  },
+  topSongsList: {
+    backgroundColor: COLORS.card,
+    borderRadius: 20,
+    padding: 10,
+    marginBottom: 25,
+  },
+  topSongItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  topSongRank: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.accent + '20',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 15,
+  },
+  topSongRankText: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  topSongName: {
+    flex: 1,
+    color: COLORS.foreground,
+    fontSize: 15,
+  },
+  recentSetlists: {
+    marginBottom: 40,
+  },
+  setlistCard: {
+    width: 140,
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 15,
+    marginRight: 15,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  setlistCardIcon: {
+    width: 45,
+    height: 45,
+    borderRadius: 12,
+    backgroundColor: COLORS.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  setlistCardName: {
+    color: COLORS.foreground,
+    fontWeight: 'bold',
+    fontSize: 14,
+    height: 40,
+  },
+  setlistCardCount: {
+    color: COLORS.mutedForeground,
+    fontSize: 12,
+    marginTop: 4,
   },
   activeSetlistHeader: {
     flexDirection: 'row',
@@ -517,7 +1094,7 @@ const styles = StyleSheet.create({
     left: 10,
     right: 10,
     backgroundColor: COLORS.surface,
-    borderRadius: 15,
+    borderRadius: 25,
     padding: 20,
     borderWidth: 1,
     borderColor: COLORS.border,
@@ -717,15 +1294,62 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 50,
   },
-  pickerFooter: {
-    marginTop: 15,
-    paddingTop: 10,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
+  // Modal Crear Lista
+  createModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
   },
-  pickerHelp: {
+  createModalCard: {
+    width: '100%',
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  createModalTitle: {
+    color: COLORS.foreground,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+  createModalInput: {
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    color: COLORS.foreground,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 20,
+  },
+  createModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+  },
+  createModalCancel: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+  },
+  createModalCancelText: {
     color: COLORS.mutedForeground,
-    fontSize: 12,
-    textAlign: 'center',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  createModalConfirm: {
+    backgroundColor: COLORS.accent,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  createModalConfirmText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
   }
 });

@@ -19,9 +19,12 @@ export class SyncService {
     try {
       console.log('Starting full repertoire sync for folder:', folderId);
 
-      // 1. Verificar autenticación
+      // 1. Verificar autenticación y traer datos de Supabase
       const token = await authService.getGoogleAccessToken();
       if (!token) throw new Error('Usuario no autenticado en Google');
+
+      // Traer listas, estadísticas y ajustes de la nube antes de empezar con Drive
+      await StorageService.pullFromSupabase();
 
       // 2. Obtener lista de canciones remotas
       const remoteFiles = await driveService.getSongsFromFolder(folderId);
