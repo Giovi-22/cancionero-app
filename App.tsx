@@ -104,6 +104,9 @@ function MainApp() {
   // Modal Editar Lista (Agregar/Quitar canciones)
   const [isEditSetlistOpen, setIsEditSetlistOpen] = useState(false);
   const [editSetlistSongs, setEditSetlistSongs] = useState<string[]>([]);
+  const [editSetlistName, setEditSetlistName] = useState('');
+  const [editSetlistDate, setEditSetlistDate] = useState<Date | undefined>(undefined);
+  const [showEditDatePicker, setShowEditDatePicker] = useState(false);
 
   // Estado para el explorador de carpetas
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -289,11 +292,16 @@ function MainApp() {
   };
 
   const handleCreateSetlist = async () => {
-    const name = newSetlistName.trim();
+    let name = newSetlistName.trim();
     if (!name) return;
+    
+    // Si hay fecha, agregarla al nombre
+    const dateStr = newSetlistDate ? formatDate(newSetlistDate.toISOString()) : null;
+    const finalName = dateStr ? `${name} - ${dateStr}` : name;
+
     const newSetlist = {
       id: `local_${Date.now()}`,
-      name,
+      name: finalName,
       date: newSetlistDate ? newSetlistDate.toISOString() : undefined,
       songIds: [],
       isPublic: false,
@@ -308,6 +316,8 @@ function MainApp() {
 
   const handleOpenEditSetlist = () => {
     if (!activeSetlist) return;
+    setEditSetlistName(activeSetlist.name);
+    setEditSetlistDate(activeSetlist.date ? new Date(activeSetlist.date) : undefined);
     setEditSetlistSongs([...activeSetlist.songIds]);
     setIsEditSetlistOpen(true);
   };
@@ -329,7 +339,20 @@ function MainApp() {
 
   const handleSaveSetlistSongs = async () => {
     if (!activeSetlist) return;
-    const updated = { ...activeSetlist, songIds: editSetlistSongs };
+    
+    let name = editSetlistName.trim();
+    // Limpiar fecha previa si existe para no duplicar (asumiendo formato " - dd/mm/aa")
+    name = name.split(' - ')[0];
+    
+    const dateStr = editSetlistDate ? formatDate(editSetlistDate.toISOString()) : null;
+    const finalName = dateStr ? `${name} - ${dateStr}` : name;
+
+    const updated = { 
+      ...activeSetlist, 
+      name: finalName,
+      date: editSetlistDate ? editSetlistDate.toISOString() : undefined,
+      songIds: editSetlistSongs 
+    };
     await StorageService.saveSetlist(updated);
     setActiveSetlist(updated);
     setIsEditSetlistOpen(false);
@@ -545,9 +568,8 @@ function MainApp() {
                         <List size={24} color="#fff" />
                       </View>
                       <Text style={styles.setlistCardName} numberOfLines={2}>
-                      {setlist.name}
-                      {setlist.date ? ` - ${formatDate(setlist.date)}` : ''}
-                    </Text>
+                        {setlist.name}
+                      </Text>
                       <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
                     </TouchableOpacity>
                     {user && (
@@ -571,12 +593,11 @@ function MainApp() {
             <View style={{ flex: 1 }}>
               {activeSetlist && (
                 <View style={styles.activeSetlistHeader}>
-                  <TouchableOpacity onPress={() => setActiveSetlist(null)} style={styles.closeSetlistBtn}>
+                  <TouchableOpacity onPress={() => { setActiveSetlist(null); setActiveTab('setlists'); }} style={styles.closeSetlistBtn}>
                     <ArrowLeft size={20} color="#fff" />
                   </TouchableOpacity>
                   <Text style={styles.activeSetlistTitle} numberOfLines={1}>
                     {activeSetlist.name}
-                    {activeSetlist.date ? ` - ${formatDate(activeSetlist.date)}` : ''}
                   </Text>
                   
                   <View style={{ flexDirection: 'row', gap: 5 }}>
@@ -871,11 +892,44 @@ function MainApp() {
         >
           <View style={styles.editModalContainer}>
             <View style={styles.editModalHeader}>
-              <Text style={styles.editModalTitle}>Editar Canciones</Text>
+              <Text style={styles.editModalTitle}>Editar Lista</Text>
               <TouchableOpacity onPress={() => setIsEditSetlistOpen(false)} style={{ padding: 5 }}>
                 <X size={24} color="#fff" />
               </TouchableOpacity>
             </View>
+
+            <View style={{ padding: 20, backgroundColor: COLORS.surface }}>
+              <TextInput
+                style={styles.createModalInput}
+                placeholder="Nombre de la lista..."
+                placeholderTextColor={COLORS.mutedForeground}
+                value={editSetlistName}
+                onChangeText={setEditSetlistName}
+              />
+              <TouchableOpacity 
+                style={styles.datePickerBtn} 
+                onPress={() => setShowEditDatePicker(true)}
+              >
+                <Text style={styles.datePickerText}>
+                  {editSetlistDate 
+                    ? `Fecha: ${formatDate(editSetlistDate.toISOString())}` 
+                    : 'Añadir Fecha (Opcional)'}
+                </Text>
+              </TouchableOpacity>
+              
+              {showEditDatePicker && (
+                <DateTimePicker
+                  value={editSetlistDate || new Date()}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setShowEditDatePicker(false);
+                    if (selectedDate) setEditSetlistDate(selectedDate);
+                  }}
+                />
+              )}
+            </View>
+
             <ScrollView style={styles.editModalList} contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
               {songs.map(song => {
                 const isSelected = editSetlistSongs.includes(song.id);

@@ -40,11 +40,17 @@ export class StorageService {
       CREATE TABLE IF NOT EXISTS setlists (
         id TEXT PRIMARY KEY NOT NULL,
         name TEXT NOT NULL,
+        date TEXT,
         songIds TEXT NOT NULL,
         isPublic INTEGER DEFAULT 0,
         lastUpdated TEXT
       );
     `);
+
+    // Migraciones manuales
+    try {
+      await db.execAsync('ALTER TABLE setlists ADD COLUMN date TEXT;');
+    } catch (e) {}
 
     // Migración manual: Añadir view_count si no existe (SQLite no lo hace solo en CREATE TABLE IF EXISTS)
     try {
@@ -154,8 +160,8 @@ export class StorageService {
   static async saveSetlist(setlist: any) {
     const db = await this.getDb();
     await db.runAsync(
-      'INSERT OR REPLACE INTO setlists (id, name, songIds, isPublic, lastUpdated) VALUES (?, ?, ?, ?, ?)',
-      [setlist.id, setlist.name, JSON.stringify(setlist.songIds), setlist.isPublic ? 1 : 0, new Date().toISOString()]
+      'INSERT OR REPLACE INTO setlists (id, name, date, songIds, isPublic, lastUpdated) VALUES (?, ?, ?, ?, ?, ?)',
+      [setlist.id, setlist.name, setlist.date || null, JSON.stringify(setlist.songIds), setlist.isPublic ? 1 : 0, new Date().toISOString()]
     );
     
     // Sincronizar con Supabase
@@ -171,6 +177,7 @@ export class StorageService {
         id: setlist.id,
         user_id: user.id,
         name: setlist.name,
+        date: setlist.date || null,
         song_ids: setlist.songIds,
         is_public: !!setlist.isPublic,
         last_updated: new Date().toISOString()
