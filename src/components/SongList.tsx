@@ -1,14 +1,15 @@
 import React from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
-import { Music, ChevronRight, Trash2 } from 'lucide-react-native';
+import { Music, ChevronRight, Trash2, ChevronUp, ChevronDown } from 'lucide-react-native';
 import { SongMetadata } from '../types';
 
 const COLORS = {
-  background: '#020617',
-  foreground: '#f8fafc',
-  accent: '#8b5cf6',
-  muted: '#1e293b',
-  mutedForeground: '#94a3b8',
+  background: '#0a0a0a',
+  surface: '#1a1a1a',
+  foreground: '#ffffff',
+  mutedForeground: '#a0a0a0',
+  accent: '#3b82f6',
+  border: '#333333',
 };
 
 interface SongListProps {
@@ -18,15 +19,17 @@ interface SongListProps {
   isSetlistMode?: boolean;
   onRemoveFromSetlist?: (songId: string) => void;
   onAddSongsPress?: () => void;
+  onMoveUp?: (index: number) => void;
+  onMoveDown?: (index: number) => void;
 }
 
 export const SongList: React.FC<SongListProps> = ({ 
-  songs, onSongPress, onSyncPress, isSetlistMode, onRemoveFromSetlist, onAddSongsPress 
+  songs, onSongPress, onSyncPress, isSetlistMode, onRemoveFromSetlist, onAddSongsPress, onMoveUp, onMoveDown
 }) => {
   if (songs.length === 0) {
     return (
       <View style={styles.emptyState}>
-        <Music size={64} color={COLORS.muted} />
+        <Music size={64} color={COLORS.border} />
         <Text style={styles.emptyText}>
           {isSetlistMode ? 'La lista está vacía.' : 'No hay canciones guardadas.'}
         </Text>
@@ -45,26 +48,53 @@ export const SongList: React.FC<SongListProps> = ({
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.scrollContent}>
-      {songs.map((song) => (
-        <View key={song.id} style={isSetlistMode ? styles.songItemRow : null}>
+      {songs.map((song, index) => (
+        <View key={song.id} style={styles.songRow}>
+          {isSetlistMode && (
+            <View style={styles.reorderControls}>
+              <TouchableOpacity 
+                onPress={() => onMoveUp?.(index)}
+                disabled={index === 0}
+                style={[styles.reorderBtn, index === 0 && { opacity: 0.2 }]}
+              >
+                <ChevronUp size={28} color={COLORS.accent} />
+              </TouchableOpacity>
+              <TouchableOpacity 
+                onPress={() => onMoveDown?.(index)}
+                disabled={index === songs.length - 1}
+                style={[styles.reorderBtn, index === songs.length - 1 && { opacity: 0.2 }]}
+              >
+                <ChevronDown size={28} color={COLORS.accent} />
+              </TouchableOpacity>
+            </View>
+          )}
+
           <TouchableOpacity 
-            style={[styles.songItem, isSetlistMode && { flex: 1, marginBottom: 0 }]}
+            style={[styles.songItem, isSetlistMode && { flex: 1, marginBottom: 0 }]} 
             onPress={() => onSongPress(song)}
           >
             <View style={styles.songInfo}>
-              <Text style={styles.songName} numberOfLines={1}>{song.name}</Text>
+              <View style={styles.titleRow}>
+                {isSetlistMode && (
+                  <View style={styles.indexBadge}>
+                    <Text style={styles.indexText}>{index + 1}</Text>
+                  </View>
+                )}
+                <Text style={styles.songName} numberOfLines={1}>{song.name}</Text>
+              </View>
               <Text style={styles.songMeta}>
                 {song.syncStatus === 'synced' ? '✓ Sincronizado' : '⌛ Pendiente'}
               </Text>
             </View>
             <ChevronRight size={20} color={COLORS.mutedForeground} />
           </TouchableOpacity>
+
           {isSetlistMode && onRemoveFromSetlist && (
             <TouchableOpacity 
               style={styles.removeBtn} 
               onPress={() => onRemoveFromSetlist(song.id)}
             >
-              <Trash2 size={20} color="#ef4444" />
+              <Trash2 size={22} color="#ef4444" />
             </TouchableOpacity>
           )}
         </View>
@@ -78,8 +108,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollContent: {
-    padding: 20,
-    paddingBottom: 100, // Space for tab bar
+    padding: 16,
+    paddingBottom: 100,
   },
   emptyState: {
     flex: 1,
@@ -104,46 +134,79 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 16,
   },
-  songItemRow: {
+  songRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
-    gap: 8,
+    marginBottom: 16,
+    gap: 12,
+  },
+  reorderControls: {
+    width: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  reorderBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   songItem: {
-    backgroundColor: COLORS.muted,
-    padding: 18,
+    backgroundColor: COLORS.surface,
+    padding: 16,
     borderRadius: 16,
-    marginBottom: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#2d3748',
+    borderColor: COLORS.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   songInfo: {
     flex: 1,
     marginRight: 10,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  indexBadge: {
+    backgroundColor: COLORS.accent + '20',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.accent + '40',
+  },
+  indexText: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
   songName: {
     color: COLORS.foreground,
     fontSize: 17,
     fontWeight: '600',
-    letterSpacing: -0.3,
+    flex: 1,
   },
   songMeta: {
     color: COLORS.mutedForeground,
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 4,
   },
   removeBtn: {
-    width: 44,
-    height: 44,
-    backgroundColor: '#ef444415',
-    borderRadius: 12,
+    width: 48,
+    height: 48,
+    backgroundColor: '#ef444410',
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#ef444430',
+    borderColor: '#ef444420',
   },
 });

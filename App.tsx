@@ -337,6 +337,18 @@ function MainApp() {
     await refreshLocalData();
   };
 
+  const handleMoveSong = async (fromIndex: number, toIndex: number) => {
+    if (!activeSetlist) return;
+    const newSongIds = [...activeSetlist.songIds];
+    const [movedId] = newSongIds.splice(fromIndex, 1);
+    newSongIds.splice(toIndex, 0, movedId);
+    
+    const updated = { ...activeSetlist, songIds: newSongIds };
+    await StorageService.saveSetlist(updated);
+    setActiveSetlist(updated);
+    await refreshLocalData();
+  };
+
   const handleSaveSetlistSongs = async () => {
     if (!activeSetlist) return;
     
@@ -366,8 +378,9 @@ function MainApp() {
   };
 
   // Filtrar canciones si hay una lista activa
+  // Filtrar canciones si hay una lista activa (manteniendo el orden del setlist)
   const displaySongs = activeSetlist 
-    ? songs.filter(s => activeSetlist.songIds.includes(s.id))
+    ? activeSetlist.songIds.map((id: string) => songs.find(s => s.id === id)).filter(Boolean) as SongMetadata[]
     : songs;
 
   // Lógica del Explorador de Carpetas Drive
@@ -629,6 +642,8 @@ function MainApp() {
                 isSetlistMode={!!activeSetlist}
                 onRemoveFromSetlist={activeSetlist ? handleRemoveSongFromSetlist : undefined}
                 onAddSongsPress={handleOpenEditSetlist}
+                onMoveUp={activeSetlist ? (idx) => handleMoveSong(idx, idx - 1) : undefined}
+                onMoveDown={activeSetlist ? (idx) => handleMoveSong(idx, idx + 1) : undefined}
               />
             </View>
           )}
