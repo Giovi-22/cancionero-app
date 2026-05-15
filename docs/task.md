@@ -8,7 +8,7 @@
 
 ## Phase 2: Synchronization [IN PROGRESS]
 - [x] SyncService logic (Incremental updates)
-- [/] UI Integration (Sync button) -> *Requires Google Auth Token*
+- [x] UI Integration (Sync button)
 
 ## Phase 3: Core UI [COMPLETED]
 - [x] SongList component
@@ -18,7 +18,7 @@
 - [x] PedalHandler (Hardware pedal support)
 
 ## Phase 4: Auth & Polish [PENDING]
-- [ ] Google Login (Expo Auth Session)
-- [ ] Setlist management
+- [x] Google Login (Expo Auth Session + Supabase)
+- [x] Setlist management (Sync with Supabase)
 - [ ] Global settings (Scroll speed, font size defaults)
 - [ ] Dark mode refinements
