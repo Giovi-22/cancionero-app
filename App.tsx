@@ -112,6 +112,14 @@ function MainApp() {
   const [navigationStack, setNavigationStack] = useState<any[]>([{ id: 'root', name: 'Mi unidad' }]);
   const [showShared, setShowShared] = useState(false);
 
+  const formatDate = (isoString: string) => {
+    const d = new Date(isoString);
+    const day = d.getDate().toString().padStart(2, '0');
+    const month = (d.getMonth() + 1).toString().padStart(2, '0');
+    const year = d.getFullYear().toString().slice(-2);
+    return `${day}/${month}/${year}`;
+  };
+
   useEffect(() => {
     loadInitialData();
     
@@ -538,7 +546,7 @@ function MainApp() {
                       </View>
                       <Text style={styles.setlistCardName} numberOfLines={2}>
                       {setlist.name}
-                      {setlist.date ? ` - ${new Date(setlist.date).toLocaleDateString()}` : ''}
+                      {setlist.date ? ` - ${formatDate(setlist.date)}` : ''}
                     </Text>
                       <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
                     </TouchableOpacity>
@@ -568,7 +576,7 @@ function MainApp() {
                   </TouchableOpacity>
                   <Text style={styles.activeSetlistTitle} numberOfLines={1}>
                     {activeSetlist.name}
-                    {activeSetlist.date && ` - ${new Date(activeSetlist.date).toLocaleDateString()}`}
+                    {activeSetlist.date ? ` - ${formatDate(activeSetlist.date)}` : ''}
                   </Text>
                   
                   <View style={{ flexDirection: 'row', gap: 5 }}>
@@ -820,7 +828,7 @@ function MainApp() {
               >
                 <Text style={styles.datePickerText}>
                   {newSetlistDate 
-                    ? `Fecha: ${newSetlistDate.toLocaleDateString()}` 
+                    ? `Fecha: ${formatDate(newSetlistDate.toISOString())}` 
                     : 'Añadir Fecha (Opcional)'}
                 </Text>
               </TouchableOpacity>
