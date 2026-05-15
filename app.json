@@ -17,7 +17,7 @@
       "supportsTablet": true
     },
     "androidNavigationBar": {
-      "visible": "always",
+      "visible": "immersive",
       "barStyle": "light-content",
       "backgroundColor": "#1a1a1a"
     },
