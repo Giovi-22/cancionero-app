@@ -37,6 +37,13 @@
       "expo-sqlite",
       "expo-router",
       "@react-native-community/datetimepicker"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cc81069d-e4ad-4149-bd64-4f95d94b9516"
+      }
+    },
+    "owner": "giovi22"
   }
 }
