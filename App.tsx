@@ -47,6 +47,7 @@ import { authService } from './src/services/AuthService';
 import { SyncService } from './src/services/SyncService';
 import { StorageService } from './src/services/StorageService';
 import { DriveService } from './src/services/DriveService';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { FileSystemService } from './src/services/FileSystemService';
 import { SongList } from './src/components/SongList';
 import { SetlistList } from './src/components/SetlistList';
@@ -97,6 +98,8 @@ function MainApp() {
   // Modal Crear Lista
   const [isCreateSetlistOpen, setIsCreateSetlistOpen] = useState(false);
   const [newSetlistName, setNewSetlistName] = useState('');
+  const [newSetlistDate, setNewSetlistDate] = useState<Date | undefined>(undefined);
+  const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Modal Editar Lista (Agregar/Quitar canciones)
   const [isEditSetlistOpen, setIsEditSetlistOpen] = useState(false);
@@ -283,12 +286,14 @@ function MainApp() {
     const newSetlist = {
       id: `local_${Date.now()}`,
       name,
+      date: newSetlistDate ? newSetlistDate.toISOString() : undefined,
       songIds: [],
       isPublic: false,
     };
     await StorageService.saveSetlist(newSetlist);
     await refreshLocalData();
     setNewSetlistName('');
+    setNewSetlistDate(undefined);
     setIsCreateSetlistOpen(false);
     Keyboard.dismiss();
   };
@@ -531,7 +536,10 @@ function MainApp() {
                       <View style={styles.setlistCardIcon}>
                         <List size={24} color="#fff" />
                       </View>
-                      <Text style={styles.setlistCardName} numberOfLines={2}>{setlist.name}</Text>
+                      <Text style={styles.setlistCardName} numberOfLines={2}>
+                      {setlist.name}
+                      {setlist.date ? ` - ${new Date(setlist.date).toLocaleDateString()}` : ''}
+                    </Text>
                       <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
                     </TouchableOpacity>
                     {user && (
@@ -558,7 +566,10 @@ function MainApp() {
                   <TouchableOpacity onPress={() => setActiveSetlist(null)} style={styles.closeSetlistBtn}>
                     <ArrowLeft size={20} color="#fff" />
                   </TouchableOpacity>
-                  <Text style={styles.activeSetlistTitle} numberOfLines={1}>{activeSetlist.name}</Text>
+                  <Text style={styles.activeSetlistTitle} numberOfLines={1}>
+                    {activeSetlist.name}
+                    {activeSetlist.date && ` - ${new Date(activeSetlist.date).toLocaleDateString()}`}
+                  </Text>
                   
                   <View style={{ flexDirection: 'row', gap: 5 }}>
                     <TouchableOpacity onPress={handleOpenEditSetlist} style={styles.editSetlistBtn}>
@@ -803,6 +814,28 @@ function MainApp() {
                 returnKeyType="done"
                 onSubmitEditing={handleCreateSetlist}
               />
+              <TouchableOpacity 
+                style={styles.datePickerBtn} 
+                onPress={() => setShowDatePicker(true)}
+              >
+                <Text style={styles.datePickerText}>
+                  {newSetlistDate 
+                    ? `Fecha: ${newSetlistDate.toLocaleDateString()}` 
+                    : 'Añadir Fecha (Opcional)'}
+                </Text>
+              </TouchableOpacity>
+              
+              {showDatePicker && (
+                <DateTimePicker
+                  value={newSetlistDate || new Date()}
+                  mode="date"
+                  display="default"
+                  onChange={(event, selectedDate) => {
+                    setShowDatePicker(false);
+                    if (selectedDate) setNewSetlistDate(selectedDate);
+                  }}
+                />
+              )}
               <View style={styles.createModalActions}>
                 <TouchableOpacity
                   style={styles.createModalCancel}
@@ -1420,7 +1453,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 16,
+    marginBottom: 10,
+  },
+  datePickerBtn: {
+    backgroundColor: COLORS.surface,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     marginBottom: 20,
+    alignItems: 'center',
+  },
+  datePickerText: {
+    color: COLORS.accent,
+    fontSize: 15,
+    fontWeight: '500',
   },
   createModalActions: {
     flexDirection: 'row',
