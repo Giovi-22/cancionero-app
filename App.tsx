@@ -36,7 +36,11 @@ import {
   TrendingUp,
   Clock,
   Radio,
-  Wifi
+  Wifi,
+  Edit2,
+  CheckSquare,
+  Square,
+  Plus
 } from 'lucide-react-native';
 import { supabase } from './src/lib/supabase';
 import { authService } from './src/services/AuthService';
@@ -93,6 +97,10 @@ function MainApp() {
   // Modal Crear Lista
   const [isCreateSetlistOpen, setIsCreateSetlistOpen] = useState(false);
   const [newSetlistName, setNewSetlistName] = useState('');
+
+  // Modal Editar Lista (Agregar/Quitar canciones)
+  const [isEditSetlistOpen, setIsEditSetlistOpen] = useState(false);
+  const [editSetlistSongs, setEditSetlistSongs] = useState<string[]>([]);
 
   // Estado para el explorador de carpetas
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -285,6 +293,36 @@ function MainApp() {
     Keyboard.dismiss();
   };
 
+  const handleOpenEditSetlist = () => {
+    if (!activeSetlist) return;
+    setEditSetlistSongs([...activeSetlist.songIds]);
+    setIsEditSetlistOpen(true);
+  };
+
+  const handleToggleSongInSetlist = (songId: string) => {
+    setEditSetlistSongs(prev => 
+      prev.includes(songId) ? prev.filter(id => id !== songId) : [...prev, songId]
+    );
+  };
+
+  const handleRemoveSongFromSetlist = async (songId: string) => {
+    if (!activeSetlist) return;
+    const newSongIds = activeSetlist.songIds.filter((id: string) => id !== songId);
+    const updated = { ...activeSetlist, songIds: newSongIds };
+    await StorageService.saveSetlist(updated);
+    setActiveSetlist(updated);
+    await refreshLocalData();
+  };
+
+  const handleSaveSetlistSongs = async () => {
+    if (!activeSetlist) return;
+    const updated = { ...activeSetlist, songIds: editSetlistSongs };
+    await StorageService.saveSetlist(updated);
+    setActiveSetlist(updated);
+    setIsEditSetlistOpen(false);
+    await refreshLocalData();
+  };
+
   const handleSaveSongSettings = async (settings: any) => {
     if (selectedSong) {
       await StorageService.saveSetting(`song_settings_${selectedSong.id}`, settings);
@@ -445,11 +483,11 @@ function MainApp() {
               ))}
 
               <View style={styles.statsRow}>
-                <View style={styles.statCard}>
+                <TouchableOpacity style={styles.statCard} onPress={() => setActiveTab('songs')}>
                   <Music size={24} color={COLORS.accent} />
                   <Text style={styles.statValue}>{songs.length}</Text>
                   <Text style={styles.statLabel}>Canciones</Text>
-                </View>
+                </TouchableOpacity>
                 <View style={styles.statCard}>
                   <List size={24} color="#10b981" />
                   <Text style={styles.statValue}>{setlists.length}</Text>
@@ -521,6 +559,16 @@ function MainApp() {
                     <ArrowLeft size={20} color="#fff" />
                   </TouchableOpacity>
                   <Text style={styles.activeSetlistTitle} numberOfLines={1}>{activeSetlist.name}</Text>
+                  
+                  <View style={{ flexDirection: 'row', gap: 5 }}>
+                    <TouchableOpacity onPress={handleOpenEditSetlist} style={styles.editSetlistBtn}>
+                      <Plus size={16} color="#fff" />
+                    </TouchableOpacity>
+                    <TouchableOpacity onPress={handleOpenEditSetlist} style={styles.editSetlistBtn}>
+                      <Edit2 size={16} color="#fff" />
+                    </TouchableOpacity>
+                  </View>
+
                   {user && (
                     <TouchableOpacity
                       style={[styles.startShowHeaderBtn, myDirectorSession?.setlist_id === activeSetlist.id && styles.startShowHeaderBtnActive]}
@@ -538,6 +586,9 @@ function MainApp() {
                 songs={displaySongs} 
                 onSongPress={handleSongPress} 
                 onSyncPress={handleSync}
+                isSetlistMode={!!activeSetlist}
+                onRemoveFromSetlist={activeSetlist ? handleRemoveSongFromSetlist : undefined}
+                onAddSongsPress={handleOpenEditSetlist}
               />
             </View>
           )}
@@ -767,6 +818,50 @@ function MainApp() {
                   <Text style={styles.createModalConfirmText}>Crear</Text>
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Modal Editar Lista (Agregar/Quitar Canciones) */}
+        <Modal
+          visible={isEditSetlistOpen}
+          animationType="slide"
+          onRequestClose={() => setIsEditSetlistOpen(false)}
+        >
+          <View style={styles.editModalContainer}>
+            <View style={styles.editModalHeader}>
+              <Text style={styles.editModalTitle}>Editar Canciones</Text>
+              <TouchableOpacity onPress={() => setIsEditSetlistOpen(false)} style={{ padding: 5 }}>
+                <X size={24} color="#fff" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.editModalList} contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
+              {songs.map(song => {
+                const isSelected = editSetlistSongs.includes(song.id);
+                return (
+                  <TouchableOpacity
+                    key={song.id}
+                    style={[styles.editModalItem, isSelected && styles.editModalItemActive]}
+                    onPress={() => handleToggleSongInSetlist(song.id)}
+                  >
+                    <View style={styles.editModalItemInfo}>
+                      <Text style={[styles.editModalItemName, isSelected && styles.editModalItemNameActive]}>
+                        {song.name}
+                      </Text>
+                    </View>
+                    {isSelected ? (
+                      <CheckSquare size={24} color={COLORS.accent} />
+                    ) : (
+                      <Square size={24} color={COLORS.mutedForeground} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+            <View style={styles.editModalFooter}>
+              <TouchableOpacity style={styles.editModalSaveBtn} onPress={handleSaveSetlistSongs}>
+                <Text style={styles.editModalSaveBtnText}>Guardar Lista</Text>
+              </TouchableOpacity>
             </View>
           </View>
         </Modal>
@@ -1351,5 +1446,75 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '600',
     fontSize: 15,
+  },
+  // Modal Editar Lista
+  editSetlistBtn: {
+    padding: 8,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    borderRadius: 8,
+  },
+  editModalContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+  },
+  editModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 20,
+    backgroundColor: COLORS.surface,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+  },
+  editModalTitle: {
+    color: COLORS.foreground,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  editModalList: {
+    flex: 1,
+  },
+  editModalItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    backgroundColor: COLORS.surface,
+    marginBottom: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  editModalItemActive: {
+    borderColor: COLORS.accent,
+    backgroundColor: `${COLORS.accent}15`,
+  },
+  editModalItemInfo: {
+    flex: 1,
+  },
+  editModalItemName: {
+    color: COLORS.foreground,
+    fontSize: 16,
+    fontWeight: '500',
+  },
+  editModalItemNameActive: {
+    color: COLORS.accent,
+    fontWeight: 'bold',
+  },
+  editModalFooter: {
+    padding: 20,
+    backgroundColor: COLORS.surface,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  editModalSaveBtn: {
+    backgroundColor: COLORS.accent,
+    padding: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  editModalSaveBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   }
 });

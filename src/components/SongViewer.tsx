@@ -330,7 +330,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                   style={[styles.widgetNavBtn, idx <= 0 && styles.widgetNavBtnDisabled]}
                   disabled={idx <= 0}
                 >
-                  <ChevronLeft size={22} color="#fff" />
+                  <ChevronLeft size={18} color="#fff" />
                 </TouchableOpacity>
 
                 <Text style={styles.widgetCounter}>{idx + 1} / {setlistSongs.length}</Text>
@@ -340,7 +340,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                   style={[styles.widgetNavBtn, idx >= setlistSongs.length - 1 && styles.widgetNavBtnDisabled]}
                   disabled={idx >= setlistSongs.length - 1}
                 >
-                  <ChevronRight size={22} color="#fff" />
+                  <ChevronRight size={18} color="#fff" />
                 </TouchableOpacity>
               </View>
             </View>
@@ -479,7 +479,7 @@ const styles = StyleSheet.create({
   // Director widget draggable
   directorWidget: {
     position: 'absolute',
-    width: 200,
+    width: 170,
     backgroundColor: 'rgba(220, 38, 38, 0.92)',
     borderRadius: 20,
     overflow: 'hidden',
@@ -502,28 +502,28 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.5)',
   },
   widgetBody: {
-    padding: 12,
+    padding: 10,
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
   },
   widgetBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
+    gap: 4,
     backgroundColor: 'rgba(0,0,0,0.25)',
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 8,
   },
   widgetBadgeText: {
     color: '#fff',
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: 'bold',
-    letterSpacing: 1.5,
+    letterSpacing: 1.2,
   },
   widgetSongName: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
     textAlign: 'center',
     width: '100%',
@@ -536,9 +536,9 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   widgetNavBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     backgroundColor: 'rgba(255,255,255,0.2)',
     alignItems: 'center',
     justifyContent: 'center',
@@ -548,7 +548,7 @@ const styles = StyleSheet.create({
   },
   widgetCounter: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: 'bold',
   },
   controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
