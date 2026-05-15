@@ -21,19 +21,31 @@ function getNoteIndex(note: string): number {
 }
 
 export function transposeChord(chord: string, semitones: number): string {
-  const match = chord.match(/^([A-G][b#]?)(.*)$/);
+
+  // Soporta:
+  // C
+  // Cmaj7
+  // C/E
+  // Cmaj7/E
+  // F#m7b5/A
+  const match = chord.match(
+    /^([A-G][b#]?)([^\/]*)(?:\/([A-G][b#]?))?$/
+  );
+
   if (!match) return chord;
 
-  const [_, baseNote, suffix] = match;
-  
-  if (suffix.includes('/')) {
-    const [rest, bassNote] = suffix.split('/');
-    const newBase = transposeNote(baseNote, semitones);
-    const newBass = transposeNote(bassNote, semitones);
-    return `${newBase}${rest}/${newBass}`;
+  const [, rootNote, suffix, bassNote] = match;
+
+  const transposedRoot = transposeNote(rootNote, semitones);
+
+  if (bassNote) {
+
+    const transposedBass = transposeNote(bassNote, semitones);
+
+    return `${transposedRoot}${suffix}/${transposedBass}`;
   }
 
-  return `${transposeNote(baseNote, semitones)}${suffix}`;
+  return `${transposedRoot}${suffix}`;
 }
 
 function transposeNote(note: string, semitones: number): string {
@@ -57,12 +69,12 @@ export function isChordLine(line: string): boolean {
   if (!trimmed) return false;
 
   const chordRegex = /^[A-G][b#]?(m|maj|min|dim|aug|sus|add|v|i|[0-9]|sus|add|dim|aug|maj|min)*\d*(?:[b#+-]\d+)?(?:\([^)]+\))?(?:\/[A-G][b#]?)?$/i;
-  
+
   if (isMetadataLine(trimmed)) return false;
 
   const cleanTrimmed = trimmed.replace(/^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse|Acordes|Key|Tempo|Capo):\s*/i, '');
   if (!cleanTrimmed) return false;
-  
+
   const tokens = cleanTrimmed.split(/\s+/).filter(t => t.length > 0);
   if (tokens.length === 0) return false;
 
@@ -78,13 +90,13 @@ export function isChordLine(line: string): boolean {
 
 export function transposeText(text: string, semitones: number): string {
   if (semitones === 0) return text;
-  
+
   const lines = text.split('\n');
   const transposedLines = lines.map(line => {
     if (isChordLine(line)) {
       const parts = line.split(/(\s+)/);
       return parts.map(part => {
-        if (part.trim() && /^[A-G][b#]?(m|maj|min|dim|aug|sus|add|v|i|[0-9]|\/)*$/i.test(part.trim())) {
+        if (part.trim() && /^[A-G][b#]?[^\s]*$/i.test(part.trim())) {
           return transposeChord(part.trim(), semitones);
         }
         return part;
@@ -114,7 +126,7 @@ export function trimCommonIndentation(text: string): string {
 
 export function cleanSongText(text: string): string {
   if (!text) return '';
-  
+
   let cleaned = text
     .replace(/\r\n/g, '\n')
     .split('\n')
@@ -125,15 +137,15 @@ export function cleanSongText(text: string): string {
 
   const lines = cleaned.split('\n');
   const resultLines: string[] = [];
-  
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const isSectionHeader = line.trim().startsWith('[');
-    
+
     if (isSectionHeader && i > 0 && resultLines[resultLines.length - 1] !== '') {
       resultLines.push('');
     }
-    
+
     resultLines.push(line);
   }
 
@@ -143,7 +155,7 @@ export function cleanSongText(text: string): string {
 export function parseSongToBlocks(text: string): SongLineParsed[] {
   const lines = text.split('\n');
   const result: SongLineParsed[] = [];
-  
+
   for (let i = 0; i < lines.length; i++) {
     const currentLine = lines[i];
     const nextLine = lines[i + 1];
@@ -204,10 +216,10 @@ function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLinePar
     if (pos <= 0) return 0
     if (pos >= text.length) return text.length
     if (text[pos] === ' ') return pos;
-    if (pos > 0 && text[pos-1] === ' ') return pos
-    
+    if (pos > 0 && text[pos - 1] === ' ') return pos
+
     let i = pos
-    while (i > 0 && text[i-1] !== ' ') i--
+    while (i > 0 && text[i - 1] !== ' ') i--
     return i
   }
 
@@ -230,9 +242,9 @@ function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLinePar
   for (let i = 0; i < sortedCutPoints.length; i++) {
     const start = sortedCutPoints[i];
     const end = i + 1 < sortedCutPoints.length ? sortedCutPoints[i + 1] : lyricLine.length;
-    
+
     const chordsInGroup = groups.get(start)!;
-    
+
     let combinedChord = "";
     let lastChordEnd = chordsInGroup[0].index;
     combinedChord += chordsInGroup[0].chord;
@@ -258,7 +270,7 @@ function parseChordsOnly(line: string): SongBlock[] {
   const blocks: SongBlock[] = [];
   const labelMatch = line.match(/^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse):\s*/i);
   let processLine = line;
-  
+
   if (labelMatch) {
     blocks.push({ text: labelMatch[0] });
     processLine = line.substring(labelMatch[0].length);
@@ -267,7 +279,7 @@ function parseChordsOnly(line: string): SongBlock[] {
   const chordRegex = /[^\s]+/g;
   let match;
   const chords: { chord: string; index: number }[] = [];
-  
+
   while ((match = chordRegex.exec(processLine)) !== null) {
     chords.push({ chord: match[0], index: match.index });
   }
@@ -284,6 +296,6 @@ function parseChordsOnly(line: string): SongBlock[] {
       text: ' '.repeat(spaceCount)
     });
   }
-  
+
   return blocks;
 }
