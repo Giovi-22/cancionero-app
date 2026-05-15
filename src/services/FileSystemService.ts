@@ -1,18 +1,24 @@
-import * as FileSystem from 'expo-file-system';
-
-const SONGS_DIR = `${FileSystem.documentDirectory}songs/`;
+import * as FileSystem from 'expo-file-system/legacy';
 
 export class FileSystemService {
+  private static getSongsDir() {
+    // Si documentDirectory es null, usamos el cache como fallback temporal, 
+    // pero en Expo Go siempre debería estar disponible.
+    const baseDir = FileSystem.documentDirectory || FileSystem.cacheDirectory || '';
+    return `${baseDir}songs/`;
+  }
+
   static async ensureDirExists() {
-    const dirInfo = await FileSystem.getInfoAsync(SONGS_DIR);
+    const dir = this.getSongsDir();
+    const dirInfo = await FileSystem.getInfoAsync(dir);
     if (!dirInfo.exists) {
-      await FileSystem.makeDirectoryAsync(SONGS_DIR, { intermediates: true });
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
     }
   }
 
   static async saveSongContent(id: string, content: string): Promise<string> {
     await this.ensureDirExists();
-    const filePath = `${SONGS_DIR}${id}.txt`;
+    const filePath = `${this.getSongsDir()}${id}.txt`;
     await FileSystem.writeAsStringAsync(filePath, content, {
       encoding: FileSystem.EncodingType.UTF8,
     });
@@ -20,23 +26,31 @@ export class FileSystemService {
   }
 
   static async getSongContent(id: string): Promise<string | null> {
-    const filePath = `${SONGS_DIR}${id}.txt`;
-    const fileInfo = await FileSystem.getInfoAsync(filePath);
-    if (!fileInfo.exists) {
+    const filePath = `${this.getSongsDir()}${id}.txt`;
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      if (!fileInfo.exists) {
+        return null;
+      }
+      return await FileSystem.readAsStringAsync(filePath);
+    } catch (e) {
       return null;
     }
-    return await FileSystem.readAsStringAsync(filePath);
   }
 
   static async deleteSongFile(id: string) {
-    const filePath = `${SONGS_DIR}${id}.txt`;
-    const fileInfo = await FileSystem.getInfoAsync(filePath);
-    if (fileInfo.exists) {
-      await FileSystem.deleteAsync(filePath);
+    const filePath = `${this.getSongsDir()}${id}.txt`;
+    try {
+      const fileInfo = await FileSystem.getInfoAsync(filePath);
+      if (fileInfo.exists) {
+        await FileSystem.deleteAsync(filePath);
+      }
+    } catch (e) {
+      // Ignorar errores al borrar
     }
   }
 
   static getLocalPath(id: string): string {
-    return `${SONGS_DIR}${id}.txt`;
+    return `${this.getSongsDir()}${id}.txt`;
   }
 }

@@ -1,341 +1,664 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   StyleSheet, 
   Text, 
   View, 
-  TouchableOpacity, 
   ScrollView, 
-  SafeAreaView,
-  Dimensions
+  TouchableOpacity, 
+  Dimensions,
+  Animated,
+  ActivityIndicator,
+  TextInput,
+  Keyboard,
+  Platform,
+  Slider
 } from 'react-native';
-import { ChevronLeft, RotateCcw, Plus, Minus, Play, Pause, Settings as SettingsIcon } from 'lucide-react-native';
-import { cleanSongText, transposeText, trimCommonIndentation, parseSongToBlocks } from '../utils/chordUtils';
-import { PedalHandler } from './PedalHandler';
+import { 
+  ChevronLeft, 
+  Settings, 
+  Play, 
+  Pause, 
+  Maximize2, 
+  Minimize2,
+  Type,
+  Music,
+  Plus,
+  Minus,
+  X,
+  StickyNote,
+  Clock
+} from 'lucide-react-native';
+import { 
+  transposeText, 
+  trimCommonIndentation, 
+  cleanSongText, 
+  parseSongToBlocks 
+} from '../utils/chordUtils';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 
 const COLORS = {
-  background: '#020617',
-  foreground: '#f8fafc',
-  accent: '#8b5cf6',
-  muted: '#1e293b',
-  mutedForeground: '#94a3b8',
-  chord: '#a78bfa', // Lighter purple for chords
+  background: '#0a0a0a',
+  surface: '#1a1a1a',
+  foreground: '#ffffff',
+  mutedForeground: '#a0a0a0',
+  accent: '#3b82f6',
+  border: '#333333'
 };
 
 interface SongViewerProps {
   content: string;
   title: string;
-  onBack: () => void;
+  onClose: () => void;
+  initialSettings?: any;
+  onSaveSettings?: (settings: any) => void;
 }
 
-export const SongViewer: React.FC<SongViewerProps> = ({ content, title, onBack }) => {
-  const [transpose, setTranspose] = useState(0);
-  const [fontSize, setFontSize] = useState(16);
+export const SongViewer: React.FC<SongViewerProps> = ({ 
+  content, 
+  title, 
+  onClose,
+  initialSettings,
+  onSaveSettings 
+}) => {
+  const [transpose, setTranspose] = useState(initialSettings?.transpose || 0);
+  const [capo, setCapo] = useState(initialSettings?.capo || 0);
+  const [fontSize, setFontSize] = useState(initialSettings?.fontSize || 16);
+  const [viewMode, setViewMode] = useState<'all' | 'lyrics'>(initialSettings?.viewMode || 'all');
   const [isScrolling, setIsScrolling] = useState(false);
-  const [scrollSpeed, setScrollSpeed] = useState(1);
-  const [viewMode, setViewMode] = useState<'all' | 'lyrics'>('all');
+  const [scrollSpeed, setScrollSpeed] = useState(initialSettings?.scrollSpeed || 1);
+  const [isStageMode, setIsStageMode] = useState(true);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [musicianNotes, setMusicianNotes] = useState<Record<number, string>>(initialSettings?.musicianNotes || {});
+  const [editingLine, setEditingLine] = useState<number | null>(null);
+  const [tempNote, setTempNote] = useState('');
+  
+  // Metrónomo
+  const [bpm, setBpm] = useState(initialSettings?.bpm || 120);
+  const [isMetronomeActive, setIsMetronomeActive] = useState(false);
+  const [beat, setBeat] = useState(false);
 
-  const scrollViewRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<ScrollView>(null);
   const scrollPosRef = useRef(0);
-  const animationFrameRef = useRef<number | null>(null);
+  const scrollIntervalRef = useRef<any>(null);
 
-  // Core parsing logic (same as web)
+  // Lógica de Metrónomo
+  useEffect(() => {
+    let interval: any;
+    if (isMetronomeActive) {
+      const msPerBeat = 60000 / bpm;
+      interval = setInterval(() => {
+        setBeat(true);
+        setTimeout(() => setBeat(false), 100);
+      }, msPerBeat);
+    }
+    return () => clearInterval(interval);
+  }, [isMetronomeActive, bpm]);
+
+  // Procesar canción (igual que en la web: transpose - capo)
   const parsedLines = useMemo(() => {
     const cleaned = cleanSongText(content);
-    const transposed = transposeText(cleaned, transpose);
+    const transposed = transposeText(cleaned, transpose - capo);
     const trimmed = trimCommonIndentation(transposed);
     return parseSongToBlocks(trimmed);
-  }, [content, transpose]);
+  }, [content, transpose, capo]);
 
-  // Auto-scroll logic adapted for React Native
+  // Motor de Auto-scroll
   useEffect(() => {
     if (isScrolling) {
-      const scrollStep = () => {
+      scrollIntervalRef.current = setInterval(() => {
         scrollPosRef.current += (scrollSpeed * 0.5);
-        scrollViewRef.current?.scrollTo({
-          y: scrollPosRef.current,
-          animated: false,
-        });
-        animationFrameRef.current = requestAnimationFrame(scrollStep);
-      };
-      animationFrameRef.current = requestAnimationFrame(scrollStep);
+        scrollRef.current?.scrollTo({ y: scrollPosRef.current, animated: false });
+      }, 16);
     } else {
-      if (animationFrameRef.current) {
-        cancelAnimationFrame(animationFrameRef.current);
-      }
+      if (scrollIntervalRef.current) clearInterval(scrollIntervalRef.current);
     }
     return () => {
-      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (scrollIntervalRef.current) clearInterval(scrollIntervalRef.current);
     };
   }, [isScrolling, scrollSpeed]);
 
-  const handleScroll = (event: any) => {
-    // Update our internal reference if the user scrolls manually
-    if (!isScrolling) {
-      scrollPosRef.current = event.nativeEvent.contentOffset.y;
-    }
-  };
-
-  const handlePedalScroll = (direction: number) => {
-    scrollPosRef.current += (direction * 100); // Scroll 100px per press
-    scrollViewRef.current?.scrollTo({
-      y: Math.max(0, scrollPosRef.current),
-      animated: true,
+  const handleSaveSettings = () => {
+    onSaveSettings?.({
+      transpose,
+      capo,
+      fontSize,
+      viewMode,
+      scrollSpeed,
+      musicianNotes,
+      bpm
     });
   };
 
+  useEffect(() => {
+    handleSaveSettings();
+  }, [transpose, capo, fontSize, viewMode, scrollSpeed, musicianNotes, bpm]);
+
+  const toggleNote = (index: number) => {
+    if (editingLine === index) {
+      setEditingLine(null);
+    } else {
+      setTempNote(musicianNotes[index] || '');
+      setEditingLine(index);
+    }
+  };
+
+  const saveNote = () => {
+    if (editingLine !== null) {
+      const newNotes = { ...musicianNotes };
+      if (tempNote.trim()) {
+        newNotes[editingLine] = tempNote;
+      } else {
+        delete newNotes[editingLine];
+      }
+      setMusicianNotes(newNotes);
+      setEditingLine(null);
+      Keyboard.dismiss();
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
-      <PedalHandler 
-        onScrollDown={() => handlePedalScroll(1)}
-        onScrollUp={() => handlePedalScroll(-1)}
-      />
+    <View style={[styles.container, isStageMode && styles.stageContainer]}>
+      {/* Visual Metronome Beat Indicator */}
+      {isMetronomeActive && (
+        <View style={[styles.metronomeDot, beat && styles.metronomeDotActive]} />
+      )}
+
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton}>
+        <TouchableOpacity onPress={onClose} style={styles.backButton}>
           <ChevronLeft size={28} color={COLORS.foreground} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        <TouchableOpacity style={styles.settingsButton}>
-          <SettingsIcon size={24} color={COLORS.foreground} />
+        <TouchableOpacity onPress={() => setIsStageMode(!isStageMode)} style={styles.iconButton}>
+          {isStageMode ? <Minimize2 size={24} color={COLORS.accent} /> : <Maximize2 size={24} color={COLORS.foreground} />}
         </TouchableOpacity>
       </View>
 
-      {/* Song Content */}
+      {/* Content */}
       <ScrollView 
-        ref={scrollViewRef}
-        style={styles.scrollView}
+        ref={scrollRef}
+        style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        onScroll={handleScroll}
+        onScroll={(e) => {
+          if (!isScrolling) {
+            scrollPosRef.current = e.nativeEvent.contentOffset.y;
+          }
+        }}
         scrollEventThrottle={16}
       >
         <View style={styles.songContainer}>
           {parsedLines.map((line, lIndex) => {
             const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
-            
+            const sectionColor = isStageMode ? '#fbbf24' : '#3b82f6';
+
             return (
-              <View 
+              <TouchableOpacity 
                 key={lIndex} 
+                activeOpacity={0.7}
+                onPress={() => toggleNote(lIndex)}
                 style={[
-                  styles.line,
-                  line.type === 'section' && !isTitle ? styles.sectionLine : null,
-                  isTitle ? styles.titleLine : null
+                  styles.lineWrapper,
+                  line.type === 'section' && (isTitle ? styles.titleLine : styles.sectionLine)
                 ]}
               >
-                {line.blocks.map((block, bIndex) => (
-                  <View key={bIndex} style={[styles.block, isTitle ? styles.titleBlock : null]}>
-                    {block.chord && viewMode === 'all' && (
-                      <Text style={[styles.chord, { fontSize: fontSize * 0.9 }]}>
-                        {block.chord}
+                <View style={styles.blocksContainer}>
+                  {line.blocks.map((block, bIndex) => (
+                    <View key={bIndex} style={[styles.block, isTitle && { width: '100%', alignItems: 'center' }]}>
+                      {block.chord && viewMode !== 'lyrics' && (
+                        <Text style={[styles.chordText, { fontSize: fontSize * 0.9 }]}>
+                          {block.chord}
+                        </Text>
+                      )}
+                      {!block.chord && viewMode === 'all' && line.type === 'chords-lyrics' && (
+                         <Text style={[styles.chordText, { fontSize: fontSize * 0.9, opacity: 0 }]}> </Text>
+                      )}
+                      <Text style={[
+                        styles.lyricText, 
+                        { fontSize: fontSize },
+                        line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
+                        isTitle && { fontSize: fontSize * 1.5, textAlign: 'center' }
+                      ]}>
+                        {isTitle ? block.text.replace(/\[TITULO\]/i, '').trim() : (block.text || ' ')}
                       </Text>
-                    )}
-                    <Text style={[
-                      styles.text, 
-                      { fontSize: isTitle ? fontSize * 1.5 : fontSize },
-                      line.type === 'section' ? styles.sectionText : null,
-                      line.type === 'chords-lyrics' ? styles.chordsLyricsText : null
-                    ]}>
-                      {isTitle ? block.text.replace(/\[TITULO\]/i, '').trim() : block.text}
-                    </Text>
+                    </View>
+                  ))}
+                </View>
+
+                {/* Nota del músico */}
+                {musicianNotes[lIndex] && (
+                  <View style={styles.noteBadge}>
+                    <StickyNote size={10} color="#000" />
+                    <Text style={styles.noteBadgeText}>{musicianNotes[lIndex]}</Text>
                   </View>
-                ))}
-              </View>
+                )}
+
+                {/* Editor de nota rápido */}
+                {editingLine === lIndex && (
+                  <View style={styles.noteEditor}>
+                    <TextInput 
+                      autoFocus
+                      style={styles.noteInput}
+                      value={tempNote}
+                      onChangeText={setTempNote}
+                      placeholder="Añadir nota..."
+                      placeholderTextColor={COLORS.mutedForeground}
+                      onSubmitEditing={saveNote}
+                      onBlur={saveNote}
+                    />
+                  </View>
+                )}
+              </TouchableOpacity>
             );
           })}
         </View>
       </ScrollView>
 
-      {/* Controls Bar */}
-      <View style={styles.controlsBar}>
-        <View style={styles.controlGroup}>
-          <TouchableOpacity onPress={() => setTranspose(t => t - 1)} style={styles.controlBtn}>
-            <Minus size={20} color={COLORS.foreground} />
-          </TouchableOpacity>
-          <View style={styles.transposeBadge}>
-            <Text style={styles.transposeText}>{transpose > 0 ? `+${transpose}` : transpose}</Text>
+      {/* Floating Bar - Más compacta como en la web */}
+      {!isSettingsOpen ? (
+        <View style={styles.floatingBar}>
+          <View style={styles.controlGroup}>
+            <TouchableOpacity onPress={() => setTranspose(prev => prev - 1)} style={styles.smallButton}>
+              <Minus size={18} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.controlText}>{transpose > 0 ? `+${transpose}` : transpose}</Text>
+            <TouchableOpacity onPress={() => setTranspose(prev => prev + 1)} style={styles.smallButton}>
+              <Plus size={18} color="#fff" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => setTranspose(t => t + 1)} style={styles.controlBtn}>
-            <Plus size={20} color={COLORS.foreground} />
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity 
+            style={[styles.playButton, isScrolling && styles.activePlayButton]} 
+            onPress={() => setIsScrolling(!isScrolling)}
+          >
+            {isScrolling ? <Pause size={20} color="#fff" /> : <Play size={20} color="#fff" />}
+            <Text style={styles.playText}>{isScrolling ? `${scrollSpeed}x` : 'Scroll'}</Text>
+          </TouchableOpacity>
+
+          <View style={styles.divider} />
+
+          <TouchableOpacity onPress={() => setIsSettingsOpen(true)} style={styles.iconButton}>
+            <Settings size={24} color={COLORS.foreground} />
           </TouchableOpacity>
         </View>
+      ) : (
+        <View style={styles.settingsSheet}>
+          <View style={styles.settingsHeader}>
+            <Text style={styles.settingsTitle}>Ajustes de Canción</Text>
+            <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
+              <X size={24} color={COLORS.foreground} />
+            </TouchableOpacity>
+          </View>
 
-        <View style={styles.divider} />
+          <ScrollView showsVerticalScrollIndicator={false}>
+            {/* Capo */}
+            <View style={styles.settingItemCol}>
+              <Text style={styles.settingLabel}>Capodastro</Text>
+              <View style={styles.capoGrid}>
+                {[0, 1, 2, 3, 4, 5].map(val => (
+                  <TouchableOpacity 
+                    key={val}
+                    style={[styles.capoBtn, capo === val && styles.activeCapoBtn]}
+                    onPress={() => setCapo(val)}
+                  >
+                    <Text style={[styles.capoText, capo === val && styles.activeCapoText]}>
+                      {val === 0 ? 'Off' : val}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
 
-        <TouchableOpacity 
-          onPress={() => setIsScrolling(!isScrolling)} 
-          style={[styles.scrollToggle, isScrolling && styles.scrollToggleActive]}
-        >
-          {isScrolling ? (
-            <Pause size={24} color={COLORS.foreground} />
-          ) : (
-            <Play size={24} color={COLORS.foreground} />
-          )}
-          <Text style={styles.scrollLabel}>
-            {isScrolling ? `${scrollSpeed.toFixed(1)}x` : 'Scroll'}
-          </Text>
-        </TouchableOpacity>
+            {/* Metrónomo */}
+            <View style={styles.settingItemCol}>
+              <Text style={styles.settingLabel}>Metrónomo (BPM: {bpm})</Text>
+              <View style={styles.metronomeGroup}>
+                <TouchableOpacity 
+                  onPress={() => setIsMetronomeActive(!isMetronomeActive)}
+                  style={[styles.metroToggle, isMetronomeActive && styles.metroToggleActive]}
+                >
+                  <Clock size={20} color="#fff" />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setBpm(prev => Math.max(40, prev - 5))} style={styles.smallButton}>
+                  <Minus size={18} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.controlText}>{bpm}</Text>
+                <TouchableOpacity onPress={() => setBpm(prev => Math.min(250, prev + 5))} style={styles.smallButton}>
+                  <Plus size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-        <View style={styles.divider} />
+            <View style={styles.settingItem}>
+              <Text style={styles.settingLabel}>Tamaño Letra</Text>
+              <View style={styles.controlGroup}>
+                <TouchableOpacity onPress={() => setFontSize(prev => Math.max(10, prev - 2))} style={styles.smallButton}>
+                  <Minus size={18} color="#fff" />
+                </TouchableOpacity>
+                <Text style={styles.controlText}>{fontSize}</Text>
+                <TouchableOpacity onPress={() => setFontSize(prev => Math.min(40, prev + 2))} style={styles.smallButton}>
+                  <Plus size={18} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            </View>
 
-        <View style={styles.controlGroup}>
-          <TouchableOpacity onPress={() => setFontSize(s => Math.max(10, s - 2))} style={styles.controlBtn}>
-            <Text style={styles.fontControlText}>A-</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setFontSize(s => Math.min(30, s + 2))} style={styles.controlBtn}>
-            <Text style={styles.fontControlText}>A+</Text>
-          </TouchableOpacity>
+            <View style={styles.settingItem}>
+              <Text style={styles.settingLabel}>Vista</Text>
+              <View style={styles.toggleGroup}>
+                <TouchableOpacity 
+                  style={[styles.toggleBtn, viewMode === 'all' && styles.activeToggle]}
+                  onPress={() => setViewMode('all')}
+                >
+                  <Text style={[styles.toggleText, viewMode === 'all' && styles.activeToggleText]}>Todo</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.toggleBtn, viewMode === 'lyrics' && styles.activeToggle]}
+                  onPress={() => setViewMode('lyrics')}
+                >
+                  <Text style={[styles.toggleText, viewMode === 'lyrics' && styles.activeToggleText]}>Letra</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+            
+            <TouchableOpacity 
+              style={styles.doneButton}
+              onPress={() => setIsSettingsOpen(false)}
+            >
+              <Text style={styles.doneButtonText}>Listo</Text>
+            </TouchableOpacity>
+          </ScrollView>
         </View>
-      </View>
-    </SafeAreaView>
+      )}
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: '#fff',
+  },
+  stageContainer: {
     backgroundColor: COLORS.background,
+  },
+  metronomeDot: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: 'transparent',
+    zIndex: 1000,
+  },
+  metronomeDotActive: {
+    backgroundColor: COLORS.accent,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 10,
+    paddingHorizontal: 15,
     paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: COLORS.muted,
+    borderBottomColor: COLORS.border,
   },
   backButton: {
-    padding: 8,
-  },
-  settingsButton: {
-    padding: 8,
+    padding: 5,
   },
   title: {
     flex: 1,
-    color: COLORS.foreground,
-    fontSize: 18,
-    fontWeight: '700',
     textAlign: 'center',
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.foreground,
     marginHorizontal: 10,
   },
-  scrollView: {
+  iconButton: {
+    padding: 8,
+  },
+  scroll: {
     flex: 1,
   },
   scrollContent: {
-    paddingBottom: 150, // More space for controls
+    paddingBottom: 200,
   },
   songContainer: {
-    paddingHorizontal: 20,
-    paddingVertical: 30,
+    padding: 20,
   },
-  line: {
+  lineWrapper: {
+    marginBottom: 5,
+    paddingHorizontal: 5,
+    borderRadius: 5,
+  },
+  titleLine: {
+    marginTop: 20,
+    marginBottom: 20,
+  },
+  sectionLine: {
+    marginTop: 15,
+    marginBottom: 5,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.1)',
+    paddingBottom: 5,
+  },
+  blocksContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'flex-end',
-    marginBottom: 8,
-  },
-  sectionLine: {
-    marginTop: 20,
-    marginBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: 'rgba(148, 163, 184, 0.2)',
-    paddingBottom: 5,
-  },
-  titleLine: {
-    justifyContent: 'center',
-    marginBottom: 30,
   },
   block: {
-    flexDirection: 'column',
-    minWidth: 1,
+    minWidth: 10,
   },
-  titleBlock: {
-    alignItems: 'center',
-    width: '100%',
-  },
-  chord: {
+  chordText: {
     color: COLORS.accent,
     fontWeight: 'bold',
-    fontFamily: 'monospace',
-    height: 20,
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
   },
-  text: {
+  lyricText: {
     color: COLORS.foreground,
-    fontFamily: 'monospace',
+    fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace',
+    lineHeight: 22,
   },
-  chordsLyricsText: {
-    // In React Native, monospace is usually necessary for alignment
+  noteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fbbf24',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+    gap: 4,
   },
-  sectionText: {
-    color: '#fbbf24', // Amber for sections
+  noteBadgeText: {
+    fontSize: 10,
     fontWeight: 'bold',
-    fontSize: 12,
-    textTransform: 'uppercase',
+    color: '#000',
   },
-  controlsBar: {
+  noteEditor: {
+    marginTop: 5,
+    backgroundColor: COLORS.surface,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    padding: 8,
+  },
+  noteInput: {
+    color: COLORS.foreground,
+    fontSize: 14,
+  },
+  floatingBar: {
     position: 'absolute',
     bottom: 30,
     left: 20,
     right: 20,
-    backgroundColor: 'rgba(30, 41, 59, 0.95)',
-    borderRadius: 24,
+    height: 60,
+    backgroundColor: 'rgba(26, 26, 26, 0.95)',
+    borderRadius: 30,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingHorizontal: 20,
-    paddingVertical: 12,
+    justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.5,
-    shadowRadius: 20,
-    elevation: 10,
+    borderColor: COLORS.border,
+    elevation: 5,
   },
   controlGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
   },
-  controlBtn: {
-    padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-    borderRadius: 12,
-  },
-  transposeBadge: {
-    minWidth: 35,
+  smallButton: {
+    width: 30,
+    height: 30,
+    backgroundColor: COLORS.border,
+    borderRadius: 15,
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  transposeText: {
-    color: COLORS.foreground,
+  controlText: {
+    color: '#fff',
+    fontSize: 16,
     fontWeight: 'bold',
-    fontSize: 14,
+    minWidth: 35,
+    textAlign: 'center',
   },
   divider: {
     width: 1,
     height: 30,
-    backgroundColor: 'rgba(148, 163, 184, 0.2)',
+    backgroundColor: COLORS.border,
   },
-  scrollToggle: {
+  playButton: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 15,
     paddingVertical: 8,
-    borderRadius: 15,
+    borderRadius: 20,
   },
-  scrollToggleActive: {
+  activePlayButton: {
     backgroundColor: COLORS.accent,
   },
-  scrollLabel: {
-    color: COLORS.foreground,
+  playText: {
+    color: '#fff',
     fontWeight: 'bold',
     fontSize: 14,
   },
-  fontControlText: {
-    color: COLORS.foreground,
+  settingsSheet: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 30,
+    borderTopRightRadius: 30,
+    padding: 25,
+    paddingBottom: 40,
+    maxHeight: '80%',
+  },
+  settingsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  settingsTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
+    color: COLORS.foreground,
+  },
+  settingItemCol: {
+    marginBottom: 20,
+  },
+  settingItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  settingLabel: {
+    color: COLORS.mutedForeground,
     fontSize: 14,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  capoGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  capoBtn: {
+    width: 45,
+    height: 45,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  activeCapoBtn: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  capoText: {
+    color: COLORS.mutedForeground,
+    fontWeight: 'bold',
+  },
+  activeCapoText: {
+    color: '#fff',
+  },
+  metronomeGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 15,
+  },
+  metroToggle: {
+    width: 45,
+    height: 45,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  metroToggleActive: {
+    backgroundColor: COLORS.accent,
+  },
+  toggleGroup: {
+    flexDirection: 'row',
+    backgroundColor: COLORS.background,
+    borderRadius: 10,
+    padding: 4,
+  },
+  toggleBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  activeToggle: {
+    backgroundColor: COLORS.surface,
+  },
+  toggleText: {
+    color: COLORS.mutedForeground,
+  },
+  activeToggleText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  doneButton: {
+    backgroundColor: COLORS.accent,
+    padding: 15,
+    borderRadius: 15,
+    alignItems: 'center',
+    marginTop: 20,
+  },
+  doneButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 16,
   }
 });

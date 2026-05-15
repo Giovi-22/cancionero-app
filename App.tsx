@@ -11,7 +11,8 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
-  Keyboard
+  Keyboard,
+  Modal
 } from 'react-native';
 import { 
   SafeAreaProvider, 
@@ -27,15 +28,18 @@ import {
   Folder,
   ChevronRight,
   Search,
-  Users
+  Users,
+  ArrowLeft
 } from 'lucide-react-native';
 import { supabase } from './src/lib/supabase';
 import { authService } from './src/services/AuthService';
 import { SyncService } from './src/services/SyncService';
 import { StorageService } from './src/services/StorageService';
 import { DriveService } from './src/services/DriveService';
+import { FileSystemService } from './src/services/FileSystemService';
 import { SongList } from './src/components/SongList';
 import { SetlistList } from './src/components/SetlistList';
+import { SongViewer } from './src/components/SongViewer';
 import { SongMetadata } from './src/types';
 
 const COLORS = {
@@ -58,6 +62,14 @@ function MainApp() {
   // Datos
   const [songs, setSongs] = useState<SongMetadata[]>([]);
   const [setlists, setSetlists] = useState<any[]>([]);
+
+  // Estado del Visor
+  const [selectedSong, setSelectedSong] = useState<SongMetadata | null>(null);
+  const [songContent, setSongContent] = useState<string | null>(null);
+  const [songSettings, setSongSettings] = useState<any>(null);
+  
+  // Estado de Setlist Activa
+  const [activeSetlist, setActiveSetlist] = useState<any | null>(null);
 
   // Estado para el explorador de carpetas
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
@@ -115,7 +127,41 @@ function MainApp() {
     }
   };
 
-  // Lógica del Explorador de Carpetas
+  const handleSongPress = async (song: SongMetadata) => {
+    try {
+      const content = await FileSystemService.getSongContent(song.id);
+      if (!content) {
+        Alert.alert('Error', 'No se encontró el contenido de la canción. Intenta sincronizar de nuevo.');
+        return;
+      }
+      
+      const settings = await StorageService.getSetting(`song_settings_${song.id}`);
+      
+      setSongContent(content);
+      setSongSettings(settings);
+      setSelectedSong(song);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo abrir la canción.');
+    }
+  };
+
+  const handleSetlistPress = (setlist: any) => {
+    setActiveSetlist(setlist);
+    setActiveTab('songs');
+  };
+
+  const handleSaveSongSettings = async (settings: any) => {
+    if (selectedSong) {
+      await StorageService.saveSetting(`song_settings_${selectedSong.id}`, settings);
+    }
+  };
+
+  // Filtrar canciones si hay una lista activa
+  const displaySongs = activeSetlist 
+    ? songs.filter(s => activeSetlist.songIds.includes(s.id))
+    : songs;
+
+  // Lógica del Explorador de Carpetas Drive
   const openFolderPicker = async (parentId: string = 'root', folderName: string = 'Mi unidad', shared: boolean = false) => {
     setIsLoadingFolders(true);
     setIsFolderPickerOpen(true);
@@ -192,15 +238,25 @@ function MainApp() {
         {/* Contenido Principal */}
         <View style={styles.content}>
           {activeTab === 'songs' ? (
-            <SongList 
-              songs={songs} 
-              onSongPress={(song) => console.log('Open song', song)} 
-              onSyncPress={handleSync}
-            />
+            <View style={{ flex: 1 }}>
+              {activeSetlist && (
+                <View style={styles.activeSetlistHeader}>
+                  <TouchableOpacity onPress={() => setActiveSetlist(null)} style={styles.closeSetlistBtn}>
+                    <ArrowLeft size={20} color="#fff" />
+                  </TouchableOpacity>
+                  <Text style={styles.activeSetlistTitle} numberOfLines={1}>{activeSetlist.name}</Text>
+                </View>
+              )}
+              <SongList 
+                songs={displaySongs} 
+                onSongPress={handleSongPress} 
+                onSyncPress={handleSync}
+              />
+            </View>
           ) : (
             <SetlistList 
               setlists={setlists}
-              onSetlistPress={(setlist) => console.log('Open setlist', setlist)}
+              onSetlistPress={handleSetlistPress}
               onCreatePress={() => console.log('Create setlist')}
             />
           )}
@@ -223,6 +279,26 @@ function MainApp() {
             <Text style={[styles.tabText, activeTab === 'setlists' && styles.activeTabText]}>Listas</Text>
           </TouchableOpacity>
         </View>
+
+        {/* Modal del Visor de Canciones */}
+        <Modal
+          visible={!!selectedSong}
+          animationType="slide"
+          onRequestClose={() => setSelectedSong(null)}
+        >
+          {selectedSong && songContent && (
+            <SongViewer 
+              title={selectedSong.name}
+              content={songContent}
+              onClose={() => {
+                setSelectedSong(null);
+                setSongContent(null);
+              }}
+              initialSettings={songSettings}
+              onSaveSettings={handleSaveSongSettings}
+            />
+          )}
+        </Modal>
 
         {/* Panel de Ajustes */}
         {isSettingsOpen && (
@@ -286,7 +362,6 @@ function MainApp() {
                 </TouchableOpacity>
               </View>
 
-              {/* Selector Mi unidad / Compartidos */}
               <View style={styles.pickerTabs}>
                 <TouchableOpacity 
                   style={[styles.pickerTab, !showShared && styles.activePickerTab]}
@@ -420,6 +495,22 @@ const styles = StyleSheet.create({
   activeTabText: {
     color: COLORS.accent,
     fontWeight: 'bold',
+  },
+  activeSetlistHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.accent,
+    padding: 10,
+    gap: 15,
+  },
+  closeSetlistBtn: {
+    padding: 5,
+  },
+  activeSetlistTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+    flex: 1,
   },
   settingsPanel: {
     position: 'absolute',

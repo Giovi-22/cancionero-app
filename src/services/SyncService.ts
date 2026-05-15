@@ -37,8 +37,12 @@ export class SyncService {
       for (const remoteFile of remoteFiles) {
         const localSong = localSongsMap.get(remoteFile.id);
         
-        // Si no existe o se modificó en la nube
-        if (!localSong || localSong.modifiedTime !== remoteFile.modifiedTime) {
+        // Verificamos si el archivo local realmente existe físicamente
+        const fileContent = await FileSystemService.getSongContent(remoteFile.id);
+        const fileExists = fileContent !== null;
+
+        // Si no existe localmente, o se modificó en la nube, o la ruta guardada estaba mal (como el 'undefined' de antes)
+        if (!localSong || !fileExists || localSong.modifiedTime !== remoteFile.modifiedTime || localSong.localPath.includes('undefined')) {
           songsToUpdate.push({
             id: remoteFile.id,
             name: remoteFile.name,
@@ -69,7 +73,7 @@ export class SyncService {
         await FileSystemService.deleteSongFile(id);
       }
 
-      // 7. Actualizar metadatos finales en SQLite
+      // 7. Actualizar metadatos finales en SQLite (Asegurando rutas correctas)
       const finalMetadata: SongMetadata[] = remoteFiles.map(rf => ({
         id: rf.id,
         name: rf.name,
@@ -97,6 +101,7 @@ export class SyncService {
     for (let i = 0; i < songs.length; i += BATCH_SIZE) {
       const batch = songs.slice(i, i + BATCH_SIZE);
       await Promise.all(batch.map(song => this.downloadAndStoreSong(song)));
+      console.log(`Downloaded batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(songs.length / BATCH_SIZE)}`);
     }
   }
 
