@@ -22,6 +22,7 @@
       "backgroundColor": "#1a1a1a"
     },
     "android": {
+      "package": "com.giovi.cancionero",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"

@@ -1,6 +1,9 @@
 const NOTES_SHARP = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const NOTES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
+const METADATA_LABELS = 'Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse|Acordes|Key|Tempo|Capo';
+const METADATA_REGEX = new RegExp(`^(${METADATA_LABELS}):\\s*`, 'i');
+
 export interface SongBlock {
   chord?: string;
   text: string;
@@ -9,6 +12,7 @@ export interface SongBlock {
 export interface SongLineParsed {
   type: 'chords-lyrics' | 'text' | 'section';
   blocks: SongBlock[];
+  isMetadata?: boolean;
 }
 
 function getNoteIndex(note: string): number {
@@ -61,7 +65,7 @@ function transposeNote(note: string, semitones: number): string {
 export function isMetadataLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
-  return /^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse|Acordes|Key|Tempo|Capo):/i.test(trimmed);
+  return METADATA_REGEX.test(trimmed);
 }
 
 export function isChordLine(line: string): boolean {
@@ -70,9 +74,7 @@ export function isChordLine(line: string): boolean {
 
   const chordRegex = /^[A-G][b#]?(m|maj|min|dim|aug|sus|add|v|i|[0-9]|sus|add|dim|aug|maj|min)*\d*(?:[b#+-]\d+)?(?:\([^)]+\))?(?:\/[A-G][b#]?)?$/i;
 
-  if (isMetadataLine(trimmed)) return false;
-
-  const cleanTrimmed = trimmed.replace(/^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse|Acordes|Key|Tempo|Capo):\s*/i, '');
+  const cleanTrimmed = trimmed.replace(METADATA_REGEX, '');
   if (!cleanTrimmed) return false;
 
   const tokens = cleanTrimmed.split(/\s+/).filter(t => t.length > 0);
@@ -94,13 +96,24 @@ export function transposeText(text: string, semitones: number): string {
   const lines = text.split('\n');
   const transposedLines = lines.map(line => {
     if (isChordLine(line)) {
-      const parts = line.split(/(\s+)/);
-      return parts.map(part => {
+      const labelMatch = line.match(METADATA_REGEX);
+      let prefix = '';
+      let rest = line;
+
+      if (labelMatch) {
+        prefix = labelMatch[0];
+        rest = line.substring(labelMatch[0].length);
+      }
+
+      const parts = rest.split(/(\s+)/);
+      const transposedRest = parts.map(part => {
         if (part.trim() && /^[A-G][b#]?[^\s]*$/i.test(part.trim())) {
           return transposeChord(part.trim(), semitones);
         }
         return part;
       }).join('');
+
+      return prefix + transposedRest;
     }
     return line;
   });
@@ -177,6 +190,7 @@ export function parseSongToBlocks(text: string): SongLineParsed[] {
     if (isChordLine(currentLine)) {
       result.push({
         type: 'chords-lyrics',
+        isMetadata: isMetadataLine(currentLine),
         blocks: parseChordsOnly(currentLine)
       });
       continue;
@@ -268,7 +282,7 @@ function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLinePar
 
 function parseChordsOnly(line: string): SongBlock[] {
   const blocks: SongBlock[] = [];
-  const labelMatch = line.match(/^(Intro|Solo|Outro|Puente|Bridge|Instrumental|Tono|BPM|Compás|NOTA|Note|Final|Interludio|Estrofa|Coro|Chorus|Verse):\s*/i);
+  const labelMatch = line.match(METADATA_REGEX);
   let processLine = line;
 
   if (labelMatch) {
@@ -284,16 +298,29 @@ function parseChordsOnly(line: string): SongBlock[] {
     chords.push({ chord: match[0], index: match.index });
   }
 
+  if (chords.length === 0) return blocks;
+
+  // Add spacing before first chord to the label block if it exists
+  if (chords[0].index > 0) {
+    const initialSpace = processLine.substring(0, chords[0].index);
+    if (blocks.length > 0) {
+      blocks[0].text += initialSpace;
+    } else {
+      blocks.push({ text: initialSpace });
+    }
+  }
+
   for (let i = 0; i < chords.length; i++) {
     const current = chords[i];
     const next = chords[i + 1];
-    let spaceCount = 3;
+    let spaceCount = 1;
     if (next) {
-      spaceCount = Math.max(3, next.index - (current.index + current.chord.length));
+      spaceCount = next.index - (current.index + current.chord.length);
     }
     blocks.push({
       chord: current.chord,
-      text: ' '.repeat(spaceCount)
+      // text length must be at least chord length + spaceCount to ensure enough width for the next block
+      text: ' '.repeat(current.chord.length + Math.max(1, spaceCount))
     });
   }
 

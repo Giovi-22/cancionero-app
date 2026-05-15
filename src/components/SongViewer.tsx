@@ -19,6 +19,8 @@ const COLORS = {
   mutedForeground: '#a0a0a0', accent: '#3b82f6', border: '#333333'
 };
 
+const FOOTER_TEXT = "Ministerio de Alabanza ICBS";
+
 interface SongViewerProps {
   content: string;
   title: string;
@@ -104,7 +106,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
   // ── Procesar canción ───────────────────────────
   const parsedLines = useMemo(() => {
-    const cleaned = cleanSongText(content);
+    const contentWithoutFooter = content.replace(new RegExp(FOOTER_TEXT, 'gi'), '');
+    const cleaned = cleanSongText(contentWithoutFooter);
     const transposed = transposeText(cleaned, transpose - capo);
     const trimmed = trimCommonIndentation(transposed);
     return parseSongToBlocks(trimmed);
@@ -250,9 +253,17 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                 >
                   <View style={styles.blocksContainer}>
                     {line.blocks.map((block, bIndex) => (
-                      <View key={bIndex} style={[styles.block, isTitle && { width: '100%', alignItems: 'center' }]}>
+                      <View key={bIndex} style={[
+                        styles.block,
+                        isTitle && { width: '100%', alignItems: 'center' },
+                        line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' }
+                      ]}>
                         {block.chord && viewMode !== 'lyrics' && (
-                          <Text style={[styles.chordText, { fontSize: fontSize * 0.9 }]}>{block.chord}</Text>
+                          <Text style={[
+                            styles.chordText,
+                            { fontSize: fontSize * 0.9 },
+                            line.isMetadata && { marginRight: 4 }
+                          ]}>{block.chord}</Text>
                         )}
                         <Text style={[
                           styles.lyricText,
@@ -294,6 +305,11 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               </View>
             );
           })}
+        </View>
+
+        <View style={styles.footerContainer}>
+          <View style={styles.footerLine} />
+          <Text style={styles.footerText}>{FOOTER_TEXT}</Text>
         </View>
       </ScrollView>
 
@@ -574,4 +590,24 @@ const styles = StyleSheet.create({
   toggleTextActive: { color: '#fff', fontWeight: 'bold' },
   doneBtn: { backgroundColor: COLORS.accent, padding: 15, borderRadius: 15, alignItems: 'center', marginTop: 25 },
   doneBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
+  footerContainer: {
+    paddingBottom: 60,
+    paddingHorizontal: 20,
+    alignItems: 'center',
+    width: '100%',
+  },
+  footerLine: {
+    width: '100%',
+    height: 1,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    marginBottom: 15,
+  },
+  footerText: {
+    color: COLORS.mutedForeground,
+    fontSize: 12,
+    fontWeight: '500',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+    opacity: 0.6,
+  },
 });
