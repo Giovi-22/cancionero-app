@@ -54,6 +54,7 @@ import { SetlistList } from './src/components/SetlistList';
 import { SongViewer } from './src/components/SongViewer';
 import { LiveSessionService, LiveSession } from './src/services/LiveSessionService';
 import { SongMetadata } from './src/types';
+import * as NavigationBar from 'expo-navigation-bar';
 
 const { width } = Dimensions.get('window');
 
@@ -125,6 +126,12 @@ function MainApp() {
 
   useEffect(() => {
     loadInitialData();
+
+    if (Platform.OS === 'android') {
+      NavigationBar.setBackgroundColorAsync('#0a0a0a').catch(() => {});
+      NavigationBar.setVisibilityAsync('hidden').catch(() => {});
+      NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => {});
+    }
     
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
@@ -421,9 +428,9 @@ function MainApp() {
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: COLORS.background }}
     >
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
         <StatusBar style="light" />
         
         {/* Header */}
@@ -983,7 +990,7 @@ function MainApp() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
+    <SafeAreaProvider style={{ flex: 1, backgroundColor: COLORS.background }}>
       <MainApp />
     </SafeAreaProvider>
   );

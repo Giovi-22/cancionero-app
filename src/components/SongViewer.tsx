@@ -4,6 +4,7 @@ import {
   Dimensions, TextInput, Keyboard, Platform, AppState,
   PanResponder, Animated
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft, ChevronRight, Settings, Play, Pause, Maximize2,
   Plus, Minus, X, StickyNote, Clock, Radio
@@ -61,6 +62,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const [bpm, setBpm] = useState(initialSettings?.bpm || 120);
   const [isMetronomeActive, setIsMetronomeActive] = useState(false);
   const [beat, setBeat] = useState(false);
+
+  const insets = useSafeAreaInsets();
 
   const scrollRef = useRef<ScrollView>(null);
   const scrollPosRef = useRef(0);
@@ -221,7 +224,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       )}
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 5 }]}>
         <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
           <ChevronLeft size={28} color={COLORS.foreground} />
         </TouchableOpacity>
@@ -366,7 +369,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
       {/* Barra flotante */}
       {!isSettingsOpen ? (
-        <View style={styles.floatingBar}>
+        <View style={[styles.floatingBar, { bottom: Math.max(insets.bottom, 20) + 10 }]}>
           <View style={styles.controlGroup}>
             <TouchableOpacity onPress={() => setTranspose(p => p - 1)} style={styles.smallBtn}>
               <Minus size={18} color="#fff" />
