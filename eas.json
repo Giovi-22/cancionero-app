@@ -10,6 +10,11 @@
     "preview": {
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "https://olylobxxlntvlfejvaog.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_C8HJEEf3hx2e_oh4wHyVVg_oTkrJYKM",
+        "EXPO_PUBLIC_DRIVE_FOLDER_ID": "1PYFMlc10NcEScXcF6KzbbhtTLKZ3pB5L"
       }
     },
     "production": {}
