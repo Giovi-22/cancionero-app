@@ -24,10 +24,7 @@ export class AuthService {
    * Inicia sesión con Google usando Supabase
    */
   public async signInWithGoogle() {
-    const redirectUrl = AuthSession.makeRedirectUri({
-      scheme: 'cancionero-app',
-      path: 'auth/callback',
-    });
+    const redirectUrl = AuthSession.makeRedirectUri();
     
     console.log('--- REDIRECT URL:', redirectUrl, '---');
     
