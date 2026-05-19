@@ -55,6 +55,7 @@ import { SongViewer } from './src/components/SongViewer';
 import { LiveSessionService, LiveSession } from './src/services/LiveSessionService';
 import { SongMetadata } from './src/types';
 import * as NavigationBar from 'expo-navigation-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const { width } = Dimensions.get('window');
 
@@ -649,8 +650,7 @@ function MainApp() {
                 isSetlistMode={!!activeSetlist}
                 onRemoveFromSetlist={activeSetlist ? handleRemoveSongFromSetlist : undefined}
                 onAddSongsPress={handleOpenEditSetlist}
-                onMoveUp={activeSetlist ? (idx) => handleMoveSong(idx, idx - 1) : undefined}
-                onMoveDown={activeSetlist ? (idx) => handleMoveSong(idx, idx + 1) : undefined}
+                onReorder={activeSetlist ? handleMoveSong : undefined}
               />
             </View>
           )}
@@ -990,9 +990,11 @@ function MainApp() {
 
 export default function App() {
   return (
-    <SafeAreaProvider style={{ flex: 1, backgroundColor: COLORS.background }}>
-      <MainApp />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <MainApp />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
