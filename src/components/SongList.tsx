@@ -1,14 +1,19 @@
 import React from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, ScrollView } from 'react-native';
+import { Dimensions, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
+  useAnimatedScrollHandler,
+  useAnimatedRef,
   withSpring,
   runOnJS,
+  scrollTo,
 } from 'react-native-reanimated';
 import { Music, ChevronRight, Trash2, GripVertical } from 'lucide-react-native';
 import { SongMetadata } from '../types';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const COLORS = {
   background: '#0a0a0a',
@@ -19,7 +24,14 @@ const COLORS = {
   border: '#333333',
 };
 
+// Approximate height of everything above the song list (tabs, header, safe area)
+// Adjust if the list is offset more/less on your device
+const HEADER_OFFSET = 130;
 const ITEM_HEIGHT = 85;
+const AUTOSCROLL_THRESHOLD = 100;
+const AUTOSCROLL_SPEED = 12;
+
+// ── Props ───────────────────────────────────────────────────────────────────
 
 interface SongListProps {
   songs: SongMetadata[];
@@ -31,7 +43,7 @@ interface SongListProps {
   onReorder?: (fromIndex: number, toIndex: number) => void;
 }
 
-// ── Helpers (must be worklets) ─────────────────────────────────────────────
+// ── Worklet helpers ─────────────────────────────────────────────────────────
 
 function clamp(value: number, lower: number, upper: number) {
   'worklet';
@@ -45,13 +57,9 @@ function objectMove(object: Record<string, number>, from: number, to: number) {
     if (object[id] === from) {
       newObject[id] = to;
     } else if (from < to) {
-      if (object[id] > from && object[id] <= to) {
-        newObject[id] = object[id] - 1;
-      }
+      if (object[id] > from && object[id] <= to) newObject[id] = object[id] - 1;
     } else {
-      if (object[id] < from && object[id] >= to) {
-        newObject[id] = object[id] + 1;
-      }
+      if (object[id] < from && object[id] >= to) newObject[id] = object[id] + 1;
     }
   }
   return newObject;
@@ -63,6 +71,8 @@ interface SortableItemProps {
   song: SongMetadata;
   initialIndex: number;
   positions: Animated.SharedValue<Record<string, number>>;
+  scrollY: Animated.SharedValue<number>;
+  scrollRef: any;
   total: number;
   isSetlistMode?: boolean;
   onSongPress: (song: SongMetadata) => void;
@@ -74,6 +84,8 @@ function SortableItem({
   song,
   initialIndex,
   positions,
+  scrollY,
+  scrollRef,
   total,
   isSetlistMode,
   onSongPress,
@@ -82,8 +94,7 @@ function SortableItem({
 }: SortableItemProps) {
   const isDragging = useSharedValue(false);
   const startPosition = useSharedValue(-1);
-  // Use the plain JS initialIndex (not positions.value) to avoid reading SharedValue during render
-  const translateY = useSharedValue(initialIndex * ITEM_HEIGHT);
+  const top = useSharedValue(initialIndex * ITEM_HEIGHT);
 
   const notifyReorder = (from: number, to: number) => {
     if (from !== to) onReorder?.(from, to);
@@ -95,52 +106,64 @@ function SortableItem({
       startPosition.value = positions.value[song.id];
     })
     .onUpdate((e) => {
-      translateY.value = startPosition.value * ITEM_HEIGHT + e.translationY;
+      // Absolute position within the scrollable content
+      const absoluteY = e.absoluteY + scrollY.value - HEADER_OFFSET;
+      top.value = absoluteY;
 
-      const newPosition = clamp(
-        Math.floor(translateY.value / ITEM_HEIGHT + 0.5),
-        0,
-        total - 1,
-      );
-      const currentPosition = positions.value[song.id];
+      // ── Autoscroll up ──────────────────────────────────────
+      if (e.absoluteY < AUTOSCROLL_THRESHOLD) {
+        const nextScroll = Math.max(0, scrollY.value - AUTOSCROLL_SPEED);
+        scrollTo(scrollRef, 0, nextScroll, false);
+        scrollY.value = nextScroll;
+      }
 
-      if (newPosition !== currentPosition) {
-        positions.value = objectMove(positions.value, currentPosition, newPosition);
+      // ── Autoscroll down ────────────────────────────────────
+      if (e.absoluteY > SCREEN_HEIGHT - AUTOSCROLL_THRESHOLD) {
+        const maxScroll = total * ITEM_HEIGHT - SCREEN_HEIGHT;
+        const nextScroll = Math.min(maxScroll, scrollY.value + AUTOSCROLL_SPEED);
+        scrollTo(scrollRef, 0, nextScroll, false);
+        scrollY.value = nextScroll;
+      }
+
+      // ── Swap logic ─────────────────────────────────────────
+      const newIndex = clamp(Math.floor(absoluteY / ITEM_HEIGHT), 0, total - 1);
+      const currentIndex = positions.value[song.id];
+
+      if (newIndex !== currentIndex) {
+        positions.value = objectMove(positions.value, currentIndex, newIndex);
       }
     })
     .onEnd(() => {
       const finalIdx = positions.value[song.id];
-      translateY.value = withSpring(finalIdx * ITEM_HEIGHT);
+      top.value = withSpring(finalIdx * ITEM_HEIGHT);
       isDragging.value = false;
       runOnJS(notifyReorder)(startPosition.value, finalIdx);
     });
 
   const animatedStyle = useAnimatedStyle(() => {
     if (!isDragging.value) {
-      translateY.value = withSpring(positions.value[song.id] * ITEM_HEIGHT);
+      top.value = withSpring(positions.value[song.id] * ITEM_HEIGHT);
     }
     return {
       position: 'absolute',
-      width: '100%',
+      top: top.value,
+      left: 0,
+      right: 0,
       height: ITEM_HEIGHT,
-      top: 0,
-      transform: [
-        { translateY: translateY.value },
-        { scale: withSpring(isDragging.value ? 1.03 : 1) },
-      ],
-      zIndex: isDragging.value ? 100 : 0,
+      zIndex: isDragging.value ? 999 : 0,
       shadowColor: isDragging.value ? '#000' : 'transparent',
       shadowOffset: { width: 0, height: isDragging.value ? 10 : 0 },
       shadowOpacity: isDragging.value ? 0.4 : 0,
       shadowRadius: isDragging.value ? 10 : 0,
       elevation: isDragging.value ? 15 : 2,
+      transform: [{ scale: withSpring(isDragging.value ? 1.03 : 1) }],
     };
   });
 
   return (
     <Animated.View style={animatedStyle}>
       <View style={styles.songRow}>
-        {/* Grip handle — only visible in setlist mode */}
+        {/* Grip handle */}
         {isSetlistMode && (
           <GestureDetector gesture={gesture}>
             <View style={styles.gripHandle}>
@@ -198,7 +221,15 @@ export const SongList: React.FC<SongListProps> = ({
   onAddSongsPress,
   onReorder,
 }) => {
-  // Build the positions shared value — index by song.id
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollY = useSharedValue(0);
+
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (e) => {
+      scrollY.value = e.contentOffset.y;
+    },
+  });
+
   const positions = useSharedValue<Record<string, number>>(
     songs.reduce((acc, song, i) => {
       acc[song.id] = i;
@@ -206,7 +237,6 @@ export const SongList: React.FC<SongListProps> = ({
     }, {} as Record<string, number>),
   );
 
-  // Sync positions when the songs array changes from outside (e.g. after save)
   React.useEffect(() => {
     positions.value = songs.reduce((acc, song, i) => {
       acc[song.id] = i;
@@ -238,12 +268,15 @@ export const SongList: React.FC<SongListProps> = ({
     );
   }
 
-  const listHeight = songs.length * ITEM_HEIGHT;
+  const listHeight = songs.length * ITEM_HEIGHT + 100; // +100 bottom padding
 
   return (
-    <ScrollView
+    <Animated.ScrollView
+      ref={scrollRef}
       style={styles.container}
-      contentContainerStyle={[styles.scrollContent, { paddingBottom: 100 }]}
+      onScroll={scrollHandler}
+      scrollEventThrottle={16}
+      contentContainerStyle={{ height: listHeight, paddingHorizontal: 16 }}
     >
       <View style={{ height: listHeight, position: 'relative' }}>
         {songs.map((song, i) => (
@@ -252,6 +285,8 @@ export const SongList: React.FC<SongListProps> = ({
             song={song}
             initialIndex={i}
             positions={positions}
+            scrollY={scrollY}
+            scrollRef={scrollRef}
             total={songs.length}
             isSetlistMode={isSetlistMode}
             onSongPress={onSongPress}
@@ -260,7 +295,7 @@ export const SongList: React.FC<SongListProps> = ({
           />
         ))}
       </View>
-    </ScrollView>
+    </Animated.ScrollView>
   );
 };
 
@@ -269,9 +304,6 @@ export const SongList: React.FC<SongListProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  scrollContent: {
-    padding: 16,
   },
   emptyState: {
     flex: 1,
