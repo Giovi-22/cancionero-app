@@ -9,6 +9,7 @@ import Animated, {
   withSpring,
   runOnJS,
   scrollTo,
+  SharedValue,
 } from 'react-native-reanimated';
 import { Music, ChevronRight, Trash2, GripVertical } from 'lucide-react-native';
 import { SongMetadata } from '../types';
@@ -70,8 +71,8 @@ function objectMove(object: Record<string, number>, from: number, to: number) {
 interface SortableItemProps {
   song: SongMetadata;
   initialIndex: number;
-  positions: Animated.SharedValue<Record<string, number>>;
-  scrollY: Animated.SharedValue<number>;
+  positions: SharedValue<Record<string, number>>;
+  scrollY: SharedValue<number>;
   scrollRef: any;
   total: number;
   isSetlistMode?: boolean;

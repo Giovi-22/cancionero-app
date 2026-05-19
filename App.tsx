@@ -417,7 +417,7 @@ function MainApp() {
     newStack.pop();
     const prevFolder = newStack[newStack.length - 1];
     setNavigationStack(newStack);
-    openFolderPicker(prevFolder.id, prevFolder.name, showShared && newStack.length === 1);
+    openFolderPicker(prevFolder.id, prevFolder.name, showShared);
   };
 
   const selectFolder = (id: string) => {
