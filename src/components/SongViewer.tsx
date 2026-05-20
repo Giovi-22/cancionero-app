@@ -7,7 +7,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft, ChevronRight, Settings, Play, Pause, Maximize2,
-  Plus, Minus, X, StickyNote, Clock, Radio, Edit2
+  Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List
 } from 'lucide-react-native';
 import {
   transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks
@@ -394,13 +394,17 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         </View>
       </ScrollView>
 
-      {/* Widget flotante draggable del Director */}
-      {isDirector && setlistSongs.length > 0 && (() => {
+      {/* Widget flotante draggable del Director o navegación de Lista local */}
+      {(isDirector || (setlistSongs.length > 0 && !followSessionId)) && (() => {
         const idx = setlistSongs.findIndex(s => s.id === songId);
         const currentName = setlistSongs[idx]?.name || '';
         return (
           <Animated.View
-            style={[styles.directorWidget, { left: dragPos.x, top: dragPos.y }]}
+            style={[
+              styles.directorWidget,
+              !isDirector && { backgroundColor: 'rgba(16, 185, 129, 0.92)' }, // green for local setlist navigation
+              { left: dragPos.x, top: dragPos.y }
+            ]}
             {...panResponder.panHandlers}
           >
             {/* Handle de arrastre */}
@@ -413,8 +417,14 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             <View style={styles.widgetBody}>
               {/* Indicador */}
               <View style={styles.widgetBadge}>
-                <Radio size={10} color="#fff" />
-                <Text style={styles.widgetBadgeText}>DIRECTOR</Text>
+                {isDirector ? (
+                  <Radio size={10} color="#fff" />
+                ) : (
+                  <List size={10} color="#fff" />
+                )}
+                <Text style={styles.widgetBadgeText}>
+                  {isDirector ? 'DIRECTOR' : 'LISTA'}
+                </Text>
               </View>
 
               {/* Nombre canción actual */}

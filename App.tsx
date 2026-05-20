@@ -40,7 +40,8 @@ import {
   Edit2,
   CheckSquare,
   Square,
-  Plus
+  Plus,
+  Play
 } from 'lucide-react-native';
 import { supabase } from './src/lib/supabase';
 import { authService } from './src/services/AuthService';
@@ -116,6 +117,7 @@ function MainApp() {
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
   const [navigationStack, setNavigationStack] = useState<any[]>([{ id: 'root', name: 'Mi unidad' }]);
   const [showShared, setShowShared] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const formatDate = (isoString: string) => {
     const d = new Date(isoString);
@@ -148,6 +150,11 @@ function MainApp() {
       unsubSessions();
     };
   }, []);
+
+  // Limpiar buscador al cambiar de pestaña o de lista
+  useEffect(() => {
+    setSearchQuery('');
+  }, [activeTab, activeSetlist]);
 
   // Actualizar "mi sesión de director" cuando cambian las sesiones
   useEffect(() => {
@@ -193,6 +200,17 @@ function MainApp() {
     const songsOfList = setlist.songIds.map((id: string) => songs.find((s: SongMetadata) => s.id === id)).filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) handleSongPress(songsOfList[0]);
+  };
+
+  // ── Local: Iniciar lista localmente (abre primera canción sin ser director) ──
+  const handleStartSetlistLocally = (setlist: any) => {
+    const songsOfList = setlist.songIds.map((id: string) => songs.find((s: SongMetadata) => s.id === id)).filter(Boolean) as SongMetadata[];
+    setSetlistSongs(songsOfList);
+    if (songsOfList.length > 0) {
+      handleSongPress(songsOfList[0]);
+    } else {
+      Alert.alert('Lista vacía', 'Agrega canciones a la lista para poder iniciarla.');
+    }
   };
 
   // ── Director: Navegar canción siguiente ───────────
@@ -385,11 +403,18 @@ function MainApp() {
     }
   };
 
-  // Filtrar canciones si hay una lista activa
   // Filtrar canciones si hay una lista activa (manteniendo el orden del setlist)
-  const displaySongs = activeSetlist
+  let displaySongs = activeSetlist
     ? activeSetlist.songIds.map((id: string) => songs.find(s => s.id === id)).filter(Boolean) as SongMetadata[]
     : songs;
+
+  // Filtrar por la búsqueda del buscador
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase();
+    displaySongs = displaySongs.filter(s => 
+      s.name.toLowerCase().includes(q)
+    );
+  }
 
   // Lógica del Explorador de Carpetas Drive
   const openFolderPicker = async (parentId: string = 'root', folderName: string = 'Mi unidad', shared: boolean = false) => {
@@ -593,7 +618,7 @@ function MainApp() {
                       </Text>
                       <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
                     </TouchableOpacity>
-                    {user && (
+                    {user ? (
                       <TouchableOpacity
                         style={[styles.startShowBtn, myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive]}
                         onPress={() => handleStartShow(setlist)}
@@ -602,6 +627,14 @@ function MainApp() {
                         <Text style={styles.startShowText}>
                           {myDirectorSession?.setlist_id === setlist.id ? 'En Vivo' : 'Iniciar'}
                         </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.startShowBtn}
+                        onPress={() => handleStartSetlistLocally(setlist)}
+                      >
+                        <Play size={12} color="#fff" />
+                        <Text style={styles.startShowText}>Iniciar</Text>
                       </TouchableOpacity>
                     )}
                   </View>
@@ -630,7 +663,7 @@ function MainApp() {
                     </TouchableOpacity>
                   </View>
 
-                  {user && (
+                  {user ? (
                     <TouchableOpacity
                       style={[styles.startShowHeaderBtn, myDirectorSession?.setlist_id === activeSetlist.id && styles.startShowHeaderBtnActive]}
                       onPress={() => handleStartShowFromSetlist(activeSetlist)}
@@ -640,9 +673,36 @@ function MainApp() {
                         {myDirectorSession?.setlist_id === activeSetlist.id ? 'En Vivo' : 'Iniciar Show'}
                       </Text>
                     </TouchableOpacity>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.startShowHeaderBtn}
+                      onPress={() => handleStartSetlistLocally(activeSetlist)}
+                    >
+                      <Play size={14} color="#fff" />
+                      <Text style={styles.startShowHeaderText}>Iniciar</Text>
+                    </TouchableOpacity>
                   )}
                 </View>
               )}
+              {/* Buscador de canciones */}
+              <View style={styles.searchContainer}>
+                <Search size={18} color={COLORS.mutedForeground} style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder={activeSetlist ? "Buscar en esta lista..." : "Buscar canción..."}
+                  placeholderTextColor={COLORS.mutedForeground}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+                    <X size={16} color={COLORS.foreground} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
               <SongList
                 songs={displaySongs}
                 onSongPress={handleSongPress}
@@ -1297,6 +1357,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     flex: 1,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginVertical: 10,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: COLORS.foreground,
+    fontSize: 15,
+    paddingVertical: 8,
+  },
+  clearSearchBtn: {
+    padding: 4,
   },
   settingsPanel: {
     position: 'absolute',
