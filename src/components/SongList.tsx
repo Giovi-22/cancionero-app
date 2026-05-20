@@ -175,7 +175,7 @@ function SortableItem({
 
         {/* Song card */}
         <TouchableOpacity
-          style={[styles.songItem, isSetlistMode && { flex: 1, marginBottom: 0 }]}
+          style={[styles.songItem, isSetlistMode && { marginBottom: 0 }]}
           onPress={() => onSongPress(song)}
           activeOpacity={0.7}
         >
@@ -353,6 +353,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: COLORS.border,
     height: ITEM_HEIGHT - 12,
+    flex: 1,
   },
   songInfo: {
     flex: 1,
