@@ -8,6 +8,7 @@
       "distribution": "internal"
     },
     "preview": {
+      "channel": "preview",
       "android": {
         "buildType": "apk"
       },
@@ -17,7 +18,9 @@
         "EXPO_PUBLIC_DRIVE_FOLDER_ID": "1PYFMlc10NcEScXcF6KzbbhtTLKZ3pB5L"
       }
     },
-    "production": {}
+    "production": {
+      "channel": "production"
+    }
   },
   "submit": {
     "production": {}

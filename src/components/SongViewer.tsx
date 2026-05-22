@@ -47,12 +47,16 @@ const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew
   const [isEditing, setIsEditing] = useState(!!isNew);
   const [text, setText] = useState(initialText || '');
 
+  // Keep a mutable ref of the dynamic values to avoid stale closures in PanResponder
+  const stateRef = useRef({ isEditing, text, id, onUpdate, setScrollEnabled, isStageMode });
+  stateRef.current = { isEditing, text, id, onUpdate, setScrollEnabled, isStageMode };
+
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !isEditing,
-      onMoveShouldSetPanResponder: (_, g) => !isEditing && (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5),
+      onStartShouldSetPanResponder: () => !stateRef.current.isEditing && !stateRef.current.isStageMode,
+      onMoveShouldSetPanResponder: (_, g) => !stateRef.current.isEditing && !stateRef.current.isStageMode && (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5),
       onPanResponderGrant: () => {
-        setScrollEnabled(false);
+        stateRef.current.setScrollEnabled(false);
         pan.setOffset(offset.current);
         pan.setValue({ x: 0, y: 0 });
       },
@@ -63,11 +67,21 @@ const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew
       onPanResponderRelease: () => {
         pan.flattenOffset();
         offset.current = { x: (pan.x as any)._value, y: (pan.y as any)._value };
-        onUpdate(id, text, offset.current.x, offset.current.y);
-        setScrollEnabled(true);
+        stateRef.current.onUpdate(
+          stateRef.current.id,
+          stateRef.current.text,
+          offset.current.x,
+          offset.current.y
+        );
+        stateRef.current.setScrollEnabled(true);
       }
     })
   ).current;
+
+  useEffect(() => {
+    pan.setValue({ x: initialX || 0, y: initialY || 0 });
+    offset.current = { x: initialX || 0, y: initialY || 0 };
+  }, [initialX, initialY]);
 
   const handleSave = () => {
     setIsEditing(false);
@@ -81,7 +95,7 @@ const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew
         { position: 'absolute', transform: pan.getTranslateTransform(), zIndex: 100 },
         isEditing && { width: 200 }
       ]}
-      {...panResponder.panHandlers}
+      {...(isStageMode ? {} : panResponder.panHandlers)}
     >
       {isEditing ? (
         <View style={styles.noteEditor}>

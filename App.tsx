@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect } from 'react';
+import * as Updates from 'expo-updates';
 import {
   StyleSheet,
   Text,
@@ -618,25 +619,26 @@ function MainApp() {
                       </Text>
                       <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
                     </TouchableOpacity>
-                    {user ? (
+                    <View style={{ flexDirection: 'row', gap: 5, marginTop: 8 }}>
                       <TouchableOpacity
-                        style={[styles.startShowBtn, myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive]}
-                        onPress={() => handleStartShow(setlist)}
-                      >
-                        <Radio size={12} color="#fff" />
-                        <Text style={styles.startShowText}>
-                          {myDirectorSession?.setlist_id === setlist.id ? 'En Vivo' : 'Iniciar'}
-                        </Text>
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity
-                        style={styles.startShowBtn}
+                        style={[styles.startShowBtn, { marginTop: 0, flex: 1, justifyContent: 'center' }]}
                         onPress={() => handleStartSetlistLocally(setlist)}
                       >
                         <Play size={12} color="#fff" />
                         <Text style={styles.startShowText}>Iniciar</Text>
                       </TouchableOpacity>
-                    )}
+                      {user && (
+                        <TouchableOpacity
+                          style={[styles.startShowBtn, myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive, { marginTop: 0, flex: 1, justifyContent: 'center' }]}
+                          onPress={() => handleStartShow(setlist)}
+                        >
+                          <Radio size={12} color="#fff" />
+                          <Text style={styles.startShowText} numberOfLines={1}>
+                            {myDirectorSession?.setlist_id === setlist.id ? 'Vivo' : 'Show'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 ))}
               </ScrollView>
@@ -663,7 +665,14 @@ function MainApp() {
                     </TouchableOpacity>
                   </View>
 
-                  {user ? (
+                  <TouchableOpacity
+                    style={styles.startShowHeaderBtn}
+                    onPress={() => handleStartSetlistLocally(activeSetlist)}
+                  >
+                    <Play size={14} color="#fff" />
+                    <Text style={styles.startShowHeaderText}>Iniciar</Text>
+                  </TouchableOpacity>
+                  {user && (
                     <TouchableOpacity
                       style={[styles.startShowHeaderBtn, myDirectorSession?.setlist_id === activeSetlist.id && styles.startShowHeaderBtnActive]}
                       onPress={() => handleStartShowFromSetlist(activeSetlist)}
@@ -672,14 +681,6 @@ function MainApp() {
                       <Text style={styles.startShowHeaderText}>
                         {myDirectorSession?.setlist_id === activeSetlist.id ? 'En Vivo' : 'Iniciar Show'}
                       </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.startShowHeaderBtn}
-                      onPress={() => handleStartSetlistLocally(activeSetlist)}
-                    >
-                      <Play size={14} color="#fff" />
-                      <Text style={styles.startShowHeaderText}>Iniciar</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -1048,11 +1049,70 @@ function MainApp() {
   );
 }
 
+const UpdateNotification = () => {
+  const { isUpdatePending } = Updates.useUpdates();
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (isUpdatePending) {
+      setDismissed(false);
+    }
+  }, [isUpdatePending]);
+
+  if (!isUpdatePending || dismissed) {
+    return null;
+  }
+
+  const handleReload = async () => {
+    try {
+      await Updates.reloadAsync();
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo reiniciar la aplicación.');
+    }
+  };
+
+  return (
+    <Modal
+      transparent
+      animationType="fade"
+      visible={isUpdatePending && !dismissed}
+      onRequestClose={() => setDismissed(true)}
+    >
+      <View style={styles.updateModalOverlay}>
+        <View style={styles.updateModalCard}>
+          <View style={styles.updateModalHeader}>
+            <RefreshCcw size={24} color={COLORS.accent} style={{ marginRight: 10 }} />
+            <Text style={styles.updateModalTitle}>Actualización Lista</Text>
+          </View>
+          <Text style={styles.updateModalText}>
+            Una nueva versión de la aplicación ha sido descargada. ¿Querés reiniciar ahora para aplicar los cambios?
+          </Text>
+          <View style={styles.updateModalActions}>
+            <TouchableOpacity
+              style={styles.updateModalCancel}
+              onPress={() => setDismissed(true)}
+            >
+              <Text style={styles.updateModalCancelText}>Más tarde</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.updateModalConfirm}
+              onPress={handleReload}
+            >
+              <Text style={styles.updateModalConfirmText}>Reiniciar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider style={{ flex: 1, backgroundColor: COLORS.background }}>
         <MainApp />
+        <UpdateNotification />
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
@@ -1729,5 +1789,71 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  // Modal de actualización OTA
+  updateModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+  },
+  updateModalCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  updateModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  updateModalTitle: {
+    color: COLORS.foreground,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  updateModalText: {
+    color: COLORS.mutedForeground,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  updateModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 12,
+  },
+  updateModalCancel: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.border,
+    alignItems: 'center',
+  },
+  updateModalCancelText: {
+    color: COLORS.foreground,
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  updateModalConfirm: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.accent,
+    alignItems: 'center',
+  },
+  updateModalConfirmText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
   }
 });
