@@ -2,18 +2,19 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   StyleSheet, Text, View, ScrollView, TouchableOpacity,
   Dimensions, TextInput, Keyboard, Platform, AppState,
-  PanResponder, Animated
+  PanResponder, Animated, Alert, ActivityIndicator
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft, ChevronRight, Settings, Play, Pause, Maximize2,
-  Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List
+  Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List, Share2
 } from 'lucide-react-native';
 import {
   transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks
 } from '../utils/chordUtils';
 import { LiveSessionService } from '../services/LiveSessionService';
 import { SongMetadata } from '../types';
+import { PdfService } from '../services/PdfService';
 
 const COLORS = {
   background: '#0a0a0a', surface: '#1a1a1a', foreground: '#ffffff',
@@ -151,6 +152,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const [isMetronomeActive, setIsMetronomeActive] = useState(false);
   const [beat, setBeat] = useState(false);
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   // Aislar estado por canción
   const prevSongId = useRef(songId);
@@ -303,6 +305,45 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     }));
   };
 
+  const handleSharePdf = () => {
+    Alert.alert(
+      'Exportar a PDF',
+      'Elige el formato del PDF para compartir',
+      [
+        {
+          text: 'Con Acordes (Tono Actual)',
+          onPress: async () => {
+            setIsGeneratingPdf(true);
+            try {
+              await PdfService.generateAndShare(title, parsedLines, 'all', transpose, capo, bpm);
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'No se pudo generar el PDF');
+            } finally {
+              setIsGeneratingPdf(false);
+            }
+          }
+        },
+        {
+          text: 'Solo Letra',
+          onPress: async () => {
+            setIsGeneratingPdf(true);
+            try {
+              await PdfService.generateAndShare(title, parsedLines, 'lyrics', transpose, capo, bpm);
+            } catch (error: any) {
+              Alert.alert('Error', error.message || 'No se pudo generar el PDF');
+            } finally {
+              setIsGeneratingPdf(false);
+            }
+          }
+        },
+        {
+          text: 'Cancelar',
+          style: 'cancel'
+        }
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Indicador de metrónomo */}
@@ -324,9 +365,22 @@ export const SongViewer: React.FC<SongViewerProps> = ({
           <ChevronLeft size={28} color={COLORS.foreground} />
         </TouchableOpacity>
         <Text style={styles.title} numberOfLines={1}>{title}</Text>
-        <TouchableOpacity onPress={() => setIsStageMode(!isStageMode)} style={styles.headerBtn}>
-          <Maximize2 size={24} color={isStageMode ? COLORS.accent : COLORS.foreground} />
-        </TouchableOpacity>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TouchableOpacity 
+            onPress={handleSharePdf} 
+            style={[styles.headerBtn, { marginRight: 8 }]} 
+            disabled={isGeneratingPdf}
+          >
+            {isGeneratingPdf ? (
+              <ActivityIndicator size="small" color={COLORS.accent} />
+            ) : (
+              <Share2 size={22} color={COLORS.foreground} />
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setIsStageMode(!isStageMode)} style={styles.headerBtn}>
+            <Maximize2 size={24} color={isStageMode ? COLORS.accent : COLORS.foreground} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Contenido */}
