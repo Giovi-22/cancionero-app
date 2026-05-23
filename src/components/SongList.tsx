@@ -143,7 +143,10 @@ function SortableItem({
 
   const animatedStyle = useAnimatedStyle(() => {
     if (!isDragging.value) {
-      top.value = withSpring(positions.value[song.id] * ITEM_HEIGHT);
+      const pos = positions.value[song.id];
+      // Guard: si pos es undefined (timing entre JS y UI thread), usar initialIndex
+      const targetPos = pos !== undefined ? pos : initialIndex;
+      top.value = withSpring(targetPos * ITEM_HEIGHT);
     }
     return {
       position: 'absolute',
@@ -231,19 +234,13 @@ export const SongList: React.FC<SongListProps> = ({
     },
   });
 
-  const positions = useSharedValue<Record<string, number>>(
-    songs.reduce((acc, song, i) => {
-      acc[song.id] = i;
-      return acc;
-    }, {} as Record<string, number>),
-  );
+  const positions = useSharedValue<Record<string, number>>({});
 
-  React.useEffect(() => {
-    positions.value = songs.reduce((acc, song, i) => {
-      acc[song.id] = i;
-      return acc;
-    }, {} as Record<string, number>);
-  }, [songs]);
+  // Actualizar positions de forma síncrona en el render phase para evitar lag/desincronización entre hilos
+  positions.value = songs.reduce((acc, song, i) => {
+    acc[song.id] = i;
+    return acc;
+  }, {} as Record<string, number>);
 
   const handleReorder = (from: number, to: number) => {
     onReorder?.(from, to);
@@ -273,6 +270,7 @@ export const SongList: React.FC<SongListProps> = ({
 
   return (
     <Animated.ScrollView
+      key={songs.map(s => s.id).join(',')}
       ref={scrollRef}
       style={styles.container}
       onScroll={scrollHandler}

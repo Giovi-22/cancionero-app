@@ -293,7 +293,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   }, [transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm, songId]);
 
   const addFloatingNoteAtLine = (lineIndex: number) => {
-    setIsStageMode(false);
+    // Solo permitir agregar notas cuando NO está en modo escenario
+    if (isStageMode) return;
     const newId = `note_${Date.now()}`;
     const startY = Math.max(0, lineIndex * 35);
     setMusicianNotes((p: any) => ({

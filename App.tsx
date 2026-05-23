@@ -393,9 +393,15 @@ function MainApp() {
       songIds: editSetlistSongs
     };
     await StorageService.saveSetlist(updated);
+    // Actualizar activeSetlist de forma síncrona ANTES de cerrar el modal
+    // para que displaySongs y el botón Iniciar usen los datos correctos inmediatamente
     setActiveSetlist(updated);
+    // También actualizar el array de setlists localmente para que el home
+    // muestre el conteo actualizado sin esperar refreshLocalData
+    setSetlists((prev: any[]) => prev.map((s: any) => s.id === updated.id ? updated : s));
     setIsEditSetlistOpen(false);
-    await refreshLocalData();
+    // Refrescar en background para sincronizar con storage
+    refreshLocalData();
   };
 
   const handleSaveSongSettings = async (data: any) => {
