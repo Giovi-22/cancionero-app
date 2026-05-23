@@ -9,15 +9,18 @@ export class SyncService {
 
   /**
    * Sincroniza todo el repertorio desde una carpeta de Google Drive
+   * @param folderId ID de la carpeta en Google Drive
+   * @param force Si es true, descarga todas las canciones ignorando la coincidencia de fechas
+   * @returns Promise<boolean> true si hubo cambios reales descargados o eliminados, false en caso contrario
    */
-  public static async syncFullRepertoire(folderId: string) {
-    if (this.isSyncing) return;
+  public static async syncFullRepertoire(folderId: string, force: boolean = false): Promise<boolean> {
+    if (this.isSyncing) return false;
     if (!folderId) throw new Error('No se ha configurado un ID de carpeta');
     
     this.isSyncing = true;
 
     try {
-      console.log('Starting full repertoire sync for folder:', folderId);
+      console.log(`[Sync] Starting full repertoire sync for folder: ${folderId} (Force: ${force})`);
 
       // 1. Verificar autenticación y traer datos de Supabase
       const token = await authService.getGoogleAccessToken();
@@ -45,13 +48,33 @@ export class SyncService {
         const fileExists = fileContent !== null;
 
         // Si no existe localmente, o se modificó en la nube, o la ruta guardada estaba mal (como el 'undefined' de antes)
-        if (!localSong || !fileExists || localSong.modifiedTime !== remoteFile.modifiedTime || localSong.localPath.includes('undefined')) {
+        if (
+          force ||
+          !localSong ||
+          !fileExists ||
+          localSong.modifiedTime !== remoteFile.modifiedTime ||
+          localSong.localPath.includes('undefined')
+        ) {
+          if (force) {
+            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Sincronización forzada)`);
+          } else if (!localSong) {
+            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (No existe localmente)`);
+          } else if (!fileExists) {
+            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Falta el archivo físico)`);
+          } else if (localSong.modifiedTime !== remoteFile.modifiedTime) {
+            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Modificada en la nube. Local: '${localSong.modifiedTime || 'Ninguna'}', Drive: '${remoteFile.modifiedTime || 'Ninguna'}')`);
+          } else {
+            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Ruta local corrupta)`);
+          }
+
           songsToUpdate.push({
             id: remoteFile.id,
             name: remoteFile.name,
             mimeType: remoteFile.mimeType,
             modifiedTime: remoteFile.modifiedTime
           });
+        } else {
+          console.log(`[Sync] Canción '${remoteFile.name}' al día. Fecha: '${localSong.modifiedTime}'`);
         }
       }
 
@@ -63,11 +86,14 @@ export class SyncService {
         }
       }
 
-      console.log(`Sync plan: ${songsToUpdate.length} to download, ${songsToDelete.length} to delete.`);
+      console.log(`[Sync] Sync plan: ${songsToUpdate.length} to download, ${songsToDelete.length} to delete.`);
+
+      // Conjunto para registrar los IDs de descargas fallidas
+      const failedSongIds = new Set<string>();
 
       // 5. Descargar en grupos (batches)
       if (songsToUpdate.length > 0) {
-        await this.downloadSongsInBatches(songsToUpdate);
+        await this.downloadSongsInBatches(songsToUpdate, failedSongIds);
       }
 
       // 6. Eliminar locales que ya no están en Drive
@@ -76,46 +102,61 @@ export class SyncService {
         await FileSystemService.deleteSongFile(id);
       }
 
-      // 7. Actualizar metadatos finales en SQLite (Asegurando rutas correctas)
-      const finalMetadata: SongMetadata[] = remoteFiles.map(rf => ({
-        id: rf.id,
-        name: rf.name,
-        mimeType: rf.mimeType,
-        modifiedTime: rf.modifiedTime,
-        localPath: FileSystemService.getLocalPath(rf.id),
-        syncStatus: 'synced',
-        lastSyncedAt: new Date().toISOString(),
-      }));
+      // 7. Actualizar metadatos finales en SQLite (Asegurando rutas correctas y excluyendo fallidas)
+      const finalMetadata: SongMetadata[] = remoteFiles
+        .filter(rf => !failedSongIds.has(rf.id))
+        .map(rf => ({
+          id: rf.id,
+          name: rf.name,
+          mimeType: rf.mimeType,
+          modifiedTime: rf.modifiedTime,
+          localPath: FileSystemService.getLocalPath(rf.id),
+          syncStatus: 'synced',
+          lastSyncedAt: new Date().toISOString(),
+        }));
       
       await StorageService.saveSongs(finalMetadata);
 
-      console.log('Sync completed successfully.');
-      return true;
+      console.log('[Sync] Sync completed successfully.');
+
+      // Retornar true si hubo descargas exitosas o eliminaciones
+      const successfulDownloadsCount = songsToUpdate.length - failedSongIds.size;
+      return successfulDownloadsCount > 0 || songsToDelete.length > 0;
     } catch (error) {
-      console.error('Sync failed:', error);
+      console.error('[Sync] Sync failed:', error);
       throw error;
     } finally {
       this.isSyncing = false;
     }
   }
 
-  private static async downloadSongsInBatches(songs: Song[]) {
+  private static async downloadSongsInBatches(songs: Song[], failedSongIds: Set<string>) {
     const BATCH_SIZE = 5;
     for (let i = 0; i < songs.length; i += BATCH_SIZE) {
       const batch = songs.slice(i, i + BATCH_SIZE);
-      await Promise.all(batch.map(song => this.downloadAndStoreSong(song)));
-      console.log(`Downloaded batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(songs.length / BATCH_SIZE)}`);
+      await Promise.all(
+        batch.map(async song => {
+          const success = await this.downloadAndStoreSong(song);
+          if (!success) {
+            failedSongIds.add(song.id);
+          }
+        })
+      );
+      console.log(`[Sync] Downloaded batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(songs.length / BATCH_SIZE)}`);
     }
   }
 
-  private static async downloadAndStoreSong(song: Song) {
+  private static async downloadAndStoreSong(song: Song): Promise<boolean> {
     try {
       const content = await driveService.getSongContent(song.id, song.mimeType);
       if (content) {
         await FileSystemService.saveSongContent(song.id, content);
+        return true;
       }
+      return false;
     } catch (e) {
-      console.error(`Failed to download song ${song.name}:`, e);
+      console.error(`[Sync] Failed to download song ${song.name}:`, e);
+      return false;
     }
   }
 }
