@@ -24,9 +24,12 @@ export class AuthService {
    * Inicia sesión con Google usando Supabase
    */
   public async signInWithGoogle() {
+    // path: 'callback' genera exp://IP:PORT/--/callback
+    // El segmento '--/' le dice a Expo Go que es un deep link, no una actualización remota.
+    // Sin esto, Expo Go intenta descargar un bundle desde esa URL y falla con
+    // "Failed to download remote update".
     const redirectUrl = AuthSession.makeRedirectUri({
-      scheme: 'cancionero-app',
-      path: 'auth/callback',
+      path: 'callback',
     });
     
     console.log('--- REDIRECT URL:', redirectUrl, '---');

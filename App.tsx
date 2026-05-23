@@ -1,10 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect } from 'react';
-import { 
-  StyleSheet, 
-  Text, 
-  View, 
-  TouchableOpacity, 
+import * as Updates from 'expo-updates';
+import {
+  StyleSheet,
+  Text,
+  View,
+  TouchableOpacity,
   ScrollView,
   ActivityIndicator,
   Alert,
@@ -15,15 +16,15 @@ import {
   Modal,
   Dimensions
 } from 'react-native';
-import { 
-  SafeAreaProvider, 
-  useSafeAreaInsets 
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets
 } from 'react-native-safe-area-context';
-import { 
-  Music, 
-  List, 
-  Settings as SettingsIcon, 
-  RefreshCcw, 
+import {
+  Music,
+  List,
+  Settings as SettingsIcon,
+  RefreshCcw,
   User as UserIcon,
   X,
   Folder,
@@ -40,7 +41,8 @@ import {
   Edit2,
   CheckSquare,
   Square,
-  Plus
+  Plus,
+  Play
 } from 'lucide-react-native';
 import { supabase } from './src/lib/supabase';
 import { authService } from './src/services/AuthService';
@@ -54,6 +56,8 @@ import { SetlistList } from './src/components/SetlistList';
 import { SongViewer } from './src/components/SongViewer';
 import { LiveSessionService, LiveSession } from './src/services/LiveSessionService';
 import { SongMetadata } from './src/types';
+import * as NavigationBar from 'expo-navigation-bar';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 const { width } = Dimensions.get('window');
 
@@ -74,7 +78,7 @@ function MainApp() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState('');
-  
+
   // Datos
   const [songs, setSongs] = useState<SongMetadata[]>([]);
   const [topSongs, setTopSongs] = useState<SongMetadata[]>([]);
@@ -91,7 +95,7 @@ function MainApp() {
   const [followingSession, setFollowingSession] = useState<LiveSession | null>(null);
   // Canciones de la lista activa del show (para navegación del Director)
   const [setlistSongs, setSetlistSongs] = useState<SongMetadata[]>([]);
-  
+
   // Estado de Setlist Activa
   const [activeSetlist, setActiveSetlist] = useState<any | null>(null);
 
@@ -114,6 +118,7 @@ function MainApp() {
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
   const [navigationStack, setNavigationStack] = useState<any[]>([{ id: 'root', name: 'Mi unidad' }]);
   const [showShared, setShowShared] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   const formatDate = (isoString: string) => {
     const d = new Date(isoString);
@@ -125,7 +130,13 @@ function MainApp() {
 
   useEffect(() => {
     loadInitialData();
-    
+
+    if (Platform.OS === 'android') {
+      NavigationBar.setBackgroundColorAsync('#0a0a0a').catch(() => { });
+      NavigationBar.setVisibilityAsync('hidden').catch(() => { });
+      NavigationBar.setBehaviorAsync('overlay-swipe').catch(() => { });
+    }
+
     const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
       setUser(session?.user ?? null);
     });
@@ -141,6 +152,11 @@ function MainApp() {
     };
   }, []);
 
+  // Limpiar buscador al cambiar de pestaña o de lista
+  useEffect(() => {
+    setSearchQuery('');
+  }, [activeTab, activeSetlist]);
+
   // Actualizar "mi sesión de director" cuando cambian las sesiones
   useEffect(() => {
     if (!user) return;
@@ -151,10 +167,10 @@ function MainApp() {
   const loadInitialData = async () => {
     const savedFolderId = await StorageService.getSetting<string>('drive_folder_id');
     setDriveFolderId(savedFolderId || process.env.EXPO_PUBLIC_DRIVE_FOLDER_ID || '');
-    
+
     const currentUser = await authService.getCurrentUser();
     setUser(currentUser);
-    
+
     refreshLocalData();
   };
 
@@ -182,9 +198,20 @@ function MainApp() {
   // ── Director: Iniciar show desde setlist seleccionada (abre primera canción) ──
   const handleStartShowFromSetlist = async (setlist: any) => {
     await handleStartShow(setlist);
-    const songsOfList = songs.filter(s => setlist.songIds.includes(s.id));
+    const songsOfList = setlist.songIds.map((id: string) => songs.find((s: SongMetadata) => s.id === id)).filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) handleSongPress(songsOfList[0]);
+  };
+
+  // ── Local: Iniciar lista localmente (abre primera canción sin ser director) ──
+  const handleStartSetlistLocally = (setlist: any) => {
+    const songsOfList = setlist.songIds.map((id: string) => songs.find((s: SongMetadata) => s.id === id)).filter(Boolean) as SongMetadata[];
+    setSetlistSongs(songsOfList);
+    if (songsOfList.length > 0) {
+      handleSongPress(songsOfList[0]);
+    } else {
+      Alert.alert('Lista vacía', 'Agrega canciones a la lista para poder iniciarla.');
+    }
   };
 
   // ── Director: Navegar canción siguiente ───────────
@@ -264,16 +291,16 @@ function MainApp() {
         Alert.alert('Error', 'No se encontró el contenido de la canción. Intenta sincronizar de nuevo.');
         return;
       }
-      
+
       // Incrementar contador de reproducciones
       await StorageService.incrementSongViewCount(song.id);
-      
+
       const settings = await StorageService.getSetting(`song_settings_${song.id}`);
-      
+
       setSongContent(content);
       setSongSettings(settings);
       setSelectedSong(song);
-      
+
       // Refrescar top para cuando vuelva
       refreshLocalData();
     } catch (error) {
@@ -294,7 +321,7 @@ function MainApp() {
   const handleCreateSetlist = async () => {
     let name = newSetlistName.trim();
     if (!name) return;
-    
+
     // Si hay fecha, agregarla al nombre
     const dateStr = newSetlistDate ? formatDate(newSetlistDate.toISOString()) : null;
     const finalName = dateStr ? `${name} - ${dateStr}` : name;
@@ -323,7 +350,7 @@ function MainApp() {
   };
 
   const handleToggleSongInSetlist = (songId: string) => {
-    setEditSetlistSongs(prev => 
+    setEditSetlistSongs(prev =>
       prev.includes(songId) ? prev.filter(id => id !== songId) : [...prev, songId]
     );
   };
@@ -342,7 +369,7 @@ function MainApp() {
     const newSongIds = [...activeSetlist.songIds];
     const [movedId] = newSongIds.splice(fromIndex, 1);
     newSongIds.splice(toIndex, 0, movedId);
-    
+
     const updated = { ...activeSetlist, songIds: newSongIds };
     await StorageService.saveSetlist(updated);
     setActiveSetlist(updated);
@@ -351,37 +378,50 @@ function MainApp() {
 
   const handleSaveSetlistSongs = async () => {
     if (!activeSetlist) return;
-    
+
     let name = editSetlistName.trim();
     // Limpiar fecha previa si existe para no duplicar (asumiendo formato " - dd/mm/aa")
     name = name.split(' - ')[0];
-    
+
     const dateStr = editSetlistDate ? formatDate(editSetlistDate.toISOString()) : null;
     const finalName = dateStr ? `${name} - ${dateStr}` : name;
 
-    const updated = { 
-      ...activeSetlist, 
+    const updated = {
+      ...activeSetlist,
       name: finalName,
       date: editSetlistDate ? editSetlistDate.toISOString() : undefined,
-      songIds: editSetlistSongs 
+      songIds: editSetlistSongs
     };
     await StorageService.saveSetlist(updated);
+    // Actualizar activeSetlist de forma síncrona ANTES de cerrar el modal
+    // para que displaySongs y el botón Iniciar usen los datos correctos inmediatamente
     setActiveSetlist(updated);
+    // También actualizar el array de setlists localmente para que el home
+    // muestre el conteo actualizado sin esperar refreshLocalData
+    setSetlists((prev: any[]) => prev.map((s: any) => s.id === updated.id ? updated : s));
     setIsEditSetlistOpen(false);
-    await refreshLocalData();
+    // Refrescar en background para sincronizar con storage
+    refreshLocalData();
   };
 
-  const handleSaveSongSettings = async (settings: any) => {
-    if (selectedSong) {
-      await StorageService.saveSetting(`song_settings_${selectedSong.id}`, settings);
+  const handleSaveSongSettings = async (data: any) => {
+    if (data && data.songId && data.settings) {
+      await StorageService.saveSetting(`song_settings_${data.songId}`, data.settings);
     }
   };
 
-  // Filtrar canciones si hay una lista activa
   // Filtrar canciones si hay una lista activa (manteniendo el orden del setlist)
-  const displaySongs = activeSetlist 
+  let displaySongs = activeSetlist
     ? activeSetlist.songIds.map((id: string) => songs.find(s => s.id === id)).filter(Boolean) as SongMetadata[]
     : songs;
+
+  // Filtrar por la búsqueda del buscador
+  if (searchQuery.trim()) {
+    const q = searchQuery.toLowerCase();
+    displaySongs = displaySongs.filter(s => 
+      s.name.toLowerCase().includes(q)
+    );
+  }
 
   // Lógica del Explorador de Carpetas Drive
   const openFolderPicker = async (parentId: string = 'root', folderName: string = 'Mi unidad', shared: boolean = false) => {
@@ -409,7 +449,7 @@ function MainApp() {
     newStack.pop();
     const prevFolder = newStack[newStack.length - 1];
     setNavigationStack(newStack);
-    openFolderPicker(prevFolder.id, prevFolder.name, showShared && newStack.length === 1);
+    openFolderPicker(prevFolder.id, prevFolder.name, showShared);
   };
 
   const selectFolder = (id: string) => {
@@ -419,18 +459,18 @@ function MainApp() {
   };
 
   return (
-    <KeyboardAvoidingView 
+    <KeyboardAvoidingView
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: COLORS.background }}
     >
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[styles.container, { paddingTop: Math.max(insets.top, 20) + 10 }]}>
         <StatusBar style="light" />
-        
+
         {/* Header */}
         <View style={styles.header}>
           <Text style={styles.logo}>Cancionero</Text>
           <View style={styles.headerActions}>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.iconButton}
               onPress={handleSync}
               disabled={isSyncing}
@@ -441,7 +481,7 @@ function MainApp() {
                 <RefreshCcw size={24} color={COLORS.foreground} />
               )}
             </TouchableOpacity>
-            <TouchableOpacity 
+            <TouchableOpacity
               style={styles.iconButton}
               onPress={() => {
                 Keyboard.dismiss();
@@ -548,11 +588,11 @@ function MainApp() {
                 <TrendingUp size={20} color={COLORS.accent} />
                 <Text style={styles.sectionTitle}>Más Elegidas</Text>
               </View>
-              
+
               <View style={styles.topSongsList}>
                 {topSongs.map((song, index) => (
-                  <TouchableOpacity 
-                    key={song.id} 
+                  <TouchableOpacity
+                    key={song.id}
                     style={styles.topSongItem}
                     onPress={() => handleSongPress(song)}
                   >
@@ -572,7 +612,7 @@ function MainApp() {
                 <Star size={20} color="#fbbf24" />
                 <Text style={styles.sectionTitle}>Listas Recientes</Text>
               </View>
-              
+
               <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recentSetlists}>
                 {setlists.slice(0, 5).map((setlist) => (
                   <View key={setlist.id} style={styles.setlistCard}>
@@ -585,17 +625,26 @@ function MainApp() {
                       </Text>
                       <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
                     </TouchableOpacity>
-                    {user && (
+                    <View style={{ flexDirection: 'row', gap: 5, marginTop: 8 }}>
                       <TouchableOpacity
-                        style={[styles.startShowBtn, myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive]}
-                        onPress={() => handleStartShow(setlist)}
+                        style={[styles.startShowBtn, { marginTop: 0, flex: 1, justifyContent: 'center' }]}
+                        onPress={() => handleStartSetlistLocally(setlist)}
                       >
-                        <Radio size={12} color="#fff" />
-                        <Text style={styles.startShowText}>
-                          {myDirectorSession?.setlist_id === setlist.id ? 'En Vivo' : 'Iniciar'}
-                        </Text>
+                        <Play size={12} color="#fff" />
+                        <Text style={styles.startShowText}>Iniciar</Text>
                       </TouchableOpacity>
-                    )}
+                      {user && (
+                        <TouchableOpacity
+                          style={[styles.startShowBtn, myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive, { marginTop: 0, flex: 1, justifyContent: 'center' }]}
+                          onPress={() => handleStartShow(setlist)}
+                        >
+                          <Radio size={12} color="#fff" />
+                          <Text style={styles.startShowText} numberOfLines={1}>
+                            {myDirectorSession?.setlist_id === setlist.id ? 'Vivo' : 'Show'}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 ))}
               </ScrollView>
@@ -612,7 +661,7 @@ function MainApp() {
                   <Text style={styles.activeSetlistTitle} numberOfLines={1}>
                     {activeSetlist.name}
                   </Text>
-                  
+
                   <View style={{ flexDirection: 'row', gap: 5 }}>
                     <TouchableOpacity onPress={handleOpenEditSetlist} style={styles.editSetlistBtn}>
                       <Plus size={16} color="#fff" />
@@ -622,6 +671,13 @@ function MainApp() {
                     </TouchableOpacity>
                   </View>
 
+                  <TouchableOpacity
+                    style={styles.startShowHeaderBtn}
+                    onPress={() => handleStartSetlistLocally(activeSetlist)}
+                  >
+                    <Play size={14} color="#fff" />
+                    <Text style={styles.startShowHeaderText}>Iniciar</Text>
+                  </TouchableOpacity>
                   {user && (
                     <TouchableOpacity
                       style={[styles.startShowHeaderBtn, myDirectorSession?.setlist_id === activeSetlist.id && styles.startShowHeaderBtnActive]}
@@ -635,21 +691,39 @@ function MainApp() {
                   )}
                 </View>
               )}
-              <SongList 
-                songs={displaySongs} 
-                onSongPress={handleSongPress} 
+              {/* Buscador de canciones */}
+              <View style={styles.searchContainer}>
+                <Search size={18} color={COLORS.mutedForeground} style={styles.searchIcon} />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder={activeSetlist ? "Buscar en esta lista..." : "Buscar canción..."}
+                  placeholderTextColor={COLORS.mutedForeground}
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+                    <X size={16} color={COLORS.foreground} />
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <SongList
+                songs={displaySongs}
+                onSongPress={handleSongPress}
                 onSyncPress={handleSync}
                 isSetlistMode={!!activeSetlist}
                 onRemoveFromSetlist={activeSetlist ? handleRemoveSongFromSetlist : undefined}
                 onAddSongsPress={handleOpenEditSetlist}
-                onMoveUp={activeSetlist ? (idx) => handleMoveSong(idx, idx - 1) : undefined}
-                onMoveDown={activeSetlist ? (idx) => handleMoveSong(idx, idx + 1) : undefined}
+                onReorder={activeSetlist ? handleMoveSong : undefined}
               />
             </View>
           )}
 
           {activeTab === 'setlists' && (
-            <SetlistList 
+            <SetlistList
               setlists={setlists}
               onSetlistPress={handleSetlistPress}
               onCreatePress={() => setIsCreateSetlistOpen(true)}
@@ -660,21 +734,21 @@ function MainApp() {
 
         {/* Tabs - Con mejor diseño y padding inferior para Android */}
         <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'home' && styles.activeTab]}
             onPress={() => setActiveTab('home')}
           >
             <HomeIcon size={22} color={activeTab === 'home' ? COLORS.accent : COLORS.mutedForeground} />
             <Text style={[styles.tabText, activeTab === 'home' && styles.activeTabText]}>Inicio</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'songs' && styles.activeTab]}
             onPress={() => setActiveTab('songs')}
           >
             <Music size={22} color={activeTab === 'songs' ? COLORS.accent : COLORS.mutedForeground} />
             <Text style={[styles.tabText, activeTab === 'songs' && styles.activeTabText]}>Canciones</Text>
           </TouchableOpacity>
-          <TouchableOpacity 
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'setlists' && styles.activeTab]}
             onPress={() => setActiveTab('setlists')}
           >
@@ -690,7 +764,7 @@ function MainApp() {
           onRequestClose={() => setSelectedSong(null)}
         >
           {selectedSong && songContent && (
-            <SongViewer 
+            <SongViewer
               title={selectedSong.name}
               songId={selectedSong.id}
               content={songContent}
@@ -721,7 +795,7 @@ function MainApp() {
                 <X size={24} color={COLORS.foreground} />
               </TouchableOpacity>
             </View>
-            
+
             <ScrollView contentContainerStyle={styles.settingsScroll} keyboardShouldPersistTaps="handled">
               <View style={styles.settingGroup}>
                 <Text style={styles.settingLabel}>Carpeta de Canciones</Text>
@@ -733,8 +807,8 @@ function MainApp() {
                     placeholder="ID de la carpeta..."
                     placeholderTextColor={COLORS.mutedForeground}
                   />
-                  <TouchableOpacity 
-                    style={styles.browseButton} 
+                  <TouchableOpacity
+                    style={styles.browseButton}
                     onPress={() => openFolderPicker()}
                     disabled={!user}
                   >
@@ -775,14 +849,14 @@ function MainApp() {
               </View>
 
               <View style={styles.pickerTabs}>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.pickerTab, !showShared && styles.activePickerTab]}
                   onPress={() => openFolderPicker('root', 'Mi unidad', false)}
                 >
                   <Folder size={18} color={!showShared ? COLORS.accent : COLORS.mutedForeground} />
                   <Text style={[styles.pickerTabText, !showShared && styles.activePickerTabText]}>Mi unidad</Text>
                 </TouchableOpacity>
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={[styles.pickerTab, showShared && styles.activePickerTab]}
                   onPress={() => openFolderPicker('root', 'Compartidos', true)}
                 >
@@ -802,8 +876,8 @@ function MainApp() {
               ) : (
                 <ScrollView style={styles.folderList} keyboardShouldPersistTaps="handled">
                   {navigationStack.length > 1 && (
-                    <TouchableOpacity 
-                      style={styles.folderItem} 
+                    <TouchableOpacity
+                      style={styles.folderItem}
                       onPress={navigateBack}
                       delayPressIn={100}
                     >
@@ -813,7 +887,7 @@ function MainApp() {
                   )}
                   {folders.map(folder => (
                     <View key={folder.id} style={styles.folderItemRow}>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.folderInfo}
                         onPress={() => openFolderPicker(folder.id, folder.name, showShared)}
                         delayPressIn={100}
@@ -821,7 +895,7 @@ function MainApp() {
                         <Folder size={24} color={COLORS.accent} />
                         <Text style={styles.folderName} numberOfLines={1}>{folder.name}</Text>
                       </TouchableOpacity>
-                      <TouchableOpacity 
+                      <TouchableOpacity
                         style={styles.selectButton}
                         onPress={() => selectFolder(folder.id)}
                       >
@@ -858,17 +932,17 @@ function MainApp() {
                 returnKeyType="done"
                 onSubmitEditing={handleCreateSetlist}
               />
-              <TouchableOpacity 
-                style={styles.datePickerBtn} 
+              <TouchableOpacity
+                style={styles.datePickerBtn}
                 onPress={() => setShowDatePicker(true)}
               >
                 <Text style={styles.datePickerText}>
-                  {newSetlistDate 
-                    ? `Fecha: ${formatDate(newSetlistDate.toISOString())}` 
+                  {newSetlistDate
+                    ? `Fecha: ${formatDate(newSetlistDate.toISOString())}`
                     : 'Añadir Fecha (Opcional)'}
                 </Text>
               </TouchableOpacity>
-              
+
               {showDatePicker && (
                 <DateTimePicker
                   value={newSetlistDate || new Date()}
@@ -921,17 +995,17 @@ function MainApp() {
                 value={editSetlistName}
                 onChangeText={setEditSetlistName}
               />
-              <TouchableOpacity 
-                style={styles.datePickerBtn} 
+              <TouchableOpacity
+                style={styles.datePickerBtn}
                 onPress={() => setShowEditDatePicker(true)}
               >
                 <Text style={styles.datePickerText}>
-                  {editSetlistDate 
-                    ? `Fecha: ${formatDate(editSetlistDate.toISOString())}` 
+                  {editSetlistDate
+                    ? `Fecha: ${formatDate(editSetlistDate.toISOString())}`
                     : 'Añadir Fecha (Opcional)'}
                 </Text>
               </TouchableOpacity>
-              
+
               {showEditDatePicker && (
                 <DateTimePicker
                   value={editSetlistDate || new Date()}
@@ -981,11 +1055,72 @@ function MainApp() {
   );
 }
 
+const UpdateNotification = () => {
+  const { isUpdatePending } = Updates.useUpdates();
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    if (isUpdatePending) {
+      setDismissed(false);
+    }
+  }, [isUpdatePending]);
+
+  if (!isUpdatePending || dismissed) {
+    return null;
+  }
+
+  const handleReload = async () => {
+    try {
+      await Updates.reloadAsync();
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo reiniciar la aplicación.');
+    }
+  };
+
+  return (
+    <Modal
+      transparent
+      animationType="fade"
+      visible={isUpdatePending && !dismissed}
+      onRequestClose={() => setDismissed(true)}
+    >
+      <View style={styles.updateModalOverlay}>
+        <View style={styles.updateModalCard}>
+          <View style={styles.updateModalHeader}>
+            <RefreshCcw size={24} color={COLORS.accent} style={{ marginRight: 10 }} />
+            <Text style={styles.updateModalTitle}>Actualización Lista</Text>
+          </View>
+          <Text style={styles.updateModalText}>
+            Una nueva versión de la aplicación ha sido descargada. ¿Querés reiniciar ahora para aplicar los cambios?
+          </Text>
+          <View style={styles.updateModalActions}>
+            <TouchableOpacity
+              style={styles.updateModalCancel}
+              onPress={() => setDismissed(true)}
+            >
+              <Text style={styles.updateModalCancelText}>Más tarde</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.updateModalConfirm}
+              onPress={handleReload}
+            >
+              <Text style={styles.updateModalConfirmText}>Reiniciar</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+};
+
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <MainApp />
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider style={{ flex: 1, backgroundColor: COLORS.background }}>
+        <MainApp />
+        <UpdateNotification />
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
 
@@ -1081,11 +1216,6 @@ const styles = StyleSheet.create({
     marginTop: 8,
     borderWidth: 1,
     borderColor: '#ef4444',
-  },
-  connectionWarningText: {
-    color: '#ef4444',
-    fontSize: 12,
-    fontWeight: 'bold',
   },
   directorBanner: {
     flexDirection: 'row',
@@ -1293,6 +1423,30 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
     flex: 1,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    borderColor: COLORS.border,
+    borderWidth: 1,
+    borderRadius: 12,
+    marginHorizontal: 15,
+    marginVertical: 10,
+    paddingHorizontal: 12,
+    height: 44,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: COLORS.foreground,
+    fontSize: 15,
+    paddingVertical: 8,
+  },
+  clearSearchBtn: {
+    padding: 4,
   },
   settingsPanel: {
     position: 'absolute',
@@ -1641,5 +1795,71 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 16,
+  },
+  // Modal de actualización OTA
+  updateModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+    zIndex: 9999,
+  },
+  updateModalCard: {
+    width: '100%',
+    maxWidth: 320,
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+  },
+  updateModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  updateModalTitle: {
+    color: COLORS.foreground,
+    fontSize: 20,
+    fontWeight: 'bold',
+  },
+  updateModalText: {
+    color: COLORS.mutedForeground,
+    fontSize: 14,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  updateModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    gap: 12,
+  },
+  updateModalCancel: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.border,
+    alignItems: 'center',
+  },
+  updateModalCancelText: {
+    color: COLORS.foreground,
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  updateModalConfirm: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: COLORS.accent,
+    alignItems: 'center',
+  },
+  updateModalConfirmText: {
+    color: '#fff',
+    fontWeight: '600',
+    fontSize: 15,
   }
 });

@@ -4,9 +4,10 @@ import {
   Dimensions, TextInput, Keyboard, Platform, AppState,
   PanResponder, Animated
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft, ChevronRight, Settings, Play, Pause, Maximize2,
-  Plus, Minus, X, StickyNote, Clock, Radio
+  Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List
 } from 'lucide-react-native';
 import {
   transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks
@@ -39,6 +40,96 @@ interface SongViewerProps {
   onFollowSongChange?: (newSongId: string) => void;
 }
 
+const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew, onUpdate, onDelete, setScrollEnabled }: any) => {
+  const pan = useRef(new Animated.ValueXY({ x: initialX || 0, y: initialY || 0 })).current;
+  const offset = useRef({ x: initialX || 0, y: initialY || 0 });
+
+  const [isEditing, setIsEditing] = useState(!!isNew);
+  const [text, setText] = useState(initialText || '');
+
+  // Keep a mutable ref of the dynamic values to avoid stale closures in PanResponder
+  const stateRef = useRef({ isEditing, text, id, onUpdate, setScrollEnabled, isStageMode });
+  stateRef.current = { isEditing, text, id, onUpdate, setScrollEnabled, isStageMode };
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => !stateRef.current.isEditing && !stateRef.current.isStageMode,
+      onMoveShouldSetPanResponder: (_, g) => !stateRef.current.isEditing && !stateRef.current.isStageMode && (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5),
+      onPanResponderGrant: () => {
+        stateRef.current.setScrollEnabled(false);
+        pan.setOffset(offset.current);
+        pan.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: pan.x, dy: pan.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: () => {
+        pan.flattenOffset();
+        offset.current = { x: (pan.x as any)._value, y: (pan.y as any)._value };
+        stateRef.current.onUpdate(
+          stateRef.current.id,
+          stateRef.current.text,
+          offset.current.x,
+          offset.current.y
+        );
+        stateRef.current.setScrollEnabled(true);
+      }
+    })
+  ).current;
+
+  useEffect(() => {
+    pan.setValue({ x: initialX || 0, y: initialY || 0 });
+    offset.current = { x: initialX || 0, y: initialY || 0 };
+  }, [initialX, initialY]);
+
+  const handleSave = () => {
+    setIsEditing(false);
+    if (!text.trim()) onDelete(id);
+    else onUpdate(id, text, offset.current.x, offset.current.y);
+  };
+
+  return (
+    <Animated.View
+      style={[
+        { position: 'absolute', transform: pan.getTranslateTransform(), zIndex: 100 },
+        isEditing && { width: 200 }
+      ]}
+      {...(isStageMode ? {} : panResponder.panHandlers)}
+    >
+      {isEditing ? (
+        <View style={styles.noteEditor}>
+          <TextInput
+            autoFocus
+            style={styles.noteInput}
+            value={text}
+            onChangeText={setText}
+            placeholder="Escribe tu nota..."
+            placeholderTextColor={COLORS.mutedForeground}
+            onBlur={handleSave}
+            onSubmitEditing={handleSave}
+          />
+        </View>
+      ) : (
+        <View style={[styles.noteBadge, !isStageMode && { borderColor: '#dc2626', borderWidth: 1 }]}>
+          <StickyNote size={12} color="#000" />
+          <Text style={styles.noteBadgeText}>{text}</Text>
+          {!isStageMode && (
+             <TouchableOpacity onPress={() => setIsEditing(true)} hitSlop={{top:10,bottom:10,left:10,right:10}} style={{marginLeft: 5}}>
+               <Edit2 size={12} color="#000" />
+             </TouchableOpacity>
+          )}
+          {!isStageMode && (
+             <TouchableOpacity onPress={() => onDelete(id)} hitSlop={{top:10,bottom:10,left:10,right:10}} style={{marginLeft: 5}}>
+               <X size={14} color="#dc2626" />
+             </TouchableOpacity>
+          )}
+        </View>
+      )}
+    </Animated.View>
+  );
+};
+
 export const SongViewer: React.FC<SongViewerProps> = ({
   content, title, songId, onClose,
   initialSettings, onSaveSettings,
@@ -46,21 +137,39 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   setlistSongs = [], onDirectorNext, onDirectorPrev,
   followSessionId, onFollowSongChange
 }) => {
-  const [transpose, setTranspose] = useState(initialSettings?.transpose || 0);
+  const [transpose, setTranspose] = useState<number>(initialSettings?.transpose || 0);
   const [capo, setCapo] = useState(initialSettings?.capo || 0);
   const [fontSize, setFontSize] = useState(initialSettings?.fontSize || 16);
   const [viewMode, setViewMode] = useState<'all' | 'lyrics'>(initialSettings?.viewMode || 'all');
   const [isScrolling, setIsScrolling] = useState(false);
-  const [scrollSpeed, setScrollSpeed] = useState(initialSettings?.scrollSpeed || 1);
-  const [pedalSpeed, setPedalSpeed] = useState(initialSettings?.pedalSpeed || 0.5);
+  const [scrollSpeed, setScrollSpeed] = useState<number>(initialSettings?.scrollSpeed || 1);
+  const [pedalSpeed, setPedalSpeed] = useState<number>(initialSettings?.pedalSpeed || 0.5);
   const [isStageMode, setIsStageMode] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [musicianNotes, setMusicianNotes] = useState<Record<number, string>>(initialSettings?.musicianNotes || {});
-  const [editingLine, setEditingLine] = useState<number | null>(null);
-  const [tempNote, setTempNote] = useState('');
+  const [musicianNotes, setMusicianNotes] = useState<any>(initialSettings?.musicianNotes || {});
   const [bpm, setBpm] = useState(initialSettings?.bpm || 120);
   const [isMetronomeActive, setIsMetronomeActive] = useState(false);
   const [beat, setBeat] = useState(false);
+  const [isScrollEnabled, setIsScrollEnabled] = useState(true);
+
+  // Aislar estado por canción
+  const prevSongId = useRef(songId);
+  useEffect(() => {
+    if (prevSongId.current !== songId) {
+      prevSongId.current = songId;
+      setTranspose(initialSettings?.transpose || 0);
+      setCapo(initialSettings?.capo || 0);
+      setFontSize(initialSettings?.fontSize || 16);
+      setViewMode(initialSettings?.viewMode || 'all');
+      setScrollSpeed(initialSettings?.scrollSpeed || 1);
+      setPedalSpeed(initialSettings?.pedalSpeed || 0.5);
+      setMusicianNotes(initialSettings?.musicianNotes || {});
+      setBpm(initialSettings?.bpm || 120);
+      setIsScrolling(false);
+    }
+  }, [songId, initialSettings]);
+
+  const insets = useSafeAreaInsets();
 
   const scrollRef = useRef<ScrollView>(null);
   const scrollPosRef = useRef(0);
@@ -177,32 +286,21 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
   // ── Guardar ajustes ────────────────────────────
   useEffect(() => {
-    onSaveSettings?.({ transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm });
-  }, [transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm]);
+    onSaveSettings?.({ 
+      songId, 
+      settings: { transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm }
+    });
+  }, [transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm, songId]);
 
-  // ── Notas del músico ───────────────────────────
-  const toggleNote = (index: number) => {
+  const addFloatingNoteAtLine = (lineIndex: number) => {
+    // Solo permitir agregar notas cuando NO está en modo escenario
     if (isStageMode) return;
-    if (editingLine === index) { setEditingLine(null); return; }
-    setTempNote(musicianNotes[index] || '');
-    setEditingLine(index);
-  };
-
-  const deleteNote = (index: number) => {
-    const n = { ...musicianNotes };
-    delete n[index];
-    setMusicianNotes(n);
-    setEditingLine(null);
-  };
-
-  const saveNote = () => {
-    if (editingLine === null) return;
-    const n = { ...musicianNotes };
-    if (tempNote.trim()) n[editingLine] = tempNote;
-    else delete n[editingLine];
-    setMusicianNotes(n);
-    setEditingLine(null);
-    Keyboard.dismiss();
+    const newId = `note_${Date.now()}`;
+    const startY = Math.max(0, lineIndex * 35);
+    setMusicianNotes((p: any) => ({
+      ...p,
+      [newId]: { text: '', x: 50, y: startY, isNew: true }
+    }));
   };
 
   return (
@@ -221,7 +319,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       )}
 
       {/* Header */}
-      <View style={styles.header}>
+      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 5 }]}>
         <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
           <ChevronLeft size={28} color={COLORS.foreground} />
         </TouchableOpacity>
@@ -238,6 +336,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         contentContainerStyle={styles.scrollContent}
         onScroll={e => { if (!isScrolling) scrollPosRef.current = e.nativeEvent.contentOffset.y; }}
         scrollEventThrottle={16}
+        scrollEnabled={isScrollEnabled}
       >
         <View style={styles.songContainer}>
           {parsedLines.map((line, lIndex) => {
@@ -247,8 +346,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             return (
               <View key={lIndex}>
                 <TouchableOpacity
-                  activeOpacity={isStageMode ? 1 : 0.7}
-                  onPress={() => toggleNote(lIndex)}
+                  activeOpacity={0.7}
+                  onPress={() => addFloatingNoteAtLine(lIndex)}
                   style={[styles.lineWrapper, line.type === 'section' && (isTitle ? styles.titleLine : styles.sectionLine)]}
                 >
                   <View style={styles.blocksContainer}>
@@ -276,36 +375,33 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                       </View>
                     ))}
                   </View>
-
-                  {musicianNotes[lIndex] && (
-                    <View style={styles.noteRow}>
-                      <View style={styles.noteBadge}>
-                        <StickyNote size={10} color="#000" />
-                        <Text style={styles.noteBadgeText}>{musicianNotes[lIndex]}</Text>
-                      </View>
-                      {!isStageMode && (
-                        <TouchableOpacity onPress={() => deleteNote(lIndex)} style={styles.deleteNoteBtn}>
-                          <X size={14} color="#ff4444" />
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  )}
                 </TouchableOpacity>
-
-                {editingLine === lIndex && !isStageMode && (
-                  <View style={styles.noteEditor}>
-                    <TextInput
-                      autoFocus style={styles.noteInput} value={tempNote}
-                      onChangeText={setTempNote} placeholder="Añadir nota..."
-                      placeholderTextColor={COLORS.mutedForeground}
-                      onSubmitEditing={saveNote} onBlur={saveNote}
-                    />
-                  </View>
-                )}
               </View>
             );
           })}
         </View>
+
+        {Object.entries(musicianNotes).map(([noteId, noteData]: [string, any]) => {
+          if (typeof noteData === 'string') return null; // Ignora viejas notas ancladas si quedaron colgadas, se limpia en BBDD de a poco.
+          return (
+            <DraggableNote
+              key={noteId}
+              id={noteId}
+              initialText={noteData.text}
+              initialX={noteData.x}
+              initialY={noteData.y}
+              isStageMode={isStageMode}
+              isNew={noteData.isNew}
+              onUpdate={(i: string, t: string, x: number, y: number) => setMusicianNotes((p: any) => ({ ...p, [i]: { text: t, x, y } }))}
+              onDelete={(i: string) => {
+                const n = { ...musicianNotes };
+                delete n[i];
+                setMusicianNotes(n);
+              }}
+              setScrollEnabled={setIsScrollEnabled}
+            />
+          );
+        })}
 
         <View style={styles.footerContainer}>
           <View style={styles.footerLine} />
@@ -313,13 +409,17 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         </View>
       </ScrollView>
 
-      {/* Widget flotante draggable del Director */}
-      {isDirector && setlistSongs.length > 0 && (() => {
+      {/* Widget flotante draggable del Director o navegación de Lista local */}
+      {(isDirector || (setlistSongs.length > 0 && !followSessionId)) && (() => {
         const idx = setlistSongs.findIndex(s => s.id === songId);
         const currentName = setlistSongs[idx]?.name || '';
         return (
           <Animated.View
-            style={[styles.directorWidget, { left: dragPos.x, top: dragPos.y }]}
+            style={[
+              styles.directorWidget,
+              !isDirector && { backgroundColor: 'rgba(16, 185, 129, 0.92)' }, // green for local setlist navigation
+              { left: dragPos.x, top: dragPos.y }
+            ]}
             {...panResponder.panHandlers}
           >
             {/* Handle de arrastre */}
@@ -332,8 +432,14 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             <View style={styles.widgetBody}>
               {/* Indicador */}
               <View style={styles.widgetBadge}>
-                <Radio size={10} color="#fff" />
-                <Text style={styles.widgetBadgeText}>DIRECTOR</Text>
+                {isDirector ? (
+                  <Radio size={10} color="#fff" />
+                ) : (
+                  <List size={10} color="#fff" />
+                )}
+                <Text style={styles.widgetBadgeText}>
+                  {isDirector ? 'DIRECTOR' : 'LISTA'}
+                </Text>
               </View>
 
               {/* Nombre canción actual */}
@@ -366,7 +472,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
       {/* Barra flotante */}
       {!isSettingsOpen ? (
-        <View style={styles.floatingBar}>
+        <View style={[styles.floatingBar, { bottom: Math.max(insets.bottom, 20) + 10 }]}>
           <View style={styles.controlGroup}>
             <TouchableOpacity onPress={() => setTranspose(p => p - 1)} style={styles.smallBtn}>
               <Minus size={18} color="#fff" />

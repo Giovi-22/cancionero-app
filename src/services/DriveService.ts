@@ -12,9 +12,11 @@ export class DriveService {
 
     let query = `mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
     
-    if (showShared) {
+    if (showShared && parentId === 'root') {
+      // Raíz de compartidos: muestra todas las carpetas compartidas conmigo
       query += ` and sharedWithMe = true`;
     } else {
+      // Navegar dentro de cualquier carpeta (propia o compartida)
       query += ` and '${parentId}' in parents`;
     }
 

@@ -123,10 +123,8 @@ export class StorageService {
       [key, JSON.stringify(value)]
     );
 
-    // Sincronizar ajustes (como el folder_id)
-    if (key === 'drive_folder_id') {
-      this.syncSettingsToSupabase();
-    }
+    // Sincronizar TODAS las configuraciones a Supabase (modo silencioso)
+    this.syncSettingsToSupabase();
   }
 
   private static async syncSettingsToSupabase() {
@@ -134,11 +132,20 @@ export class StorageService {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const driveFolderId = await this.getSetting('drive_folder_id');
+      const db = await this.getDb();
+      const allSettingsRows = await db.getAllAsync<any>('SELECT * FROM settings');
+      const allSettings: Record<string, any> = {};
+      for (const row of allSettingsRows) {
+        try {
+          allSettings[row.key] = JSON.parse(row.value);
+        } catch(e) {
+          allSettings[row.key] = row.value;
+        }
+      }
       
       await supabase.from('user_settings').upsert({
         user_id: user.id,
-        settings: { drive_folder_id: driveFolderId },
+        settings: allSettings,
         updated_at: new Date().toISOString()
       });
     } catch (e) {
