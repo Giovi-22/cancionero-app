@@ -166,12 +166,33 @@ function MainApp() {
 
   const loadInitialData = async () => {
     const savedFolderId = await StorageService.getSetting<string>('drive_folder_id');
-    setDriveFolderId(savedFolderId || process.env.EXPO_PUBLIC_DRIVE_FOLDER_ID || '');
+    const folderId = savedFolderId || process.env.EXPO_PUBLIC_DRIVE_FOLDER_ID || '';
+    setDriveFolderId(folderId);
 
     const currentUser = await authService.getCurrentUser();
     setUser(currentUser);
 
-    refreshLocalData();
+    await refreshLocalData();
+
+    // Iniciar sincronización silenciosa en segundo plano si la carpeta y el usuario están configurados
+    if (folderId && currentUser) {
+      triggerBackgroundSync(folderId);
+    }
+  };
+
+  const triggerBackgroundSync = async (folderId: string) => {
+    try {
+      console.log('[Background Sync] Iniciando verificación silenciosa en segundo plano...');
+      const didChange = await SyncService.syncFullRepertoire(folderId);
+      if (didChange) {
+        console.log('[Background Sync] Cambios detectados. Refrescando datos locales en la UI...');
+        await refreshLocalData();
+      } else {
+        console.log('[Background Sync] Todas las canciones están al día.');
+      }
+    } catch (error) {
+      console.log('[Background Sync] Falló de forma silenciosa (ej. sin conexión o expirado):', error);
+    }
   };
 
   const refreshLocalData = async () => {
