@@ -4,7 +4,7 @@ import {
   ScrollView, Modal, Alert
 } from 'react-native';
 import { ListMusic, ChevronRight, Plus, Trash2, X } from 'lucide-react-native';
-import { Setlist } from '../services/SetlistService';
+import { Setlist } from '../types';
 
 const COLORS = {
   background: '#0a0a0a',

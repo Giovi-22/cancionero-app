@@ -41,7 +41,9 @@ export class SetlistService {
           }));
 
           // Simple sync: overwrite local with cloud for now
-          await StorageService.saveSetlists(cloudSetlists);
+          for (const s of cloudSetlists) {
+            await StorageService.saveSetlist(s);
+          }
           return cloudSetlists;
         }
       } catch (e) {
@@ -78,17 +80,17 @@ export class SetlistService {
           songIds: data.song_ids,
           isPublic: data.is_public
         };
-        await StorageService.saveSetlists([created]);
+        await StorageService.saveSetlist(created);
         return created;
       }
     }
 
-    await StorageService.saveSetlists([newSetlist]);
+    await StorageService.saveSetlist(newSetlist);
     return newSetlist;
   }
 
   public async updateSetlist(setlist: Setlist, userEmail?: string) {
-    await StorageService.saveSetlists([setlist]);
+    await StorageService.saveSetlist(setlist);
 
     if (userEmail && setlist.id.includes('-')) {
       await supabase

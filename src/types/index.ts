@@ -10,6 +10,7 @@ export interface Song {
 export interface SongMetadata extends Song {
   // Additional metadata for local database
   lastSyncedAt?: string;
+  libraryId?: string;
 }
 
 export interface AppSettings {
@@ -18,3 +19,26 @@ export interface AppSettings {
   showChords: boolean;
   autoScrollSpeed: number;
 }
+
+export interface Library {
+  id: string;
+  userId?: string;
+  name: string;
+  driveFolderId?: string;
+  syncEnabled: boolean;
+  icon?: string;
+  color?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface Setlist {
+  id: string;
+  name: string;
+  date?: string;
+  songIds: string[];
+  isPublic: boolean;
+  lastUpdated?: string;
+  libraryId?: string;
+}
+

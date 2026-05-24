@@ -13,7 +13,7 @@ export class SyncService {
    * @param force Si es true, descarga todas las canciones ignorando la coincidencia de fechas
    * @returns Promise<boolean> true si hubo cambios reales descargados o eliminados, false en caso contrario
    */
-  public static async syncFullRepertoire(folderId: string, force: boolean = false): Promise<boolean> {
+  public static async syncFullRepertoire(folderId: string, force: boolean = false, libraryId?: string): Promise<boolean> {
     if (this.isSyncing) return false;
     if (!folderId) throw new Error('No se ha configurado un ID de carpeta');
     
@@ -33,7 +33,7 @@ export class SyncService {
       const remoteFiles = await driveService.getSongsFromFolder(folderId);
       
       // 3. Obtener lista local para comparar
-      const localSongs = await StorageService.getAllSongs();
+      const localSongs = await StorageService.getAllSongs(libraryId);
       const localSongsMap = new Map(localSongs.map(s => [s.id, s]));
 
       const songsToUpdate: Song[] = [];
@@ -53,7 +53,7 @@ export class SyncService {
           !localSong ||
           !fileExists ||
           localSong.modifiedTime !== remoteFile.modifiedTime ||
-          localSong.localPath.includes('undefined')
+          (localSong.localPath ?? '').includes('undefined')
         ) {
           if (force) {
             console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Sincronización forzada)`);
@@ -79,7 +79,7 @@ export class SyncService {
       }
 
       // Identificar borrados (están local pero no en remoto)
-      const remoteIds = new Set(remoteFiles.map(f => f.id));
+      const remoteIds = new Set(remoteFiles.map((f: any) => f.id));
       for (const localSong of localSongs) {
         if (!remoteIds.has(localSong.id)) {
           songsToDelete.push(localSong.id);
@@ -104,8 +104,8 @@ export class SyncService {
 
       // 7. Actualizar metadatos finales en SQLite (Asegurando rutas correctas y excluyendo fallidas)
       const finalMetadata: SongMetadata[] = remoteFiles
-        .filter(rf => !failedSongIds.has(rf.id))
-        .map(rf => ({
+        .filter((rf: any) => !failedSongIds.has(rf.id))
+        .map((rf: any) => ({
           id: rf.id,
           name: rf.name,
           mimeType: rf.mimeType,
@@ -115,7 +115,7 @@ export class SyncService {
           lastSyncedAt: new Date().toISOString(),
         }));
       
-      await StorageService.saveSongs(finalMetadata);
+      await StorageService.saveSongs(finalMetadata, libraryId);
 
       console.log('[Sync] Sync completed successfully.');
 

@@ -1,6 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
-import { SongLineParsed } from '../types';
+
 
 export class PdfService {
   /**
@@ -8,7 +8,7 @@ export class PdfService {
    */
   static async generateAndShare(
     title: string,
-    parsedLines: SongLineParsed[],
+    parsedLines: any[],
     viewMode: 'all' | 'lyrics',
     transpose: number,
     capo: number,
@@ -41,7 +41,7 @@ export class PdfService {
    */
   private static generateHtml(
     title: string,
-    parsedLines: SongLineParsed[],
+    parsedLines: any[],
     viewMode: 'all' | 'lyrics',
     transpose: number,
     capo: number,
@@ -79,7 +79,7 @@ export class PdfService {
           <div class="line-wrapper type-${line.type} ${line.isMetadata ? 'metadata-line' : ''}">
             <div class="blocks-container">
               ${line.blocks
-                .map((block) => {
+                .map((block: { chord?: string; text: string }) => {
                   const hasChord = block.chord && showChords;
                   const chordHtml = hasChord 
                     ? `<span class="chord">${this.escapeHtml(block.chord!)}</span>` 

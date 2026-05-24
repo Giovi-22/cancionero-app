@@ -574,33 +574,33 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               <TouchableOpacity onPress={() => setIsMetronomeActive(!isMetronomeActive)} style={[styles.smallBtn, isMetronomeActive && { backgroundColor: COLORS.accent }]}>
                 <Clock size={18} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setBpm(p => Math.max(40, p - 5))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 5))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
               <Text style={styles.ctrlText}>{bpm} BPM</Text>
-              <TouchableOpacity onPress={() => setBpm(p => Math.min(250, p + 5))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 5))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
             </View>
 
             {/* Tamaño letra */}
             <Text style={[styles.settingLabel, { marginTop: 20 }]}>Tamaño Letra</Text>
             <View style={styles.controlGroup}>
-              <TouchableOpacity onPress={() => setFontSize(p => Math.max(10, p - 2))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setFontSize((p: number) => Math.max(10, p - 2))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
               <Text style={styles.ctrlText}>{fontSize}px</Text>
-              <TouchableOpacity onPress={() => setFontSize(p => Math.min(40, p + 2))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setFontSize((p: number) => Math.min(40, p + 2))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
             </View>
 
             {/* Auto-scroll speed */}
             <Text style={[styles.settingLabel, { marginTop: 20 }]}>Velocidad Auto-scroll</Text>
             <View style={styles.controlGroup}>
-              <TouchableOpacity onPress={() => setScrollSpeed(p => Math.max(0.1, +(p - 0.1).toFixed(1)))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setScrollSpeed((p: number) => Math.max(0.1, +(p - 0.1).toFixed(1)))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
               <Text style={styles.ctrlText}>{scrollSpeed}x</Text>
-              <TouchableOpacity onPress={() => setScrollSpeed(p => Math.min(10, +(p + 0.1).toFixed(1)))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setScrollSpeed((p: number) => Math.min(10, +(p + 0.1).toFixed(1)))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
             </View>
 
             {/* Pedal speed */}
             <Text style={[styles.settingLabel, { marginTop: 20 }]}>Velocidad Pedal</Text>
             <View style={styles.controlGroup}>
-              <TouchableOpacity onPress={() => setPedalSpeed(p => Math.max(0.1, +(p - 0.1).toFixed(1)))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setPedalSpeed((p: number) => Math.max(0.1, +(p - 0.1).toFixed(1)))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
               <Text style={styles.ctrlText}>{pedalSpeed}x</Text>
-              <TouchableOpacity onPress={() => setPedalSpeed(p => Math.min(10, +(p + 0.1).toFixed(1)))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setPedalSpeed((p: number) => Math.min(10, +(p + 0.1).toFixed(1)))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
             </View>
 
             {/* Vista */}
