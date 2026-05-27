@@ -61,7 +61,8 @@ function MainAppContent() {
     handleFollowSongChange,
     setlistSongs,
     handleDirectorNext,
-    handleDirectorPrev
+    handleDirectorPrev,
+    setSetlistSongs
   } = useAppContext();
 
   useEffect(() => {
@@ -163,6 +164,9 @@ function MainAppContent() {
               onClose={() => {
                 setSelectedSong(null);
                 setSongContent(null);
+                if (!myDirectorSession) {
+                  setSetlistSongs([]);
+                }
               }}
               initialSettings={songSettings}
               onSaveSettings={handleSaveSongSettings}

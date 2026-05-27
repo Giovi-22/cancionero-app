@@ -95,6 +95,7 @@ function SortableItem({
 }: SortableItemProps) {
   const isDragging = useSharedValue(false);
   const startPosition = useSharedValue(-1);
+  const startTop = useSharedValue(0);
   const top = useSharedValue(initialIndex * ITEM_HEIGHT);
 
   const notifyReorder = (from: number, to: number) => {
@@ -105,11 +106,11 @@ function SortableItem({
     .onStart(() => {
       isDragging.value = true;
       startPosition.value = positions.value[song.id];
+      startTop.value = positions.value[song.id] * ITEM_HEIGHT;
     })
     .onUpdate((e) => {
-      // Absolute position within the scrollable content
-      const absoluteY = e.absoluteY + scrollY.value - HEADER_OFFSET;
-      top.value = absoluteY;
+      // Relative movement prevents jumping
+      top.value = startTop.value + e.translationY;
 
       // ── Autoscroll up ──────────────────────────────────────
       if (e.absoluteY < AUTOSCROLL_THRESHOLD) {
@@ -127,7 +128,8 @@ function SortableItem({
       }
 
       // ── Swap logic ─────────────────────────────────────────
-      const newIndex = clamp(Math.floor(absoluteY / ITEM_HEIGHT), 0, total - 1);
+      const centerOfCard = top.value + ITEM_HEIGHT / 2;
+      const newIndex = clamp(Math.floor(centerOfCard / ITEM_HEIGHT), 0, total - 1);
       const currentIndex = positions.value[song.id];
 
       if (newIndex !== currentIndex) {
