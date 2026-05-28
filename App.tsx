@@ -1,4 +1,4 @@
-/*
+
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect } from 'react';
 import * as Updates from 'expo-updates';
@@ -84,7 +84,6 @@ function MainAppContent() {
         <StatusBar style="light" />
 
         {/* Header Superior */}
-        /*
         <View style={styles.header}>
           <Text style={styles.logo}>Cancionero</Text>
           <View style={styles.headerActions}>
@@ -117,7 +116,7 @@ function MainAppContent() {
             </TouchableOpacity>
           </View>
         </View>
-*/
+
         {/* Contenido Principal según el Tab activo */}
         /*
         <View style={styles.content}>
@@ -151,7 +150,7 @@ function MainAppContent() {
             <Text style={[styles.tabText, activeTab === 'setlists' && styles.activeTabText]}>Listas</Text>
           </TouchableOpacity>
         </View>
-*/
+        */
         {/* Modal del Visor de Canciones */}
         /*
         <Modal
@@ -390,4 +389,3 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 });
-*/

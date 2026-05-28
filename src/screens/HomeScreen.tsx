@@ -4,6 +4,8 @@ import { Music, List, TrendingUp, Star, Play, Radio, BookOpen, Heart, Settings }
 import { useAppContext } from '../context/AppContext';
 import { LiveSessionBanners } from '../components/LiveSessionBanners';
 import { COLORS } from '../constants/theme';
+import { AppHeader } from '../components/layout/AppHeader';
+import { router } from 'expo-router';
 
 export const HomeScreen = () => {
   const {
@@ -17,7 +19,9 @@ export const HomeScreen = () => {
     handleStartSetlistLocally,
     handleStartShow,
     myDirectorSession,
-    setActiveSetlist
+    setActiveSetlist,
+    isSyncing,
+    handleSync
   } = useAppContext();
 
   const handleSetlistPress = (setlist: any) => {
@@ -44,7 +48,13 @@ export const HomeScreen = () => {
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-      
+      <AppHeader
+        title="Cancionero"
+        isSyncing={isSyncing}
+        onSync={handleSync}
+        onSettings={() => router.push("/modals/settings")}
+        hasUser={!!user}
+      />
       {/* SECCIÓN DE BIENVENIDA */}
       <View style={styles.welcomeSection}>
         <View style={styles.welcomeLeft}>
@@ -141,8 +151,8 @@ export const HomeScreen = () => {
               {user && (
                 <TouchableOpacity
                   style={[
-                    styles.startShowBtn, 
-                    myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive, 
+                    styles.startShowBtn,
+                    myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive,
                     { marginTop: 0, flex: 1, justifyContent: 'center' }
                   ]}
                   onPress={() => handleStartShow(setlist)}
