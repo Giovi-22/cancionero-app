@@ -3,6 +3,7 @@ import { StorageService } from './StorageService';
 import { FileSystemService } from './FileSystemService';
 import { authService } from './AuthService';
 import { Song, SongMetadata } from '../types';
+import { legacyToChordPro } from '../utils/legacyToChordPro';
 
 export class SyncService {
   private static isSyncing = false;
@@ -150,7 +151,8 @@ export class SyncService {
     try {
       const content = await driveService.getSongContent(song.id, song.mimeType);
       if (content) {
-        await FileSystemService.saveSongContent(song.id, content);
+        const chordProContent = legacyToChordPro(content);
+        await FileSystemService.saveSongContent(song.id, chordProContent);
         return true;
       }
       return false;

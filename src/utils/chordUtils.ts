@@ -143,7 +143,22 @@ export function cleanSongText(text: string): string {
   let cleaned = text
     .replace(/\r\n/g, '\n')
     .split('\n')
-    .map(line => line.trimEnd())
+    .map(line => {
+      // Expansión dinámica de tabulaciones (tab stops cada 8 caracteres)
+      let result = '';
+      let col = 0;
+      for (let i = 0; i < line.length; i++) {
+        if (line[i] === '\t') {
+          const spaces = 8 - (col % 8);
+          result += ' '.repeat(spaces);
+          col += spaces;
+        } else {
+          result += line[i];
+          col++;
+        }
+      }
+      return result.trimEnd();
+    })
     .join('\n');
 
   cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
@@ -181,13 +196,27 @@ export function parseSongToBlocks(text: string): SongLineParsed[] {
       continue;
     }
 
-    if (isChordLine(currentLine) && nextLine !== undefined && !isChordLine(nextLine) && nextLine.trim() !== '' && !isMetadataLine(nextLine)) {
-      result.push(parseChordsAndLyrics(currentLine, nextLine));
-      i++;
-      continue;
-    }
-
     if (isChordLine(currentLine)) {
+      // Look ahead to find the lyric line, skipping empty lines
+      let lyricLineIndex = i + 1;
+      while (lyricLineIndex < lines.length && lines[lyricLineIndex].trim() === '') {
+        lyricLineIndex++;
+      }
+      
+      const potentialLyricLine = lines[lyricLineIndex];
+      
+      if (
+        potentialLyricLine !== undefined && 
+        !isChordLine(potentialLyricLine) && 
+        !isMetadataLine(potentialLyricLine) && 
+        !potentialLyricLine.trim().startsWith('[')
+      ) {
+        result.push(parseChordsAndLyrics(currentLine, potentialLyricLine));
+        i = lyricLineIndex; // Skip the blank lines and the lyric line
+        continue;
+      }
+
+      // If no valid lyric line was found, treat it as chords only
       result.push({
         type: 'chords-lyrics',
         isMetadata: isMetadataLine(currentLine),
@@ -214,70 +243,103 @@ export function parseSongToBlocks(text: string): SongLineParsed[] {
 }
 
 function parseChordsAndLyrics(chordLine: string, lyricLine: string): SongLineParsed {
-  const blocks: SongBlock[] = []
-  const chordRegex = /\S+/g
-  let match
-  const chords: { chord: string; index: number }[] = []
+  const blocks: SongBlock[] = [];
+  const chordRegex = /\S+/g;
+  let match;
+  const chords: { chord: string; index: number }[] = [];
   while ((match = chordRegex.exec(chordLine)) !== null) {
-    chords.push({ chord: match[0], index: match.index })
+    chords.push({ chord: match[0], index: match.index });
   }
 
   if (chords.length === 0) {
-    return { type: 'text', blocks: [{ text: lyricLine }] }
+    return { type: 'text', blocks: [{ text: lyricLine }] };
   }
 
-  function snapToWordStart(pos: number, text: string): number {
-    if (pos <= 0) return 0
-    if (pos >= text.length) return text.length
-    if (text[pos] === ' ') return pos;
-    if (pos > 0 && text[pos - 1] === ' ') return pos
-
-    let i = pos
-    while (i > 0 && text[i - 1] !== ' ') i--
-    return i
+  // 1. Identificar bloques de palabras en la línea de letra
+  const wordBlocks: { text: string; start: number; end: number; chords: { chord: string; relIndex: number }[] }[] = [];
+  
+  // Agregar espacios iniciales como un bloque si existen
+  const leadingSpacesMatch = lyricLine.match(/^\s+/);
+  if (leadingSpacesMatch) {
+    wordBlocks.push({
+      text: leadingSpacesMatch[0],
+      start: 0,
+      end: leadingSpacesMatch[0].length,
+      chords: []
+    });
   }
 
-  const groups: Map<number, { chord: string; index: number }[]> = new Map();
-  const cutPointsSet: Set<number> = new Set();
+  const wordRegex = /\S+\s*/g;
+  while ((match = wordRegex.exec(lyricLine)) !== null) {
+    wordBlocks.push({
+      text: match[0],
+      start: match.index,
+      end: match.index + match[0].length,
+      chords: []
+    });
+  }
 
+  if (wordBlocks.length === 0) {
+    wordBlocks.push({
+      text: lyricLine || ' ',
+      start: 0,
+      end: Math.max(1, lyricLine.length),
+      chords: []
+    });
+  }
+
+  // 2. Asignar cada acorde a su bloque de palabra correspondiente
   for (const c of chords) {
-    const cp = snapToWordStart(c.index, lyricLine);
-    if (!groups.has(cp)) groups.set(cp, []);
-    groups.get(cp)!.push(c);
-    cutPointsSet.add(cp);
+    let assigned = false;
+    
+    for (const w of wordBlocks) {
+      if (c.index >= w.start && c.index < w.end) {
+        w.chords.push({ chord: c.chord, relIndex: c.index - w.start });
+        assigned = true;
+        break;
+      }
+    }
+    
+    if (!assigned) {
+      const lastBlock = wordBlocks[wordBlocks.length - 1];
+      if (c.index >= lastBlock.end) {
+        const extraSpaces = c.index - lastBlock.end;
+        lastBlock.text += " ".repeat(extraSpaces);
+        lastBlock.end = c.index;
+      }
+      lastBlock.chords.push({ chord: c.chord, relIndex: c.index - lastBlock.start });
+    }
   }
 
-  const sortedCutPoints = Array.from(cutPointsSet).sort((a, b) => a - b);
+  // 3. Crear los SongBlocks finales
+  for (const w of wordBlocks) {
+    if (w.chords.length === 0) {
+      blocks.push({ text: w.text });
+      continue;
+    }
 
-  if (sortedCutPoints[0] > 0) {
-    blocks.push({ text: lyricLine.substring(0, sortedCutPoints[0]) });
-  }
-
-  for (let i = 0; i < sortedCutPoints.length; i++) {
-    const start = sortedCutPoints[i];
-    const end = i + 1 < sortedCutPoints.length ? sortedCutPoints[i + 1] : lyricLine.length;
-
-    const chordsInGroup = groups.get(start)!;
+    w.chords.sort((a, b) => a.relIndex - b.relIndex);
 
     let combinedChord = "";
-    let lastChordEnd = chordsInGroup[0].index;
-    combinedChord += chordsInGroup[0].chord;
-    lastChordEnd = chordsInGroup[0].index + chordsInGroup[0].chord.length;
+    let lastChordEnd = 0;
 
-    for (let j = 1; j < chordsInGroup.length; j++) {
-      const c = chordsInGroup[j];
-      const gap = Math.max(1, c.index - lastChordEnd);
-      combinedChord += " ".repeat(gap) + c.chord;
-      lastChordEnd = c.index + c.chord.length;
+    for (let j = 0; j < w.chords.length; j++) {
+      const c = w.chords[j];
+      const gap = c.relIndex - lastChordEnd;
+      if (gap > 0) {
+        combinedChord += " ".repeat(gap);
+      }
+      combinedChord += c.chord;
+      lastChordEnd = c.relIndex + c.chord.length;
     }
 
     blocks.push({
       chord: combinedChord,
-      text: lyricLine.substring(start, end)
+      text: w.text
     });
   }
 
-  return { type: 'chords-lyrics', blocks }
+  return { type: 'chords-lyrics', blocks };
 }
 
 function parseChordsOnly(line: string): SongBlock[] {

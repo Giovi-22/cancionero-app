@@ -2,6 +2,9 @@ import * as SQLite from 'expo-sqlite';
 import { SongMetadata, Library } from '../types';
 import { supabase } from '../lib/supabase';
 import { FileSystemService } from './FileSystemService';
+import { legacyToChordPro } from '../utils/legacyToChordPro';
+
+import { isSingleChord } from '../utils/chordpro';
 
 const DB_NAME = 'cancionero.db';
 
@@ -123,6 +126,54 @@ export class StorageService {
       }
     } catch (e) {
       console.error('Error during initial libraries migration:', e);
+    }
+
+    // Migración local de canciones a ChordPro
+    try {
+      await this.migrateLocalSongsToChordPro(db);
+    } catch (e) {
+      console.error('Error migrating local songs to ChordPro:', e);
+    }
+  }
+
+  private static async migrateLocalSongsToChordPro(db: SQLite.SQLiteDatabase) {
+    try {
+      console.log('[Migration] Starting local songs migration to ChordPro...');
+      const songs = await db.getAllAsync<any>('SELECT id FROM songs');
+      if (!songs || songs.length === 0) {
+        console.log('[Migration] No local songs found to migrate.');
+        return;
+      }
+
+      let migratedCount = 0;
+      for (const song of songs) {
+        const content = await FileSystemService.getSongContent(song.id);
+        if (content) {
+          // Si tiene acordes entre corchetes válidos, ya está convertida
+          let hasBracketedChords = false;
+          const matches = content.match(/\[([^\]]+)\]/g);
+          if (matches) {
+            for (const m of matches) {
+              const inside = m.slice(1, -1).trim();
+              if (isSingleChord(inside)) {
+                hasBracketedChords = true;
+                break;
+              }
+            }
+          }
+
+          if (!hasBracketedChords) {
+            const converted = legacyToChordPro(content);
+            if (converted !== content) {
+              await FileSystemService.saveSongContent(song.id, converted);
+              migratedCount++;
+            }
+          }
+        }
+      }
+      console.log(`[Migration] Local songs migration completed. Converted ${migratedCount}/${songs.length} songs.`);
+    } catch (error) {
+      console.error('[Migration] Failed to migrate local songs:', error);
     }
   }
 

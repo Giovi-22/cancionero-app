@@ -84,6 +84,7 @@ export interface AppContextType {
   handleRemoveSongFromSetlist: (songId: string) => Promise<void>;
   handleMoveSong: (fromIndex: number, toIndex: number) => Promise<void>;
   handleSaveSetlistSongs: (name: string, date: Date | undefined, songIds: string[]) => Promise<void>;
+  handleClearRepertoire: () => Promise<void>;
   
   // Library Actions
   handleCreateLibrary: (name: string, driveFolderId?: string, icon?: string, color?: string) => Promise<void>;
@@ -384,6 +385,40 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     await refreshLocalData();
   };
 
+  const handleClearRepertoire = async () => {
+    if (!activeLibrary) return;
+    try {
+      setIsSyncing(true);
+      // 1. Obtener todas las canciones locales de esta biblioteca
+      const localSongs = await StorageService.getAllSongs(activeLibrary.id);
+      
+      // 2. Borrar archivos físicos
+      for (const song of localSongs) {
+        await FileSystemService.deleteSongFile(song.id);
+      }
+      
+      // 3. Borrar registros de la base de datos local
+      const db = await StorageService.getDb();
+      await db.runAsync('DELETE FROM songs WHERE library_id = ?', [activeLibrary.id]);
+      
+      // 4. Borrar estadísticas en Supabase si está autenticado
+      if (user) {
+        const { error } = await supabase.from('song_stats').delete().eq('user_id', user.id);
+        if (error) console.error('[Clear Repertoire] Error clearing Supabase stats:', error);
+      }
+      
+      // 5. Recargar datos locales
+      await refreshLocalDataForLibrary(activeLibrary.id);
+      
+      Alert.alert('Éxito', 'Se limpiaron todas las canciones locales y sus estadísticas.');
+    } catch (e) {
+      console.error('[Clear Repertoire] Error clearing songs:', e);
+      Alert.alert('Error', 'No se pudieron limpiar las canciones.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   // --- CRUD de Bibliotecas en el Contexto ---
   const handleCreateLibrary = async (name: string, folderId?: string, icon?: string, color?: string) => {
     const now = Date.now();
@@ -640,7 +675,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         handleSaveSetlistSongs,
         handleCreateLibrary,
         handleUpdateLibrary,
-        handleDeleteLibrary
+        handleDeleteLibrary,
+        handleClearRepertoire
       }}
     >
       {children}

@@ -10,8 +10,8 @@ import {
   Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List, Share2
 } from 'lucide-react-native';
 import {
-  transposeText, trimCommonIndentation, cleanSongText, parseSongToBlocks
-} from '../utils/chordUtils';
+  parseChordPro, transposeChordPro
+} from '../utils/chordpro';
 import { LiveSessionService } from '../services/LiveSessionService';
 import { SongMetadata } from '../types';
 import { PdfService } from '../services/PdfService';
@@ -153,6 +153,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const [beat, setBeat] = useState(false);
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [isDebugMode, setIsDebugMode] = useState(false);
 
   // Aislar estado por canción
   const prevSongId = useRef(songId);
@@ -218,10 +219,10 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   // ── Procesar canción ───────────────────────────
   const parsedLines = useMemo(() => {
     const contentWithoutFooter = content.replace(new RegExp(FOOTER_TEXT, 'gi'), '');
-    const cleaned = cleanSongText(contentWithoutFooter);
-    const transposed = transposeText(cleaned, transpose - capo);
-    const trimmed = trimCommonIndentation(transposed);
-    return parseSongToBlocks(trimmed);
+    const transposed = transposeChordPro(contentWithoutFooter, transpose - capo);
+    const result = parseChordPro(transposed);
+    
+    return result;
   }, [content, transpose, capo]);
 
   // ── Auto-scroll ────────────────────────────────
@@ -404,25 +405,32 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                   onPress={() => addFloatingNoteAtLine(lIndex)}
                   style={[styles.lineWrapper, line.type === 'section' && (isTitle ? styles.titleLine : styles.sectionLine)]}
                 >
-                  <View style={styles.blocksContainer}>
+                  <View style={[
+                    styles.blocksContainer,
+                    isTitle && { justifyContent: 'center', width: '100%' },
+                    isDebugMode && { borderWidth: 1, borderColor: '#3b82f6', borderStyle: 'dashed' }
+                  ]}>
                     {line.blocks.map((block, bIndex) => (
                       <View key={bIndex} style={[
                         styles.block,
                         isTitle && { width: '100%', alignItems: 'center' },
-                        line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' }
+                        line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
+                        isDebugMode && { borderWidth: 1, borderColor: '#ef4444', padding: 1 }
                       ]}>
                         {block.chord && viewMode !== 'lyrics' && (
                           <Text style={[
                             styles.chordText,
-                            { fontSize: fontSize * 0.9 },
-                            line.isMetadata && { marginRight: 4 }
+                            { fontSize: fontSize },
+                            line.isMetadata && { marginRight: 4 },
+                            isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
                           ]}>{block.chord}</Text>
                         )}
                         <Text style={[
                           styles.lyricText,
                           { fontSize },
                           line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
-                          isTitle && { fontSize: fontSize * 1.5, textAlign: 'center' }
+                          isTitle && { fontSize: fontSize * 1.5, textAlign: 'center' },
+                          isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
                         ]}>
                           {isTitle ? block.text.replace(/\[TITULO\]/i, '').trim() : (block.text || ' ')}
                         </Text>
@@ -611,6 +619,17 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               </TouchableOpacity>
               <TouchableOpacity style={[styles.toggleBtn, viewMode === 'lyrics' && styles.toggleBtnActive]} onPress={() => setViewMode('lyrics')}>
                 <Text style={[styles.toggleText, viewMode === 'lyrics' && styles.toggleTextActive]}>Solo Letra</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Modo Depuración */}
+            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Modo Depuración (Alineación)</Text>
+            <View style={styles.toggleGroup}>
+              <TouchableOpacity style={[styles.toggleBtn, !isDebugMode && styles.toggleBtnActive]} onPress={() => setIsDebugMode(false)}>
+                <Text style={[styles.toggleText, !isDebugMode && styles.toggleTextActive]}>Apagado</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.toggleBtn, isDebugMode && styles.toggleBtnActive]} onPress={() => setIsDebugMode(true)}>
+                <Text style={[styles.toggleText, isDebugMode && styles.toggleTextActive]}>Encendido</Text>
               </TouchableOpacity>
             </View>
 

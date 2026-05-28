@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, StyleSheet, Alert } from 'react-native';
 import { X, Search, User as UserIcon, BookOpen } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { authService } from '../services/AuthService';
@@ -19,7 +19,8 @@ export const SettingsModal = ({ onOpenLibraries }: SettingsModalProps) => {
     handleSaveConfig,
     openFolderPicker,
     user,
-    activeLibrary
+    activeLibrary,
+    handleClearRepertoire
   } = useAppContext();
 
   if (!isSettingsOpen) return null;
@@ -93,6 +94,26 @@ export const SettingsModal = ({ onOpenLibraries }: SettingsModalProps) => {
             <Text style={styles.googleButtonText}>Iniciar Sesión con Google</Text>
           </TouchableOpacity>
         )}
+
+        {/* Zona de Peligro - Limpiar Repertorio */}
+        <View style={styles.dangerZone}>
+          <Text style={styles.settingLabel}>Zona de Peligro</Text>
+          <TouchableOpacity 
+            style={styles.clearButton} 
+            onPress={() => {
+              Alert.alert(
+                'Limpiar Repertorio',
+                '¿Estás seguro de que querés borrar todas las canciones locales de esta biblioteca y sus estadísticas en la nube? Deberás sincronizar de nuevo para descargarlas.',
+                [
+                  { text: 'Cancelar', style: 'cancel' },
+                  { text: 'Borrar todo', style: 'destructive', onPress: () => handleClearRepertoire() }
+                ]
+              );
+            }}
+          >
+            <Text style={styles.clearButtonText}>Limpiar Repertorio Local</Text>
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -240,7 +261,26 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   googleButtonText: {
-    color: '#white',
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
+  },
+  dangerZone: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  clearButton: {
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+    backgroundColor: 'rgba(239, 68, 68, 0.05)',
+  },
+  clearButtonText: {
+    color: '#ef4444',
     fontWeight: 'bold',
     fontSize: 14,
   },
