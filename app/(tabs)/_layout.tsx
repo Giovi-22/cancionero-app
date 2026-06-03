@@ -3,6 +3,7 @@ import {
     Home,
     Music,
     List,
+    User,
 } from "lucide-react-native";
 
 import { COLORS } from "../../src/constants/theme";
@@ -46,6 +47,16 @@ export default function TabsLayout() {
                     title: "Listas",
                     tabBarIcon: ({ color, size }) => (
                         <List color={color} size={size} />
+                    ),
+                }}
+            />
+
+            <Tabs.Screen
+                name="user"
+                options={{
+                    title: "Perfil",
+                    tabBarIcon: ({ color, size }) => (
+                        <User color={color} size={size} />
                     ),
                 }}
             />

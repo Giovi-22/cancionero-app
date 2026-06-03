@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, TextInput, StyleSheet, Alert, Modal } from 'react-native';
-import { X, Plus, Trash2, Edit2, Check, BookOpen, Music, Star, Heart, Settings } from 'lucide-react-native';
+import { X, Plus, Trash2, Edit2, Check, BookOpen, Music, Star, Heart, Settings, Folder, Mic, Headphones, Radio, Bookmark, List, Play, Volume2 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { COLORS } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -12,8 +12,15 @@ interface LibrarySelectorModalProps {
 }
 
 const PRESETS = {
-  colors: ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#06b6d4'],
-  icons: ['book-open', 'music', 'star', 'heart', 'settings']
+  colors: [
+    '#ef4444', '#f97316', '#f59e0b', '#eab308', '#84cc16', '#22c55e', '#10b981',
+    '#14b8a6', '#06b6d4', '#0ea5e9', '#3b82f6', '#6366f1', '#8b5cf6', '#a855f7',
+    '#d946ef', '#ec4899', '#f43f5e', '#64748b', '#78716c'
+  ],
+  icons: [
+    'book-open', 'music', 'star', 'heart', 'settings',
+    'folder', 'mic', 'headphones', 'radio', 'bookmark', 'list', 'play', 'volume2'
+  ]
 };
 
 export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalProps) => {
@@ -83,14 +90,18 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
 
   const renderIcon = (iconName: string, color: string, size: number = 20) => {
     switch (iconName) {
-      case 'music':
-        return <Music size={size} color={color} />;
-      case 'star':
-        return <Star size={size} color={color} />;
-      case 'heart':
-        return <Heart size={size} color={color} />;
-      case 'settings':
-        return <Settings size={size} color={color} />;
+      case 'music': return <Music size={size} color={color} />;
+      case 'star': return <Star size={size} color={color} />;
+      case 'heart': return <Heart size={size} color={color} />;
+      case 'settings': return <Settings size={size} color={color} />;
+      case 'folder': return <Folder size={size} color={color} />;
+      case 'mic': return <Mic size={size} color={color} />;
+      case 'headphones': return <Headphones size={size} color={color} />;
+      case 'radio': return <Radio size={size} color={color} />;
+      case 'bookmark': return <Bookmark size={size} color={color} />;
+      case 'list': return <List size={size} color={color} />;
+      case 'play': return <Play size={size} color={color} />;
+      case 'volume2': return <Volume2 size={size} color={color} />;
       case 'book-open':
       default:
         return <BookOpen size={size} color={color} />;

@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
-import { Music, List, TrendingUp, Star, Play, Radio, BookOpen, Heart, Settings } from 'lucide-react-native';
+import { Music, List, TrendingUp, Star, Play, Radio, BookOpen, Heart, Settings, Folder, Mic, Headphones, Bookmark, Volume2 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { LiveSessionBanners } from '../components/LiveSessionBanners';
 import { COLORS } from '../constants/theme';
@@ -14,7 +14,6 @@ export const HomeScreen = () => {
     topSongs,
     setlists,
     activeLibrary,
-    setActiveTab,
     handleSongPress,
     handleStartSetlistLocally,
     handleStartShow,
@@ -26,20 +25,24 @@ export const HomeScreen = () => {
 
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
-    setActiveTab('songs');
+    router.push('/(tabs)/songs');
   };
 
   const renderLibraryIcon = (iconName: string, color: string) => {
     const size = 18;
     switch (iconName) {
-      case 'music':
-        return <Music size={size} color={color} />;
-      case 'star':
-        return <Star size={size} color={color} />;
-      case 'heart':
-        return <Heart size={size} color={color} />;
-      case 'settings':
-        return <Settings size={size} color={color} />;
+      case 'music': return <Music size={size} color={color} />;
+      case 'star': return <Star size={size} color={color} />;
+      case 'heart': return <Heart size={size} color={color} />;
+      case 'settings': return <Settings size={size} color={color} />;
+      case 'folder': return <Folder size={size} color={color} />;
+      case 'mic': return <Mic size={size} color={color} />;
+      case 'headphones': return <Headphones size={size} color={color} />;
+      case 'radio': return <Radio size={size} color={color} />;
+      case 'bookmark': return <Bookmark size={size} color={color} />;
+      case 'list': return <List size={size} color={color} />;
+      case 'play': return <Play size={size} color={color} />;
+      case 'volume2': return <Volume2 size={size} color={color} />;
       case 'book-open':
       default:
         return <BookOpen size={size} color={color} />;
@@ -52,7 +55,7 @@ export const HomeScreen = () => {
         title="Cancionero"
         isSyncing={isSyncing}
         onSync={handleSync}
-        onSettings={() => router.push("/modals/settings")}
+        onSettings={() => router.push("/(tabs)/user")}
         hasUser={!!user}
       />
       {/* SECCIÓN DE BIENVENIDA */}
@@ -86,12 +89,12 @@ export const HomeScreen = () => {
 
       {/* ESTADÍSTICAS RÁPIDAS */}
       <View style={styles.statsRow}>
-        <TouchableOpacity style={styles.statCard} onPress={() => setActiveTab('songs')}>
+        <TouchableOpacity style={styles.statCard} onPress={() => router.push('/(tabs)/songs')}>
           <Music size={24} color={activeLibrary?.color || COLORS.accent} />
           <Text style={styles.statValue}>{songs.length}</Text>
           <Text style={styles.statLabel}>Canciones</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.statCard} onPress={() => setActiveTab('setlists')}>
+        <TouchableOpacity style={styles.statCard} onPress={() => router.push('/(tabs)/setlists')}>
           <List size={24} color="#10b981" />
           <Text style={styles.statValue}>{setlists.length}</Text>
           <Text style={styles.statLabel}>Listas</Text>

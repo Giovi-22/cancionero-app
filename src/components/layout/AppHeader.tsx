@@ -6,6 +6,7 @@ import {
     StyleSheet,
     Keyboard,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
     RefreshCcw,
@@ -29,8 +30,10 @@ export function AppHeader({
     onSettings,
     hasUser,
 }: Props) {
+    const insets = useSafeAreaInsets();
+
     return (
-        <View style={styles.header}>
+        <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
             <Text style={styles.logo}>{title}</Text>
 
             <View style={styles.headerActions}>

@@ -4,6 +4,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { X, CheckSquare, Square } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { COLORS } from '../constants/theme';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const CreateSetlistModal = () => {
   const {
@@ -113,6 +114,7 @@ export const EditSetlistModal = () => {
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (isEditSetlistOpen && activeSetlist) {
@@ -150,7 +152,7 @@ export const EditSetlistModal = () => {
       animationType="slide"
       onRequestClose={() => setIsEditSetlistOpen(false)}
     >
-      <View style={styles.editModalContainer}>
+      <View style={[styles.editModalContainer, { paddingTop: insets.top }]}>
         <View style={styles.editModalHeader}>
           <Text style={styles.editModalTitle}>Editar Lista</Text>
           <TouchableOpacity onPress={() => setIsEditSetlistOpen(false)} style={{ padding: 5 }}>

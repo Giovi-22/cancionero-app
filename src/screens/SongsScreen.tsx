@@ -5,36 +5,25 @@ import { useAppContext } from '../context/AppContext';
 import { SongList } from '../components/SongList';
 import { COLORS } from '../constants/theme';
 import { SongMetadata } from '../types';
+import { router } from 'expo-router';
+import { AppHeader } from '../components/layout/AppHeader';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export const SongsScreen = () => {
   const {
     songs,
-    activeSetlist,
-    setActiveSetlist,
-    setActiveTab,
     searchQuery,
     setSearchQuery,
     handleSongPress,
     handleSync,
-    handleRemoveSongFromSetlist,
-    handleMoveSong,
-    handleStartSetlistLocally,
-    handleStartShowFromSetlist,
-    myDirectorSession,
     user,
-    setIsEditSetlistOpen
+    isSyncing
   } = useAppContext();
 
-  // Filtrar canciones según si estamos en un Setlist o en la lista general
+  const insets = useSafeAreaInsets();
+
   const getDisplaySongs = (): SongMetadata[] => {
-    let list: SongMetadata[] = [];
-    if (activeSetlist) {
-      list = activeSetlist.songIds
-        .map(id => songs.find(s => s.id === id))
-        .filter(Boolean) as SongMetadata[];
-    } else {
-      list = songs;
-    }
+    let list: SongMetadata[] = songs;
 
     if (searchQuery.trim().length > 0) {
       return list.filter(song =>
@@ -47,64 +36,22 @@ export const SongsScreen = () => {
 
   const displaySongs = getDisplaySongs();
 
-  const handleOpenEditSetlist = () => {
-    setIsEditSetlistOpen(true);
-  };
-
   return (
     <View style={styles.container}>
-      {/* Cabecera de Setlist Activo */}
-      {activeSetlist && (
-        <View style={styles.activeSetlistHeader}>
-          <TouchableOpacity 
-            onPress={() => { setActiveSetlist(null); setActiveTab('setlists'); }} 
-            style={styles.closeSetlistBtn}
-          >
-            <ArrowLeft size={20} color="#fff" />
-          </TouchableOpacity>
-          <Text style={styles.activeSetlistTitle} numberOfLines={1}>
-            {activeSetlist.name}
-          </Text>
-
-          <View style={{ flexDirection: 'row', gap: 5 }}>
-            <TouchableOpacity onPress={handleOpenEditSetlist} style={styles.editSetlistBtn}>
-              <Plus size={16} color="#fff" />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={handleOpenEditSetlist} style={styles.editSetlistBtn}>
-              <Edit2 size={16} color="#fff" />
-            </TouchableOpacity>
-          </View>
-
-          <TouchableOpacity
-            style={styles.startShowHeaderBtn}
-            onPress={() => handleStartSetlistLocally(activeSetlist)}
-          >
-            <Play size={14} color="#fff" />
-            <Text style={styles.startShowHeaderText}>Iniciar</Text>
-          </TouchableOpacity>
-          {user && (
-            <TouchableOpacity
-              style={[
-                styles.startShowHeaderBtn, 
-                myDirectorSession?.setlist_id === activeSetlist.id && styles.startShowHeaderBtnActive
-              ]}
-              onPress={() => handleStartShowFromSetlist(activeSetlist)}
-            >
-              <Radio size={14} color="#fff" />
-              <Text style={styles.startShowHeaderText}>
-                {myDirectorSession?.setlist_id === activeSetlist.id ? 'En Vivo' : 'Iniciar Show'}
-              </Text>
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+      <AppHeader
+        title="Canciones"
+        isSyncing={isSyncing}
+        onSync={handleSync}
+        onSettings={() => router.push("/(tabs)/user")}
+        hasUser={!!user}
+      />
 
       {/* Buscador de canciones */}
       <View style={styles.searchContainer}>
         <Search size={18} color={COLORS.mutedForeground} style={styles.searchIcon} />
         <TextInput
           style={styles.searchInput}
-          placeholder={activeSetlist ? "Buscar en esta lista..." : "Buscar canción..."}
+          placeholder="Buscar canción..."
           placeholderTextColor={COLORS.mutedForeground}
           value={searchQuery}
           onChangeText={setSearchQuery}
@@ -123,10 +70,7 @@ export const SongsScreen = () => {
         songs={displaySongs}
         onSongPress={handleSongPress}
         onSyncPress={handleSync}
-        isSetlistMode={!!activeSetlist}
-        onRemoveFromSetlist={activeSetlist ? handleRemoveSongFromSetlist : undefined}
-        onAddSongsPress={handleOpenEditSetlist}
-        onReorder={activeSetlist ? handleMoveSong : undefined}
+        isSetlistMode={false}
       />
     </View>
   );

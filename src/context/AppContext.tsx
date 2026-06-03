@@ -8,12 +8,11 @@ import { SyncService } from '../services/SyncService';
 import { DriveService } from '../services/DriveService';
 import { FileSystemService } from '../services/FileSystemService';
 import { Alert, Keyboard, Platform } from 'react-native';
+import { router } from 'expo-router';
 
 export interface AppContextType {
   user: any;
   setUser: (user: any) => void;
-  activeTab: 'home' | 'songs' | 'setlists';
-  setActiveTab: (tab: 'home' | 'songs' | 'setlists') => void;
   activeLibrary: Library | null;
   libraries: Library[];
   setActiveLibrary: (library: Library) => Promise<void>;
@@ -27,6 +26,8 @@ export interface AppContextType {
   // Modals state
   isSettingsOpen: boolean;
   setIsSettingsOpen: (open: boolean) => void;
+  isLibrariesOpen: boolean;
+  setIsLibrariesOpen: (open: boolean) => void;
   isFolderPickerOpen: boolean;
   setIsFolderPickerOpen: (open: boolean) => void;
   isCreateSetlistOpen: boolean;
@@ -96,8 +97,8 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'songs' | 'setlists'>('home');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLibrariesOpen, setIsLibrariesOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState('');
 
@@ -155,10 +156,10 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  // Limpiar buscador al cambiar de pestaña o de lista
+  // Limpiar buscador al cambiar de lista
   useEffect(() => {
     setSearchQuery('');
-  }, [activeTab, activeSetlist]);
+  }, [activeSetlist]);
 
   // Actualizar "mi sesión de director"
   useEffect(() => {
@@ -283,6 +284,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       setSelectedSong(song);
 
       await refreshLocalDataForLibrary(libId);
+      router.push(`/song/${song.id}`);
     } catch (error) {
       Alert.alert('Error', 'No se pudo abrir la canción.');
     }
@@ -613,8 +615,6 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       value={{
         user,
         setUser,
-        activeTab,
-        setActiveTab,
         activeLibrary,
         libraries,
         setActiveLibrary,
@@ -626,6 +626,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         setDriveFolderId,
         isSettingsOpen,
         setIsSettingsOpen,
+        isLibrariesOpen,
+        setIsLibrariesOpen,
         isFolderPickerOpen,
         setIsFolderPickerOpen,
         isCreateSetlistOpen,
