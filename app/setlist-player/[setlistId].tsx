@@ -34,6 +34,7 @@ export default function SetlistPlayerScreen() {
     followingSession,
     handleSaveSongSettings,
     handleFollowSongChange,
+    setSetlistSongs,
   } = useAppContext();
 
   const isDirector = directorMode === 'true';
@@ -103,6 +104,9 @@ export default function SetlistPlayerScreen() {
   }, [currentIndex, isDirector, myDirectorSession]);
 
   const handleClose = () => {
+    // Limpiar el estado de la lista para que no aparezca el banner
+    // al abrir una canción individual después
+    setSetlistSongs([]);
     router.back();
   };
 
