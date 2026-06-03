@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
-import { ArrowLeft, Plus, Edit2, Play, Radio, Search, X } from 'lucide-react-native';
+import { ArrowLeft, Plus, Edit2, Play, Radio, Search, X, Square } from 'lucide-react-native';
 import { useAppContext } from '../../../src/context/AppContext';
 import { SongList } from '../../../src/components/SongList';
 import { COLORS } from '../../../src/constants/theme';
@@ -22,6 +22,7 @@ export default function SetlistDetailScreen() {
     handleMoveSong,
     handleStartSetlistLocally,
     handleStartShowFromSetlist,
+    handleEndShow,
     myDirectorSession,
     user,
     setIsEditSetlistOpen,
@@ -109,6 +110,16 @@ export default function SetlistDetailScreen() {
             </Text>
           </TouchableOpacity>
         )}
+        {/* Botón Terminar: solo cuando hay una sesión activa para ESTA lista */}
+        {myDirectorSession?.setlist_id === activeSetlist.id && (
+          <TouchableOpacity
+            style={styles.stopShowBtn}
+            onPress={handleEndShow}
+          >
+            <Square size={16} color="#fff" fill="#fff" />
+            <Text style={styles.startShowHeaderText}>Terminar</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.searchContainer}>
@@ -160,6 +171,11 @@ const styles = StyleSheet.create({
     gap: 8, backgroundColor: COLORS.accent, paddingVertical: 12, paddingHorizontal: 12, borderRadius: 8,
   },
   startShowHeaderBtnActive: { backgroundColor: '#ef4444' },
+  stopShowBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 8, backgroundColor: '#7f1d1d', paddingVertical: 12, paddingHorizontal: 12,
+    borderRadius: 8, borderWidth: 1, borderColor: '#ef4444',
+  },
   startShowHeaderText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
   searchContainer: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,

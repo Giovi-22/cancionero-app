@@ -290,6 +290,30 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Navegar a una canción sin añadir al stack (para siguiente/anterior)
+  const handleNavigateToSong = async (song: SongMetadata) => {
+    try {
+      const content = await FileSystemService.getSongContent(song.id);
+      if (!content) {
+        Alert.alert('Error', 'No se encontró el contenido de la canción.');
+        return;
+      }
+      await StorageService.incrementSongViewCount(song.id);
+      const libId = activeLibrary?.id || 'default';
+      let settings = await StorageService.getSetting(`song_settings_${libId}_${song.id}`);
+      if (!settings && libId === 'default') {
+        settings = await StorageService.getSetting(`song_settings_${song.id}`);
+      }
+      setSongContent(content);
+      setSongSettings(settings);
+      setSelectedSong(song);
+      // replace para NO acumular en el stack y evitar la doble animación
+      router.replace(`/song/${song.id}`);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo cambiar la canción.');
+    }
+  };
+
   const handleSaveSongSettings = async (data: any) => {
     if (data && data.songId && data.settings) {
       const libId = activeLibrary?.id || 'default';
@@ -509,7 +533,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) {
-      await handleSongPress(songsOfList[0]);
+      router.push(`/setlist-player/${setlist.id}?directorMode=true`);
     }
   };
 
@@ -519,7 +543,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) {
-      handleSongPress(songsOfList[0]);
+      router.push(`/setlist-player/${setlist.id}`);
     } else {
       Alert.alert('Lista vacía', 'Agrega canciones a la lista para poder iniciarla.');
     }
@@ -529,14 +553,14 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     if (!selectedSong || setlistSongs.length === 0) return;
     const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
     const next = setlistSongs[idx + 1];
-    if (next) await handleSongPress(next);
+    if (next) await handleNavigateToSong(next);
   };
 
   const handleDirectorPrev = async () => {
     if (!selectedSong || setlistSongs.length === 0) return;
     const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
     const prev = setlistSongs[idx - 1];
-    if (prev) await handleSongPress(prev);
+    if (prev) await handleNavigateToSong(prev);
   };
 
   const handleEndShow = async () => {

@@ -37,7 +37,15 @@ export default function RootLayout() {
                         screenOptions={{
                             headerShown: false,
                         }}
-                    />
+                    >
+                        <Stack.Screen name="(tabs)" />
+                        <Stack.Screen name="song/[id]" />
+                        <Stack.Screen name="pedal-config" />
+                        <Stack.Screen
+                            name="setlist-player/[setlistId]"
+                            options={{ animation: 'slide_from_bottom' }}
+                        />
+                    </Stack>
                     <GlobalModals />
                 </AppContextProvider>
             </SafeAreaProvider>

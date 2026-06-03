@@ -180,29 +180,6 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const pedalIntervalRef = useRef<any>(null);
   const isPedalScrollingRef = useRef(false);
 
-  // ── Widget flotante draggable (Director) ───────
-  const { width: SW, height: SH } = Dimensions.get('window');
-  const dragPos = useRef(new Animated.ValueXY({ x: SW / 2 - 80, y: SH - 220 })).current;
-  const dragOffset = useRef({ x: SW / 2 - 80, y: SH - 220 });
-  dragPos.addListener(v => { dragOffset.current = v; });
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
-      onPanResponderGrant: () => {
-        dragPos.setOffset({ x: dragOffset.current.x, y: dragOffset.current.y });
-        dragPos.setValue({ x: 0, y: 0 });
-      },
-      onPanResponderMove: Animated.event(
-        [null, { dx: dragPos.x, dy: dragPos.y }],
-        { useNativeDriver: false }
-      ),
-      onPanResponderRelease: () => {
-        dragPos.flattenOffset();
-      },
-    })
-  ).current;
 
   // ── Metrónomo ──────────────────────────────────
   useEffect(() => {
@@ -350,17 +327,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       {/* Indicador de metrónomo */}
       {isMetronomeActive && <View style={[styles.metroDot, beat && styles.metroDotActive]} />}
 
-      {/* Indicador de modo */}
-      {(isDirector || !!followSessionId) && (
-        <View style={[styles.liveIndicator, followSessionId ? styles.followerIndicator : styles.directorIndicator]}>
-          <Radio size={12} color="#fff" />
-          <Text style={styles.liveIndicatorText}>
-            {isDirector ? 'DIRECTOR' : 'EN VIVO'}
-          </Text>
-        </View>
-      )}
-
-      {/* Header */}
+      {/* Header principal */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 5 }]}>
         <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
           <ChevronLeft size={28} color={COLORS.foreground} />
@@ -383,6 +350,42 @@ export const SongViewer: React.FC<SongViewerProps> = ({
           </TouchableOpacity>
         </View>
       </View>
+
+      {/* Sub-header de navegación de lista (reemplaza el widget flotante) */}
+      {(isDirector || followSessionId || setlistSongs.length > 0) && (() => {
+        const idx = setlistSongs.findIndex(s => s.id === songId);
+        const isFollower = !!followSessionId && !isDirector;
+        return (
+          <View style={styles.subHeader}>
+            {/* Badge de modo */}
+            <View style={[styles.subHeaderBadge, isFollower ? styles.followerBadge : isDirector ? styles.directorBadge : styles.localBadge]}>
+              <Radio size={10} color="#fff" />
+              <Text style={styles.subHeaderBadgeText}>
+                {isFollower ? 'EN VIVO' : isDirector ? 'DIRECTOR' : 'LISTA'}
+              </Text>
+            </View>
+
+            {/* Controles de navegación */}
+            <TouchableOpacity
+              onPress={onDirectorPrev}
+              style={[styles.subNavBtn, idx <= 0 && styles.subNavBtnDisabled]}
+              disabled={idx <= 0 || isFollower}
+            >
+              <ChevronLeft size={20} color="#fff" />
+            </TouchableOpacity>
+
+            <Text style={styles.subHeaderCounter}>{idx + 1} / {setlistSongs.length}</Text>
+
+            <TouchableOpacity
+              onPress={onDirectorNext}
+              style={[styles.subNavBtn, idx >= setlistSongs.length - 1 && styles.subNavBtnDisabled]}
+              disabled={idx >= setlistSongs.length - 1 || isFollower}
+            >
+              <ChevronRight size={20} color="#fff" />
+            </TouchableOpacity>
+          </View>
+        );
+      })()}
 
       {/* Contenido */}
       <ScrollView
@@ -471,68 +474,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         </View>
       </ScrollView>
 
-      {/* Widget flotante draggable del Director o navegación de Lista local */}
-      {(isDirector || (setlistSongs.length > 0 && !followSessionId)) && (() => {
-        const idx = setlistSongs.findIndex(s => s.id === songId);
-        const currentName = setlistSongs[idx]?.name || '';
-        return (
-          <Animated.View
-            style={[
-              styles.directorWidget,
-              !isDirector && { backgroundColor: 'rgba(16, 185, 129, 0.92)' }, // green for local setlist navigation
-              { left: dragPos.x, top: dragPos.y }
-            ]}
-            {...panResponder.panHandlers}
-          >
-            {/* Handle de arrastre */}
-            <View style={styles.widgetHandle}>
-              <View style={styles.handleDot} />
-              <View style={styles.handleDot} />
-              <View style={styles.handleDot} />
-            </View>
-
-            <View style={styles.widgetBody}>
-              {/* Indicador */}
-              <View style={styles.widgetBadge}>
-                {isDirector ? (
-                  <Radio size={10} color="#fff" />
-                ) : (
-                  <List size={10} color="#fff" />
-                )}
-                <Text style={styles.widgetBadgeText}>
-                  {isDirector ? 'DIRECTOR' : 'LISTA'}
-                </Text>
-              </View>
-
-              {/* Nombre canción actual */}
-              <Text style={styles.widgetSongName} numberOfLines={1}>{currentName}</Text>
-
-              {/* Controles prev/next */}
-              <View style={styles.widgetControls}>
-                <TouchableOpacity
-                  onPress={onDirectorPrev}
-                  style={[styles.widgetNavBtn, idx <= 0 && styles.widgetNavBtnDisabled]}
-                  disabled={idx <= 0}
-                >
-                  <ChevronLeft size={18} color="#fff" />
-                </TouchableOpacity>
-
-                <Text style={styles.widgetCounter}>{idx + 1} / {setlistSongs.length}</Text>
-
-                <TouchableOpacity
-                  onPress={onDirectorNext}
-                  style={[styles.widgetNavBtn, idx >= setlistSongs.length - 1 && styles.widgetNavBtnDisabled]}
-                  disabled={idx >= setlistSongs.length - 1}
-                >
-                  <ChevronRight size={18} color="#fff" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          </Animated.View>
-        );
-      })()}
-
-      {/* Barra flotante */}
+      {/* Barra flotante de controles */}
       {!isSettingsOpen ? (
         <View style={[styles.floatingBar, { bottom: Math.max(insets.bottom, 20) + 10 }]}>
           <View style={styles.controlGroup}>
@@ -647,6 +589,54 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   metroDot: { position: 'absolute', top: 10, left: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: 'transparent', zIndex: 1000 },
   metroDotActive: { backgroundColor: COLORS.accent },
+  // sub-header de navegación de lista
+  subHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    backgroundColor: 'rgba(26,26,26,0.97)',
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    gap: 10,
+  },
+  subHeaderBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 80,
+  },
+  directorBadge: { backgroundColor: '#dc2626' },
+  followerBadge: { backgroundColor: '#7c3aed' },
+  localBadge: { backgroundColor: '#059669' },
+  subHeaderBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+    textTransform: 'uppercase',
+  },
+  subHeaderCounter: {
+    color: COLORS.foreground,
+    fontSize: 14,
+    fontWeight: 'bold',
+    flex: 1,
+    textAlign: 'center',
+  },
+  subNavBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  subNavBtnDisabled: { opacity: 0.25 },
+  // Estilos de indicadores legados (follower)
   liveIndicator: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginTop: 8 },
   directorIndicator: { backgroundColor: '#dc2626' },
   followerIndicator: { backgroundColor: '#7c3aed' },
@@ -671,81 +661,6 @@ const styles = StyleSheet.create({
   noteEditor: { marginTop: 5, backgroundColor: COLORS.surface, borderRadius: 8, borderWidth: 1, borderColor: COLORS.accent, padding: 8 },
   noteInput: { color: COLORS.foreground, fontSize: 14 },
   floatingBar: { position: 'absolute', bottom: 30, left: 20, right: 20, height: 60, backgroundColor: 'rgba(26,26,26,0.95)', borderRadius: 30, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, justifyContent: 'space-between', borderWidth: 1, borderColor: COLORS.border, elevation: 5 },
-  // Director widget draggable
-  directorWidget: {
-    position: 'absolute',
-    width: 170,
-    backgroundColor: 'rgba(220, 38, 38, 0.92)',
-    borderRadius: 20,
-    overflow: 'hidden',
-    elevation: 20,
-    zIndex: 999,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.15)',
-  },
-  widgetHandle: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(0,0,0,0.2)',
-  },
-  handleDot: {
-    width: 5,
-    height: 5,
-    borderRadius: 2.5,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-  },
-  widgetBody: {
-    padding: 10,
-    alignItems: 'center',
-    gap: 6,
-  },
-  widgetBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: 'rgba(0,0,0,0.25)',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-  },
-  widgetBadgeText: {
-    color: '#fff',
-    fontSize: 8,
-    fontWeight: 'bold',
-    letterSpacing: 1.2,
-  },
-  widgetSongName: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    width: '100%',
-  },
-  widgetControls: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    marginTop: 4,
-  },
-  widgetNavBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.2)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  widgetNavBtnDisabled: {
-    opacity: 0.25,
-  },
-  widgetCounter: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
   controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   smallBtn: { width: 30, height: 30, backgroundColor: COLORS.border, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
   ctrlText: { color: '#fff', fontSize: 15, fontWeight: 'bold', minWidth: 40, textAlign: 'center' },

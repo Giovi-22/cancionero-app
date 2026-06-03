@@ -32,12 +32,16 @@ export default function SongScreen() {
     }
 
     const handleClose = () => {
-        setSelectedSong(null);
-        setSongContent(null);
-        if (!myDirectorSession) {
-            setSetlistSongs([]);
-        }
+        // Navegar primero para evitar el flash del spinner de carga
         router.back();
+        // Limpiar el estado después para no pisar la animación de salida
+        setTimeout(() => {
+            setSelectedSong(null);
+            setSongContent(null);
+            if (!myDirectorSession) {
+                setSetlistSongs([]);
+            }
+        }, 350);
     };
 
     return (
