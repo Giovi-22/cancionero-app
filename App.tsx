@@ -1,3 +1,4 @@
+
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useEffect } from 'react';
 import * as Updates from 'expo-updates';
@@ -37,6 +38,7 @@ import { SongViewer } from './src/components/SongViewer';
 import { COLORS } from './src/constants/theme';
 import * as NavigationBar from 'expo-navigation-bar';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import DashboardLayout from './src/dashboard/_layout';
 
 function MainAppContent() {
   const insets = useSafeAreaInsets();
@@ -116,6 +118,7 @@ function MainAppContent() {
         </View>
 
         {/* Contenido Principal según el Tab activo */}
+        /*
         <View style={styles.content}>
           {activeTab === 'home' && <HomeScreen />}
           {activeTab === 'songs' && <SongsScreen />}
@@ -123,6 +126,7 @@ function MainAppContent() {
         </View>
 
         {/* Barra de Navegación Inferior (Tabs) */}
+        /*
         <View style={[styles.tabBar, { paddingBottom: Math.max(insets.bottom, 10) }]}>
           <TouchableOpacity
             style={[styles.tab, activeTab === 'home' && styles.activeTab]}
@@ -146,8 +150,9 @@ function MainAppContent() {
             <Text style={[styles.tabText, activeTab === 'setlists' && styles.activeTabText]}>Listas</Text>
           </TouchableOpacity>
         </View>
-
+        */
         {/* Modal del Visor de Canciones */}
+        /*
         <Modal
           visible={!!selectedSong}
           animationType="slide"

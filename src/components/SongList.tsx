@@ -12,6 +12,7 @@ import Animated, {
   SharedValue,
 } from 'react-native-reanimated';
 import { Music, ChevronRight, Trash2, GripVertical } from 'lucide-react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { SongMetadata } from '../types';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
@@ -180,26 +181,33 @@ function SortableItem({
 
         {/* Song card */}
         <TouchableOpacity
-          style={[styles.songItem, isSetlistMode && { marginBottom: 0 }]}
+          style={[styles.songItemWrapper, isSetlistMode && { marginBottom: 0 }]}
           onPress={() => onSongPress(song)}
-          activeOpacity={0.7}
+          activeOpacity={0.8}
         >
-          <View style={styles.songInfo}>
-            <View style={styles.titleRow}>
-              {isSetlistMode && (
-                <View style={styles.indexBadge}>
-                  <Text style={styles.indexText}>{initialIndex + 1}</Text>
-                </View>
-              )}
-              <Text style={styles.songName} numberOfLines={1}>
-                {song.name}
+          <LinearGradient
+            colors={['#18181b', '#0f172a']}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.songItemGradient}
+          >
+            <View style={styles.songInfo}>
+              <View style={styles.titleRow}>
+                {isSetlistMode && (
+                  <View style={styles.indexBadge}>
+                    <Text style={styles.indexText}>{initialIndex + 1}</Text>
+                  </View>
+                )}
+                <Text style={styles.songName} numberOfLines={1}>
+                  {song.name}
+                </Text>
+              </View>
+              <Text style={styles.songMeta}>
+                {song.syncStatus === 'synced' ? '✓ Sincronizado' : '⌛ Pendiente'}
               </Text>
             </View>
-            <Text style={styles.songMeta}>
-              {song.syncStatus === 'synced' ? '✓ Sincronizado' : '⌛ Pendiente'}
-            </Text>
-          </View>
-          <ChevronRight size={20} color={COLORS.mutedForeground} />
+            <ChevronRight size={20} color={COLORS.mutedForeground} />
+          </LinearGradient>
         </TouchableOpacity>
 
         {/* Remove button */}
@@ -342,8 +350,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  songItem: {
-    backgroundColor: COLORS.surface,
+  songItemWrapper: {
+    flex: 1,
+    borderRadius: 16,
+    height: ITEM_HEIGHT - 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  songItemGradient: {
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderRadius: 16,
@@ -351,8 +368,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: COLORS.border,
-    height: ITEM_HEIGHT - 12,
+    borderColor: '#3f3f46',
     flex: 1,
   },
   songInfo: {

@@ -8,12 +8,11 @@ import { SyncService } from '../services/SyncService';
 import { DriveService } from '../services/DriveService';
 import { FileSystemService } from '../services/FileSystemService';
 import { Alert, Keyboard, Platform } from 'react-native';
+import { router } from 'expo-router';
 
 export interface AppContextType {
   user: any;
   setUser: (user: any) => void;
-  activeTab: 'home' | 'songs' | 'setlists';
-  setActiveTab: (tab: 'home' | 'songs' | 'setlists') => void;
   activeLibrary: Library | null;
   libraries: Library[];
   setActiveLibrary: (library: Library) => Promise<void>;
@@ -27,6 +26,8 @@ export interface AppContextType {
   // Modals state
   isSettingsOpen: boolean;
   setIsSettingsOpen: (open: boolean) => void;
+  isLibrariesOpen: boolean;
+  setIsLibrariesOpen: (open: boolean) => void;
   isFolderPickerOpen: boolean;
   setIsFolderPickerOpen: (open: boolean) => void;
   isCreateSetlistOpen: boolean;
@@ -96,8 +97,8 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 
 export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<any>(null);
-  const [activeTab, setActiveTab] = useState<'home' | 'songs' | 'setlists'>('home');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isLibrariesOpen, setIsLibrariesOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState('');
 
@@ -155,10 +156,10 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
-  // Limpiar buscador al cambiar de pestaña o de lista
+  // Limpiar buscador al cambiar de lista
   useEffect(() => {
     setSearchQuery('');
-  }, [activeTab, activeSetlist]);
+  }, [activeSetlist]);
 
   // Actualizar "mi sesión de director"
   useEffect(() => {
@@ -283,8 +284,34 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       setSelectedSong(song);
 
       await refreshLocalDataForLibrary(libId);
+      // @ts-ignore
+      router.push({ pathname: '/song/[id]', params: { id: song.id } });
     } catch (error) {
       Alert.alert('Error', 'No se pudo abrir la canción.');
+    }
+  };
+
+  // Navegar a una canción sin añadir al stack (para siguiente/anterior)
+  const handleNavigateToSong = async (song: SongMetadata) => {
+    try {
+      const content = await FileSystemService.getSongContent(song.id);
+      if (!content) {
+        Alert.alert('Error', 'No se encontró el contenido de la canción.');
+        return;
+      }
+      await StorageService.incrementSongViewCount(song.id);
+      const libId = activeLibrary?.id || 'default';
+      let settings = await StorageService.getSetting(`song_settings_${libId}_${song.id}`);
+      if (!settings && libId === 'default') {
+        settings = await StorageService.getSetting(`song_settings_${song.id}`);
+      }
+      setSongContent(content);
+      setSongSettings(settings);
+      setSelectedSong(song);
+      // replace para NO acumular en el stack y evitar la doble animación
+      router.replace(`/song/${song.id}`);
+    } catch (error) {
+      Alert.alert('Error', 'No se pudo cambiar la canción.');
     }
   };
 
@@ -507,7 +534,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) {
-      await handleSongPress(songsOfList[0]);
+      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id, directorMode: 'true' } } as any);
     }
   };
 
@@ -517,7 +544,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) {
-      handleSongPress(songsOfList[0]);
+      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id } } as any);
     } else {
       Alert.alert('Lista vacía', 'Agrega canciones a la lista para poder iniciarla.');
     }
@@ -527,14 +554,14 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     if (!selectedSong || setlistSongs.length === 0) return;
     const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
     const next = setlistSongs[idx + 1];
-    if (next) await handleSongPress(next);
+    if (next) await handleNavigateToSong(next);
   };
 
   const handleDirectorPrev = async () => {
     if (!selectedSong || setlistSongs.length === 0) return;
     const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
     const prev = setlistSongs[idx - 1];
-    if (prev) await handleSongPress(prev);
+    if (prev) await handleNavigateToSong(prev);
   };
 
   const handleEndShow = async () => {
@@ -545,9 +572,11 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
 
   const handleJoinSession = (session: LiveSession) => {
     setFollowingSession(session);
-    if (session.current_song_id) {
-      const song = songs.find(s => s.id === session.current_song_id);
-      if (song) handleSongPress(song);
+    if (session.setlist_id) {
+       router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: session.setlist_id } } as any);
+    } else if (session.current_song_id) {
+       const song = songs.find(s => s.id === session.current_song_id);
+       if (song) handleSongPress(song);
     }
     Alert.alert('✅ Conectado', `Siguiendo a ${session.director_name}`);
   };
@@ -613,8 +642,6 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       value={{
         user,
         setUser,
-        activeTab,
-        setActiveTab,
         activeLibrary,
         libraries,
         setActiveLibrary,
@@ -626,6 +653,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         setDriveFolderId,
         isSettingsOpen,
         setIsSettingsOpen,
+        isLibrariesOpen,
+        setIsLibrariesOpen,
         isFolderPickerOpen,
         setIsFolderPickerOpen,
         isCreateSetlistOpen,
