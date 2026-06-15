@@ -3,6 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Radio, Wifi } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { COLORS } from '../constants/theme';
+import { router } from 'expo-router';
 
 export const LiveSessionBanners = () => {
   const {
@@ -24,10 +25,8 @@ export const LiveSessionBanners = () => {
         <TouchableOpacity
           style={styles.directorBanner}
           onPress={async () => {
-            const curId = myDirectorSession.current_song_id;
-            if (!curId) return;
-            const song = songs.find(s => s.id === curId);
-            if (song) handleSongPress(song);
+            if (!myDirectorSession.setlist_id) return;
+            router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: myDirectorSession.setlist_id, directorMode: 'true' } } as any);
           }}
         >
           <View style={styles.bannerLeft}>

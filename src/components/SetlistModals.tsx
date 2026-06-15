@@ -16,6 +16,7 @@ export const CreateSetlistModal = () => {
   const [name, setName] = useState('');
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
 
   useEffect(() => {
     if (isCreateSetlistOpen) {
@@ -34,8 +35,11 @@ export const CreateSetlistModal = () => {
     return `${day}/${month}/${year}`;
   };
 
-  const handleConfirm = () => {
-    handleCreateSetlist(name, date);
+  const handleConfirm = async () => {
+    if (isCreating) return;
+    setIsCreating(true);
+    await handleCreateSetlist(name, date);
+    setIsCreating(false);
   };
 
   return (
@@ -88,9 +92,9 @@ export const CreateSetlistModal = () => {
               <Text style={styles.createModalCancelText}>Cancelar</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={[styles.createModalConfirm, !name.trim() && { opacity: 0.5 }]}
+              style={[styles.createModalConfirm, (!name.trim() || isCreating) && { opacity: 0.5 }]}
               onPress={handleConfirm}
-              disabled={!name.trim()}
+              disabled={!name.trim() || isCreating}
             >
               <Text style={styles.createModalConfirmText}>Crear</Text>
             </TouchableOpacity>

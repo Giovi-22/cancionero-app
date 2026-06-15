@@ -284,7 +284,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       setSelectedSong(song);
 
       await refreshLocalDataForLibrary(libId);
-      router.push(`/song/${song.id}`);
+      // @ts-ignore
+      router.push({ pathname: '/song/[id]', params: { id: song.id } });
     } catch (error) {
       Alert.alert('Error', 'No se pudo abrir la canción.');
     }
@@ -533,7 +534,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) {
-      router.push(`/setlist-player/${setlist.id}?directorMode=true`);
+      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id, directorMode: 'true' } } as any);
     }
   };
 
@@ -543,7 +544,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       .filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) {
-      router.push(`/setlist-player/${setlist.id}`);
+      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id } } as any);
     } else {
       Alert.alert('Lista vacía', 'Agrega canciones a la lista para poder iniciarla.');
     }
@@ -571,9 +572,11 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
 
   const handleJoinSession = (session: LiveSession) => {
     setFollowingSession(session);
-    if (session.current_song_id) {
-      const song = songs.find(s => s.id === session.current_song_id);
-      if (song) handleSongPress(song);
+    if (session.setlist_id) {
+       router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: session.setlist_id } } as any);
+    } else if (session.current_song_id) {
+       const song = songs.find(s => s.id === session.current_song_id);
+       if (song) handleSongPress(song);
     }
     Alert.alert('✅ Conectado', `Siguiendo a ${session.director_name}`);
   };

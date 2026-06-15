@@ -20,7 +20,7 @@ export const SetlistsScreen = () => {
 
   const handleSetlistPress = (setlist: Setlist) => {
     setActiveSetlist(setlist);
-    router.push(`/(tabs)/setlists/${setlist.id}`);
+    router.push({ pathname: "/(tabs)/setlists/[id]", params: { id: setlist.id } } as any);
   };
 
   return (

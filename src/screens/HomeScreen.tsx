@@ -6,6 +6,7 @@ import { LiveSessionBanners } from '../components/LiveSessionBanners';
 import { COLORS } from '../constants/theme';
 import { AppHeader } from '../components/layout/AppHeader';
 import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
 
 export const HomeScreen = () => {
   const {
@@ -25,7 +26,7 @@ export const HomeScreen = () => {
 
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
-    router.push('/(tabs)/songs');
+    router.push({ pathname: "/(tabs)/setlists/[id]", params: { id: setlist.id } } as any);
   };
 
   const renderLibraryIcon = (iconName: string, color: string) => {
@@ -59,7 +60,12 @@ export const HomeScreen = () => {
         hasUser={!!user}
       />
       {/* SECCIÓN DE BIENVENIDA */}
-      <View style={styles.welcomeSection}>
+      <LinearGradient
+        colors={['#1e3a8a', '#3b82f6']}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.welcomeCard}
+      >
         <View style={styles.welcomeLeft}>
           <Text style={styles.welcomeTitle}>
             ¡Hola, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Invitado'}!
@@ -75,14 +81,14 @@ export const HomeScreen = () => {
 
         {/* Badge Biblioteca Activa */}
         {activeLibrary && (
-          <View style={[styles.libraryBadge, { borderColor: activeLibrary.color || COLORS.accent }]}>
-            {renderLibraryIcon(activeLibrary.icon || 'book-open', activeLibrary.color || COLORS.accent)}
-            <Text style={[styles.libraryBadgeText, { color: activeLibrary.color || COLORS.accent }]}>
+          <View style={styles.libraryBadge}>
+            {renderLibraryIcon(activeLibrary.icon || 'book-open', '#fff')}
+            <Text style={styles.libraryBadgeText}>
               {activeLibrary.name}
             </Text>
           </View>
         )}
-      </View>
+      </LinearGradient>
 
       {/* Banners de sesiones live en vivo */}
       <LiveSessionBanners />
@@ -132,8 +138,12 @@ export const HomeScreen = () => {
       </View>
 
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recentSetlists} contentContainerStyle={{ paddingRight: 20 }}>
-        {setlists.slice(0, 5).map((setlist) => (
-          <View key={setlist.id} style={styles.setlistCard}>
+        {setlists.slice(0, 5).map((setlist, idx) => (
+          <LinearGradient
+            key={setlist.id}
+            colors={idx % 2 === 0 ? ['#0f172a', '#1e293b'] : ['#1e1b4b', '#312e81']}
+            style={styles.setlistCard}
+          >
             <TouchableOpacity onPress={() => handleSetlistPress(setlist)}>
               <View style={styles.setlistCardIcon}>
                 <List size={24} color="#fff" />
@@ -167,7 +177,7 @@ export const HomeScreen = () => {
                 </TouchableOpacity>
               )}
             </View>
-          </View>
+          </LinearGradient>
         ))}
         {setlists.length === 0 && (
           <Text style={styles.emptyTextHorizontal}>No hay listas creadas recientemente.</Text>
@@ -186,24 +196,31 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 40,
   },
-  welcomeSection: {
+  welcomeCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 20,
+    marginBottom: 25,
+    padding: 20,
+    borderRadius: 20,
+    shadowColor: '#3b82f6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
   },
   welcomeLeft: {
     flex: 1,
   },
   welcomeTitle: {
-    fontSize: 22,
-    fontWeight: 'bold',
-    color: COLORS.foreground,
+    fontSize: 24,
+    fontWeight: '900',
+    color: '#ffffff',
   },
   welcomeSub: {
     fontSize: 14,
-    color: COLORS.mutedForeground,
-    marginTop: 4,
+    color: 'rgba(255, 255, 255, 0.8)',
+    marginTop: 6,
   },
   connectionWarning: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
@@ -222,15 +239,15 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    borderWidth: 1,
-    paddingVertical: 5,
-    paddingHorizontal: 10,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
     borderRadius: 20,
-    backgroundColor: COLORS.surface,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
   },
   libraryBadgeText: {
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '700',
+    color: '#fff',
   },
   statsRow: {
     flexDirection: 'row',
@@ -239,13 +256,18 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
+    backgroundColor: '#18181b',
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 15,
+    borderColor: '#3f3f46',
+    padding: 16,
     alignItems: 'center',
-    gap: 5,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
   statValue: {
     fontSize: 24,
@@ -285,19 +307,19 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   topSongRank: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: COLORS.card,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#3b82f620',
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: COLORS.border,
+    borderColor: '#3b82f640',
   },
   topSongRankText: {
-    color: COLORS.mutedForeground,
+    color: '#3b82f6',
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '900',
   },
   topSongName: {
     flex: 1,
@@ -322,19 +344,23 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   setlistCard: {
-    backgroundColor: COLORS.surface,
-    borderRadius: 12,
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: COLORS.border,
-    padding: 12,
-    width: 140,
-    marginRight: 12,
+    borderColor: 'rgba(255,255,255,0.1)',
+    padding: 16,
+    width: 150,
+    marginRight: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 5,
   },
   setlistCardIcon: {
-    backgroundColor: COLORS.accent,
-    width: 32,
-    height: 32,
-    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 10,
@@ -354,11 +380,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: COLORS.accent,
-    paddingVertical: 6,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingVertical: 8,
     paddingHorizontal: 8,
-    borderRadius: 6,
-    marginTop: 10,
+    borderRadius: 8,
+    marginTop: 12,
   },
   startShowBtnActive: {
     backgroundColor: '#ef4444',
