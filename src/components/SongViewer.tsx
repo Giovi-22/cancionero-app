@@ -336,9 +336,6 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
   return (
     <View style={styles.container}>
-      {/* Indicador de metrónomo */}
-      {isMetronomeActive && <View style={[styles.metroDot, beat && styles.metroDotActive]} />}
-
       {/* Header principal */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 5 }]}>
         <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
@@ -395,7 +392,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
            </Text>
          </View>
          <View style={[styles.infoBadge, !isMetronomeActive && styles.infoBadgeInactive]}>
-           <Activity size={12} color={isMetronomeActive ? COLORS.foreground : COLORS.mutedForeground} />
+           <Activity size={12} color={isMetronomeActive ? (beat ? COLORS.accent : COLORS.foreground) : COLORS.mutedForeground} />
            <Text style={[styles.infoBadgeText, !isMetronomeActive && styles.infoBadgeTextInactive]}>
              {isMetronomeActive ? `${bpm} BPM` : 'BPM'}
            </Text>
@@ -581,9 +578,9 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               <TouchableOpacity onPress={() => setIsMetronomeActive(!isMetronomeActive)} style={[styles.smallBtn, isMetronomeActive && { backgroundColor: COLORS.accent }]}>
                 <Clock size={18} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 5))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 1))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
               <Text style={styles.ctrlText}>{bpm} BPM</Text>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 5))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 1))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
             </View>
 
             {/* Tamaño letra */}
@@ -644,8 +641,6 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  metroDot: { position: 'absolute', top: 10, left: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: 'transparent', zIndex: 1000 },
-  metroDotActive: { backgroundColor: COLORS.accent },
   // Barra de información de estado
   infoBar: {
     flexDirection: 'row',
