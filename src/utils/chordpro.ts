@@ -141,16 +141,22 @@ export function parseChordPro(text: string): SongLineParsed[] {
   return result;
 }
 
-/**
- * Transpone todos los acordes en una cadena en formato ChordPro.
- */
 export function transposeChordPro(chordProText: string, semitones: number): string {
   if (semitones === 0) return chordProText;
 
-  return chordProText.replace(/\[([^\]]+)\]/g, (match, chord) => {
-    if (isSingleChord(chord)) {
-      return `[${transposeChord(chord, semitones)}]`;
+  const lines = chordProText.split('\n');
+  return lines.map(line => {
+    // Si la línea es un metadato de NOTA, TONO, o KEY, no transponemos sus acordes internos
+    const isNoteMetadata = /^(NOTA|TONO|KEY):\s*/i.test(line.trim());
+    if (isNoteMetadata) {
+      return line;
     }
-    return match;
-  });
+
+    return line.replace(/\[([^\]]+)\]/g, (match, chord) => {
+      if (isSingleChord(chord)) {
+        return `[${transposeChord(chord, semitones)}]`;
+      }
+      return match;
+    });
+  }).join('\n');
 }

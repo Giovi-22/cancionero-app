@@ -7,11 +7,13 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft, ChevronRight, Settings, Play, Pause, Maximize2,
-  Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List, Share2
+  Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List, Share2,
+  Music, Hash, FastForward, Activity
 } from 'lucide-react-native';
 import {
   parseChordPro, transposeChordPro
 } from '../utils/chordpro';
+import { transposeChord } from '../utils/chordUtils';
 import { LiveSessionService } from '../services/LiveSessionService';
 import { SongMetadata } from '../types';
 import { PdfService } from '../services/PdfService';
@@ -202,6 +204,16 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     return result;
   }, [content, transpose, capo]);
 
+  const { originalTone, transposedTone } = useMemo(() => {
+    const match = content.match(/^(?:TONO|KEY):\s*([A-G][b#]?[m]?)/mi);
+    const orig = match ? match[1] : null;
+    let trans = orig;
+    if (orig && (transpose - capo) !== 0) {
+      trans = transposeChord(orig, transpose - capo);
+    }
+    return { originalTone: orig, transposedTone: trans };
+  }, [content, transpose, capo]);
+
   // ── Auto-scroll ────────────────────────────────
   useEffect(() => {
     if (isScrolling) {
@@ -332,7 +344,9 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
           <ChevronLeft size={28} color={COLORS.foreground} />
         </TouchableOpacity>
-        <Text style={styles.title} numberOfLines={1}>{title}</Text>
+        <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 10 }}>
+          <Text style={[styles.title, { marginHorizontal: 0, flex: 0 }]} numberOfLines={1}>{title}</Text>
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity 
             onPress={handleSharePdf} 
@@ -349,6 +363,43 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             <Maximize2 size={24} color={isStageMode ? COLORS.accent : COLORS.foreground} />
           </TouchableOpacity>
         </View>
+      </View>
+
+      {/* Barra de Información de Estado */}
+      <View style={styles.infoBar}>
+         <View style={[
+           styles.infoBadge, 
+           (!originalTone && transpose === 0) && styles.infoBadgeInactive,
+           transpose !== 0 && { borderColor: COLORS.accent, borderWidth: 1, backgroundColor: 'transparent' }
+         ]}>
+           <Music size={12} color={transpose !== 0 ? COLORS.accent : (originalTone ? COLORS.foreground : COLORS.mutedForeground)} />
+           <Text style={[
+             styles.infoBadgeText, 
+             (!originalTone && transpose === 0) && styles.infoBadgeTextInactive,
+             transpose !== 0 && { color: COLORS.accent }
+           ]}>
+             {originalTone ? `${originalTone}${transposedTone && transposedTone !== originalTone ? ` → ${transposedTone}` : ''}` : 'Tono'}
+             {transpose !== 0 ? ` (${transpose > 0 ? `+${transpose}` : transpose})` : ''}
+           </Text>
+         </View>
+         <View style={[styles.infoBadge, capo === 0 && styles.infoBadgeInactive]}>
+           <Hash size={12} color={capo > 0 ? COLORS.foreground : COLORS.mutedForeground} />
+           <Text style={[styles.infoBadgeText, capo === 0 && styles.infoBadgeTextInactive]}>
+             {capo > 0 ? `Capo ${capo}` : 'Capo'}
+           </Text>
+         </View>
+         <View style={[styles.infoBadge, !isScrolling && styles.infoBadgeInactive]}>
+           <FastForward size={12} color={isScrolling ? COLORS.foreground : COLORS.mutedForeground} />
+           <Text style={[styles.infoBadgeText, !isScrolling && styles.infoBadgeTextInactive]}>
+             {isScrolling ? `${scrollSpeed}x` : 'Scroll'}
+           </Text>
+         </View>
+         <View style={[styles.infoBadge, !isMetronomeActive && styles.infoBadgeInactive]}>
+           <Activity size={12} color={isMetronomeActive ? COLORS.foreground : COLORS.mutedForeground} />
+           <Text style={[styles.infoBadgeText, !isMetronomeActive && styles.infoBadgeTextInactive]}>
+             {isMetronomeActive ? `${bpm} BPM` : 'BPM'}
+           </Text>
+         </View>
       </View>
 
       {/* Sub-header de navegación de lista (reemplaza el widget flotante) */}
@@ -400,6 +451,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
           {parsedLines.map((line, lIndex) => {
             const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
             const sectionColor = isStageMode ? '#fbbf24' : COLORS.accent;
+            const fullLineText = line.blocks.map(b => b.text).join('');
+            const isNonPlayableMetadata = line.isMetadata && /^(NOTA|TONO|KEY|BPM|TEMPO|CAPO|COMP[ÁA]S):/i.test(fullLineText);
 
             return (
               <View key={lIndex}>
@@ -425,6 +478,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                             styles.chordText,
                             { fontSize: fontSize },
                             line.isMetadata && { marginRight: 4 },
+                            isNonPlayableMetadata && { color: COLORS.foreground, fontWeight: 'normal' },
                             isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
                           ]}>{block.chord}</Text>
                         )}
@@ -481,7 +535,10 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             <TouchableOpacity onPress={() => setTranspose(p => p - 1)} style={styles.smallBtn}>
               <Minus size={18} color="#fff" />
             </TouchableOpacity>
-            <Text style={styles.ctrlText}>{transpose > 0 ? `+${transpose}` : transpose}</Text>
+            <View style={{ alignItems: 'center' }}>
+              <Text style={{ color: COLORS.mutedForeground, fontSize: 9, fontWeight: 'bold', marginBottom: 1 }}>TONO</Text>
+              <Text style={[styles.ctrlText, { minWidth: 30, fontSize: 14 }]}>{transpose > 0 ? `+${transpose}` : transpose}</Text>
+            </View>
             <TouchableOpacity onPress={() => setTranspose(p => p + 1)} style={styles.smallBtn}>
               <Plus size={18} color="#fff" />
             </TouchableOpacity>
@@ -589,6 +646,42 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
   metroDot: { position: 'absolute', top: 10, left: 10, width: 8, height: 8, borderRadius: 4, backgroundColor: 'transparent', zIndex: 1000 },
   metroDotActive: { backgroundColor: COLORS.accent },
+  // Barra de información de estado
+  infoBar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    paddingHorizontal: 15,
+    paddingTop: 8,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center'
+  },
+  infoBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: COLORS.surface,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  infoBadgeInactive: {
+    backgroundColor: 'transparent',
+    opacity: 0.4,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  infoBadgeText: {
+    color: COLORS.foreground,
+    fontSize: 11,
+    fontWeight: 'bold',
+  },
+  infoBadgeTextInactive: {
+    color: COLORS.mutedForeground,
+  },
   // sub-header de navegación de lista
   subHeader: {
     flexDirection: 'row',
