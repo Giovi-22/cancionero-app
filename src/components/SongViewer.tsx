@@ -17,6 +17,7 @@ import { transposeChord } from '../utils/chordUtils';
 import { LiveSessionService } from '../services/LiveSessionService';
 import { SongMetadata } from '../types';
 import { PdfService } from '../services/PdfService';
+import { PedalHandler } from './PedalHandler';
 
 const COLORS = {
   background: '#0a0a0a', surface: '#1a1a1a', foreground: '#ffffff',
@@ -118,14 +119,14 @@ const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew
           <StickyNote size={12} color="#000" />
           <Text style={styles.noteBadgeText}>{text}</Text>
           {!isStageMode && (
-             <TouchableOpacity onPress={() => setIsEditing(true)} hitSlop={{top:10,bottom:10,left:10,right:10}} style={{marginLeft: 5}}>
-               <Edit2 size={12} color="#000" />
-             </TouchableOpacity>
+            <TouchableOpacity onPress={() => setIsEditing(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 5 }}>
+              <Edit2 size={12} color="#000" />
+            </TouchableOpacity>
           )}
           {!isStageMode && (
-             <TouchableOpacity onPress={() => onDelete(id)} hitSlop={{top:10,bottom:10,left:10,right:10}} style={{marginLeft: 5}}>
-               <X size={14} color="#dc2626" />
-             </TouchableOpacity>
+            <TouchableOpacity onPress={() => onDelete(id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 5 }}>
+              <X size={14} color="#dc2626" />
+            </TouchableOpacity>
           )}
         </View>
       )}
@@ -145,8 +146,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const [fontSize, setFontSize] = useState(initialSettings?.fontSize || 16);
   const [viewMode, setViewMode] = useState<'all' | 'lyrics'>(initialSettings?.viewMode || 'all');
   const [isScrolling, setIsScrolling] = useState(false);
-  const [scrollSpeed, setScrollSpeed] = useState<number>(initialSettings?.scrollSpeed || 1);
-  const [pedalSpeed, setPedalSpeed] = useState<number>(initialSettings?.pedalSpeed || 0.5);
+  const [scrollSpeed, setScrollSpeed] = useState<number>(initialSettings?.scrollSpeed || 0.2);
+  const [pedalSpeed, setPedalSpeed] = useState<number>(initialSettings?.pedalSpeed || 0.2);
   const [isStageMode, setIsStageMode] = useState(true);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [musicianNotes, setMusicianNotes] = useState<any>(initialSettings?.musicianNotes || {});
@@ -179,8 +180,11 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const scrollRef = useRef<ScrollView>(null);
   const scrollPosRef = useRef(0);
   const scrollIntervalRef = useRef<any>(null);
-  const pedalIntervalRef = useRef<any>(null);
-  const isPedalScrollingRef = useRef(false);
+  const pedalRafRef = useRef<number | null>(null);
+  const pedalLastTickRef = useRef<number>(0);
+  // Ref espejo de pedalSpeed para leer el valor actual dentro del rAF
+  // sin necesidad de recrear el callback (evita stale closure).
+  const pedalSpeedRef = useRef(0.2);
 
 
   // ── Metrónomo ──────────────────────────────────
@@ -200,7 +204,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     const contentWithoutFooter = content.replace(new RegExp(FOOTER_TEXT, 'gi'), '');
     const transposed = transposeChordPro(contentWithoutFooter, transpose - capo);
     const result = parseChordPro(transposed);
-    
+
     return result;
   }, [content, transpose, capo]);
 
@@ -227,36 +231,62 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     return () => clearInterval(scrollIntervalRef.current);
   }, [isScrolling, scrollSpeed]);
 
-  // ── Pedal BT: escuchar eventos de teclado hardware ─────────
-  useEffect(() => {
-    // En React Native, el pedal BT/HID emite eventos de teclado
-    // que se capturan via el listener nativo de AppState + Keyboard
-    // La implementación real depende del hardware; aquí usamos el
-    // handler de KeyboardAvoidingView expuesto por Keyboard.addListener
-    const startPedalScroll = () => {
-      if (isPedalScrollingRef.current) return;
-      isPedalScrollingRef.current = true;
-      pedalIntervalRef.current = setInterval(() => {
-        scrollPosRef.current += pedalSpeed * 4;
-        scrollRef.current?.scrollTo({ y: scrollPosRef.current, animated: false });
-      }, 16);
+  // ── Pedal BT: Scroll Fluido (requestAnimationFrame + time-delta) ────────────
+  // Modelo: PedalHandler notifica START (dirección) y STOP (botón suelto).
+  // Usamos rAF en lugar de setInterval para sincronizarnos con el ciclo de
+  // render del display y evitar artefactos visuales en el primer frame.
+  // El avance es proporcional al delta de tiempo real (px/ms), lo que garantiza
+  // velocidad constante independientemente de la frecuencia de pantalla.
+
+  // Mantener ref sincronizado con el estado
+  useEffect(() => { pedalSpeedRef.current = pedalSpeed; }, [pedalSpeed]);
+
+  const startPedalScroll = useCallback((direction: 'up' | 'down') => {
+    // Detener cualquier loop previo
+    if (pedalRafRef.current !== null) {
+      cancelAnimationFrame(pedalRafRef.current);
+      pedalRafRef.current = null;
+    }
+    pedalLastTickRef.current = 0; // Resetear para que el primer frame calcule bien
+
+    // pedalSpeed * 0.3 → px/ms. A velocidad 1.0 = 300px/seg ≈ cómodo para leer
+    const PX_PER_MS = pedalSpeedRef.current * 0.3;
+
+    const tick = (timestamp: number) => {
+      // En el primer frame inicializamos el tiempo sin mover nada
+      if (pedalLastTickRef.current === 0) {
+        pedalLastTickRef.current = timestamp;
+        pedalRafRef.current = requestAnimationFrame(tick);
+        return;
+      }
+
+      const delta = Math.min(timestamp - pedalLastTickRef.current, 50); // cap 50ms
+      pedalLastTickRef.current = timestamp;
+
+      const step = pedalSpeedRef.current * 0.3 * delta;
+      const nextY = direction === 'down'
+        ? scrollPosRef.current + step
+        : Math.max(0, scrollPosRef.current - step);
+
+      scrollRef.current?.scrollTo({ y: nextY, animated: false });
+      scrollPosRef.current = nextY;
+
+      pedalRafRef.current = requestAnimationFrame(tick);
     };
 
-    const stopPedalScroll = () => {
-      isPedalScrollingRef.current = false;
-      clearInterval(pedalIntervalRef.current);
-    };
+    pedalRafRef.current = requestAnimationFrame(tick);
+  }, []);
 
-    // Exponer globalmente para que el handler nativo pueda llamarlos
-    (global as any).__pedalScrollDown = startPedalScroll;
-    (global as any).__pedalScrollUp = stopPedalScroll;
+  const stopPedalScroll = useCallback(() => {
+    if (pedalRafRef.current !== null) {
+      cancelAnimationFrame(pedalRafRef.current);
+      pedalRafRef.current = null;
+    }
+    pedalLastTickRef.current = 0;
+  }, []);
 
-    return () => {
-      stopPedalScroll();
-      delete (global as any).__pedalScrollDown;
-      delete (global as any).__pedalScrollUp;
-    };
-  }, [pedalSpeed]);
+  const handlePedalScrollUp = useCallback(() => startPedalScroll('up'), [startPedalScroll]);
+  const handlePedalScrollDown = useCallback(() => startPedalScroll('down'), [startPedalScroll]);
 
   // ── Director: emitir canción cuando se abre ────
   useEffect(() => {
@@ -278,8 +308,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
   // ── Guardar ajustes ────────────────────────────
   useEffect(() => {
-    onSaveSettings?.({ 
-      songId, 
+    onSaveSettings?.({
+      songId,
       settings: { transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm }
     });
   }, [transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm, songId]);
@@ -345,9 +375,9 @@ export const SongViewer: React.FC<SongViewerProps> = ({
           <Text style={[styles.title, { marginHorizontal: 0, flex: 0 }]} numberOfLines={1}>{title}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity 
-            onPress={handleSharePdf} 
-            style={[styles.headerBtn, { marginRight: 8 }]} 
+          <TouchableOpacity
+            onPress={handleSharePdf}
+            style={[styles.headerBtn, { marginRight: 8 }]}
             disabled={isGeneratingPdf}
           >
             {isGeneratingPdf ? (
@@ -364,39 +394,39 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
       {/* Barra de Información de Estado */}
       <View style={styles.infoBar}>
-         <View style={[
-           styles.infoBadge, 
-           (!originalTone && transpose === 0) && styles.infoBadgeInactive,
-           transpose !== 0 && { borderColor: COLORS.accent, borderWidth: 1, backgroundColor: 'transparent' }
-         ]}>
-           <Music size={12} color={transpose !== 0 ? COLORS.accent : (originalTone ? COLORS.foreground : COLORS.mutedForeground)} />
-           <Text style={[
-             styles.infoBadgeText, 
-             (!originalTone && transpose === 0) && styles.infoBadgeTextInactive,
-             transpose !== 0 && { color: COLORS.accent }
-           ]}>
-             {originalTone ? `${originalTone}${transposedTone && transposedTone !== originalTone ? ` → ${transposedTone}` : ''}` : 'Tono'}
-             {transpose !== 0 ? ` (${transpose > 0 ? `+${transpose}` : transpose})` : ''}
-           </Text>
-         </View>
-         <View style={[styles.infoBadge, capo === 0 && styles.infoBadgeInactive]}>
-           <Hash size={12} color={capo > 0 ? COLORS.foreground : COLORS.mutedForeground} />
-           <Text style={[styles.infoBadgeText, capo === 0 && styles.infoBadgeTextInactive]}>
-             {capo > 0 ? `Capo ${capo}` : 'Capo'}
-           </Text>
-         </View>
-         <View style={[styles.infoBadge, !isScrolling && styles.infoBadgeInactive]}>
-           <FastForward size={12} color={isScrolling ? COLORS.foreground : COLORS.mutedForeground} />
-           <Text style={[styles.infoBadgeText, !isScrolling && styles.infoBadgeTextInactive]}>
-             {isScrolling ? `${scrollSpeed}x` : 'Scroll'}
-           </Text>
-         </View>
-         <View style={[styles.infoBadge, !isMetronomeActive && styles.infoBadgeInactive]}>
-           <Activity size={12} color={isMetronomeActive ? (beat ? COLORS.accent : COLORS.foreground) : COLORS.mutedForeground} />
-           <Text style={[styles.infoBadgeText, !isMetronomeActive && styles.infoBadgeTextInactive]}>
-             {isMetronomeActive ? `${bpm} BPM` : 'BPM'}
-           </Text>
-         </View>
+        <View style={[
+          styles.infoBadge,
+          (!originalTone && transpose === 0) && styles.infoBadgeInactive,
+          transpose !== 0 && { borderColor: COLORS.accent, borderWidth: 1, backgroundColor: 'transparent' }
+        ]}>
+          <Music size={12} color={transpose !== 0 ? COLORS.accent : (originalTone ? COLORS.foreground : COLORS.mutedForeground)} />
+          <Text style={[
+            styles.infoBadgeText,
+            (!originalTone && transpose === 0) && styles.infoBadgeTextInactive,
+            transpose !== 0 && { color: COLORS.accent }
+          ]}>
+            {originalTone ? `${originalTone}${transposedTone && transposedTone !== originalTone ? ` → ${transposedTone}` : ''}` : 'Tono'}
+            {transpose !== 0 ? ` (${transpose > 0 ? `+${transpose}` : transpose})` : ''}
+          </Text>
+        </View>
+        <View style={[styles.infoBadge, capo === 0 && styles.infoBadgeInactive]}>
+          <Hash size={12} color={capo > 0 ? COLORS.foreground : COLORS.mutedForeground} />
+          <Text style={[styles.infoBadgeText, capo === 0 && styles.infoBadgeTextInactive]}>
+            {capo > 0 ? `Capo ${capo}` : 'Capo'}
+          </Text>
+        </View>
+        <View style={[styles.infoBadge, !isScrolling && styles.infoBadgeInactive]}>
+          <FastForward size={12} color={isScrolling ? COLORS.foreground : COLORS.mutedForeground} />
+          <Text style={[styles.infoBadgeText, !isScrolling && styles.infoBadgeTextInactive]}>
+            {isScrolling ? `${scrollSpeed}x` : 'Scroll'}
+          </Text>
+        </View>
+        <View style={[styles.infoBadge, !isMetronomeActive && styles.infoBadgeInactive]}>
+          <Activity size={12} color={isMetronomeActive ? (beat ? COLORS.accent : COLORS.foreground) : COLORS.mutedForeground} />
+          <Text style={[styles.infoBadgeText, !isMetronomeActive && styles.infoBadgeTextInactive]}>
+            {isMetronomeActive ? `${bpm} BPM` : 'BPM'}
+          </Text>
+        </View>
       </View>
 
       {/* Sub-header de navegación de lista (reemplaza el widget flotante) */}
@@ -440,8 +470,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        onScroll={e => { if (!isScrolling) scrollPosRef.current = e.nativeEvent.contentOffset.y; }}
-        scrollEventThrottle={16}
+        onScroll={e => { scrollPosRef.current = e.nativeEvent.contentOffset.y; }}
+        scrollEventThrottle={1}
         scrollEnabled={isScrollEnabled}
       >
         <View style={styles.songContainer}>
@@ -635,6 +665,12 @@ export const SongViewer: React.FC<SongViewerProps> = ({
           </ScrollView>
         </View>
       )}
+      <PedalHandler
+        onScrollUp={handlePedalScrollUp}
+        onScrollDown={handlePedalScrollDown}
+        onScrollStop={stopPedalScroll}
+        enabled={isStageMode && !isSettingsOpen}
+      />
     </View>
   );
 };
