@@ -8,7 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   ChevronLeft, ChevronRight, Settings, Play, Pause, Maximize2,
   Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List, Share2,
-  Music, Hash, FastForward, Activity
+  Music, Hash, FastForward, Activity, AlertTriangle
 } from 'lucide-react-native';
 import {
   parseChordPro, transposeChordPro
@@ -25,6 +25,17 @@ const COLORS = {
 };
 
 const FOOTER_TEXT = "Ministerio de Alabanza ICBS";
+
+// ── Calculadora de Capo ─────────────────────────────────────────────────
+const NOTE_SEMITONES: Record<string, number> = {
+  'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+  'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8,
+  'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
+};
+const NOTES_DISPLAY = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const NOTE_LABELS: Record<string, string> = {
+  'C#': 'C#/D♭', 'D#': 'D#/E♭', 'F#': 'F#/G♭', 'G#': 'G#/A♭', 'A#': 'A#/B♭'
+};
 
 interface SongViewerProps {
   content: string;
@@ -212,7 +223,12 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   }, [content, transpose, capo]);
 
   const { originalTone, transposedTone } = useMemo(() => {
-    const match = content.match(/^(?:TONO|KEY):\s*([A-G][b#]?[m]?)/mi);
+    // 1. Intentar buscar directiva de ChordPro {key: C} o {tono: C} o {t: C} (con/sin corchetes)
+    let match = content.match(/\{\s*(?:key|tono|t)\s*:\s*\[?([A-G][b#]?[m]?)\]?\s*\}/i);
+    if (!match) {
+      // 2. Si no, buscar línea estándar Tono: C o Key: C (con/sin espacios iniciales y con/sin corchetes)
+      match = content.match(/^\s*(?:TONO|KEY):\s*\[?([A-G][b#]?[m]?)\]?/mi);
+    }
     const orig = match ? match[1] : null;
     let trans = orig;
     if (orig && (transpose - capo) !== 0) {
@@ -220,6 +236,23 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     }
     return { originalTone: orig, transposedTone: trans };
   }, [content, transpose, capo]);
+
+  // ── Calculadora de Capo: tono que suena (independiente del capo físico) ──
+  const soundingKeySemitone = useMemo(() => {
+    if (!originalTone) return null;
+    const baseNote = originalTone.replace('m', '').trim();
+    const baseSemitone = NOTE_SEMITONES[baseNote];
+    if (baseSemitone === undefined) return null;
+    return (baseSemitone + transpose + 120) % 12; // +120 cubre transposes negativos
+  }, [originalTone, transpose]);
+
+  const soundingKeyName = useMemo(() => {
+    if (soundingKeySemitone === null || !originalTone) return null;
+    const isMinor = originalTone.toLowerCase().endsWith('m');
+    return NOTES_DISPLAY[soundingKeySemitone] + (isMinor ? 'm' : '');
+  }, [soundingKeySemitone, originalTone]);
+
+
 
   // ── Auto-scroll ────────────────────────────────
   useEffect(() => {
@@ -640,6 +673,69 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               ))}
             </View>
 
+            {/* Calculadora de Capo */}
+            {soundingKeySemitone !== null ? (
+              <>
+                <View style={styles.capoCalcHeader}>
+                  <Text style={[styles.settingLabel, { marginTop: 20, marginBottom: 0, flex: 1 }]}>Calculadora de Capo</Text>
+                  <View style={styles.capoCalcKeyBadge}>
+                    <Text style={styles.capoCalcKeyBadgeText}>
+                      Suena en {soundingKeyName}
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.capoCalcSubtitle}>
+                  Tocá en la tonalidad que quieras — el capo se ajusta solo.
+                </Text>
+                <View style={styles.capoCalcGrid}>
+                  {NOTES_DISPLAY.map(note => {
+                    const targetSemitone = NOTE_SEMITONES[note];
+                    const fret = (soundingKeySemitone - targetSemitone + 12) % 12;
+                    const isPractical = fret >= 1 && fret <= 7;
+                    const isCurrent = fret === 0;
+                    const isActive = capo === fret && !isCurrent;
+                    return (
+                      <TouchableOpacity
+                        key={note}
+                        style={[
+                          styles.capoCalcBtn,
+                          isCurrent && styles.capoCalcBtnCurrent,
+                          isActive && styles.capoCalcBtnActive,
+                          !isPractical && !isCurrent && styles.capoCalcBtnDim,
+                        ]}
+                        onPress={() => setCapo(fret)}
+                      >
+                        <Text style={[
+                          styles.capoCalcNote,
+                          isCurrent && { color: COLORS.accent },
+                          isActive && { color: '#fff' },
+                          !isPractical && !isCurrent && { color: COLORS.mutedForeground },
+                        ]}>
+                          {NOTE_LABELS[note] || note}
+                        </Text>
+                        <Text style={[
+                          styles.capoCalcFret,
+                          isPractical && !isCurrent && { color: '#4ade80' },
+                          isCurrent && { color: COLORS.accent },
+                          isActive && { color: '#fff' },
+                          !isPractical && !isCurrent && { color: COLORS.mutedForeground },
+                        ]}>
+                          {isCurrent ? 'sin capo' : `traste ${fret}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </>
+            ) : (
+              <View style={styles.capoCalcWarning}>
+                <AlertTriangle size={16} color="#fbbf24" style={{ marginRight: 8 }} />
+                <Text style={styles.capoCalcWarningText}>
+                  La calculadora de capo no está disponible porque esta canción no tiene especificado su tono original (Tono:).
+                </Text>
+              </View>
+            )}
+
             {/* Metrónomo */}
             <Text style={[styles.settingLabel, { marginTop: 20 }]}>Metrónomo</Text>
             <View style={styles.controlGroup}>
@@ -925,6 +1021,67 @@ const styles = StyleSheet.create({
   capoBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
   capoText: { color: COLORS.mutedForeground, fontWeight: 'bold' },
   capoTextActive: { color: '#fff' },
+  // Calculadora de Capo
+  capoCalcHeader: { flexDirection: 'row', alignItems: 'center', marginTop: 20, gap: 10 },
+  capoCalcKeyBadge: {
+    backgroundColor: COLORS.accent + '22',
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  capoCalcKeyBadgeText: { color: COLORS.accent, fontSize: 11, fontWeight: 'bold' },
+  capoCalcSubtitle: {
+    color: COLORS.mutedForeground,
+    fontSize: 12,
+    marginTop: 6,
+    marginBottom: 12,
+  },
+  capoCalcGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  capoCalcBtn: {
+    width: '22%',
+    backgroundColor: COLORS.background,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 3,
+  },
+  capoCalcBtnCurrent: {
+    borderColor: COLORS.accent,
+    backgroundColor: COLORS.accent + '15',
+  },
+  capoCalcBtnActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+  capoCalcBtnDim: { opacity: 0.4 },
+  capoCalcNote: { color: COLORS.foreground, fontSize: 13, fontWeight: 'bold' },
+  capoCalcFret: { color: COLORS.mutedForeground, fontSize: 10 },
+  capoCalcWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#fbbf2415',
+    borderWidth: 1,
+    borderColor: '#fbbf2430',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 20,
+  },
+  capoCalcWarningText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    flex: 1,
+    fontWeight: '500',
+    lineHeight: 16,
+  },
   toggleGroup: { flexDirection: 'row', backgroundColor: COLORS.background, borderRadius: 10, padding: 4 },
   toggleBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
   toggleBtnActive: { backgroundColor: COLORS.surface },

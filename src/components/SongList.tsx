@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Dimensions, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -244,13 +244,18 @@ export const SongList: React.FC<SongListProps> = ({
     },
   });
 
-  const positions = useSharedValue<Record<string, number>>({});
+  const initialPositions = useMemo(() => {
+    return songs.reduce((acc, song, i) => {
+      acc[song.id] = i;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [songs]);
 
-  // Actualizar positions de forma síncrona en el render phase para evitar lag/desincronización entre hilos
-  positions.value = songs.reduce((acc, song, i) => {
-    acc[song.id] = i;
-    return acc;
-  }, {} as Record<string, number>);
+  const positions = useSharedValue<Record<string, number>>(initialPositions);
+
+  useEffect(() => {
+    positions.value = initialPositions;
+  }, [initialPositions]);
 
   const handleReorder = (from: number, to: number) => {
     onReorder?.(from, to);
