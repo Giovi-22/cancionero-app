@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   StyleSheet, Text, View, ScrollView, TouchableOpacity,
   Dimensions, TextInput, Keyboard, Platform, AppState,
-  PanResponder, Animated, Alert, ActivityIndicator
+  PanResponder, Animated, Alert, ActivityIndicator, KeyboardAvoidingView
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -44,21 +44,23 @@ interface SongViewerProps {
   onFollowSongChange?: (newSongId: string) => void;
 }
 
-const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew, onUpdate, onDelete, setScrollEnabled }: any) => {
+/**
+ * DraggableNote simplificado: solo muestra el badge de la nota y permite
+ * arrastrarla. La edición se delega al overlay del SongViewer para evitar
+ * que el teclado tape el input.
+ */
+const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, onRequestEdit, onUpdate, onDelete, setScrollEnabled }: any) => {
   const pan = useRef(new Animated.ValueXY({ x: initialX || 0, y: initialY || 0 })).current;
   const offset = useRef({ x: initialX || 0, y: initialY || 0 });
 
-  const [isEditing, setIsEditing] = useState(!!isNew);
-  const [text, setText] = useState(initialText || '');
-
-  // Keep a mutable ref of the dynamic values to avoid stale closures in PanResponder
-  const stateRef = useRef({ isEditing, text, id, onUpdate, setScrollEnabled, isStageMode });
-  stateRef.current = { isEditing, text, id, onUpdate, setScrollEnabled, isStageMode };
+  // Ref con valores dinámicos para evitar stale closures en PanResponder
+  const stateRef = useRef({ id, initialText, onUpdate, setScrollEnabled, isStageMode });
+  stateRef.current = { id, initialText, onUpdate, setScrollEnabled, isStageMode };
 
   const panResponder = useRef(
     PanResponder.create({
-      onStartShouldSetPanResponder: () => !stateRef.current.isEditing && !stateRef.current.isStageMode,
-      onMoveShouldSetPanResponder: (_, g) => !stateRef.current.isEditing && !stateRef.current.isStageMode && (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5),
+      onStartShouldSetPanResponder: () => !stateRef.current.isStageMode,
+      onMoveShouldSetPanResponder: (_, g) => !stateRef.current.isStageMode && (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5),
       onPanResponderGrant: () => {
         stateRef.current.setScrollEnabled(false);
         pan.setOffset(offset.current);
@@ -73,7 +75,7 @@ const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew
         offset.current = { x: (pan.x as any)._value, y: (pan.y as any)._value };
         stateRef.current.onUpdate(
           stateRef.current.id,
-          stateRef.current.text,
+          stateRef.current.initialText,
           offset.current.x,
           offset.current.y
         );
@@ -87,49 +89,36 @@ const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, isNew
     offset.current = { x: initialX || 0, y: initialY || 0 };
   }, [initialX, initialY]);
 
-  const handleSave = () => {
-    setIsEditing(false);
-    if (!text.trim()) onDelete(id);
-    else onUpdate(id, text, offset.current.x, offset.current.y);
-  };
+  // No mostrar notas sin texto (aún no guardadas)
+  if (!initialText) return null;
 
   return (
     <Animated.View
-      style={[
-        { position: 'absolute', transform: pan.getTranslateTransform(), zIndex: 100 },
-        isEditing && { width: 200 }
-      ]}
+      style={{ position: 'absolute', transform: pan.getTranslateTransform(), zIndex: 100 }}
       {...(isStageMode ? {} : panResponder.panHandlers)}
     >
-      {isEditing ? (
-        <View style={styles.noteEditor}>
-          <TextInput
-            autoFocus
-            style={styles.noteInput}
-            value={text}
-            onChangeText={setText}
-            placeholder="Escribe tu nota..."
-            placeholderTextColor={COLORS.mutedForeground}
-            onBlur={handleSave}
-            onSubmitEditing={handleSave}
-          />
-        </View>
-      ) : (
-        <View style={[styles.noteBadge, !isStageMode && { borderColor: '#dc2626', borderWidth: 1 }]}>
-          <StickyNote size={12} color="#000" />
-          <Text style={styles.noteBadgeText}>{text}</Text>
-          {!isStageMode && (
-            <TouchableOpacity onPress={() => setIsEditing(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 5 }}>
-              <Edit2 size={12} color="#000" />
-            </TouchableOpacity>
-          )}
-          {!isStageMode && (
-            <TouchableOpacity onPress={() => onDelete(id)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginLeft: 5 }}>
-              <X size={14} color="#dc2626" />
-            </TouchableOpacity>
-          )}
-        </View>
-      )}
+      <View style={[styles.noteBadge, !isStageMode && { borderColor: '#dc2626', borderWidth: 1 }]}>
+        <StickyNote size={12} color="#000" />
+        <Text style={styles.noteBadgeText}>{initialText}</Text>
+        {!isStageMode && (
+          <TouchableOpacity
+            onPress={() => onRequestEdit(id, initialText)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{ marginLeft: 5 }}
+          >
+            <Edit2 size={12} color="#000" />
+          </TouchableOpacity>
+        )}
+        {!isStageMode && (
+          <TouchableOpacity
+            onPress={() => onDelete(id)}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{ marginLeft: 5 }}
+          >
+            <X size={14} color="#dc2626" />
+          </TouchableOpacity>
+        )}
+      </View>
     </Animated.View>
   );
 };
@@ -157,6 +146,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
+  // Estado del overlay de edición de notas
+  const [editingNote, setEditingNote] = useState<{ id: string; text: string } | null>(null);
 
   // Aislar estado por canción
   const prevSongId = useRef(songId);
@@ -185,6 +176,18 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   // Ref espejo de pedalSpeed para leer el valor actual dentro del rAF
   // sin necesidad de recrear el callback (evita stale closure).
   const pedalSpeedRef = useRef(0.2);
+  // Ref para medir la posición en pantalla del área de scroll
+  // (necesario para convertir coordenadas de toque a coordenadas del contenido)
+  const scrollAreaRef = useRef<View>(null);
+  const scrollAreaPageY = useRef(0);
+  const scrollAreaPageX = useRef(0);
+
+  const measureScrollArea = () => {
+    scrollAreaRef.current?.measure((_x, _y, _w, _h, pageX, pageY) => {
+      scrollAreaPageX.current = pageX;
+      scrollAreaPageY.current = pageY;
+    });
+  };
 
 
   // ── Metrónomo ──────────────────────────────────
@@ -314,16 +317,49 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     });
   }, [transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm, songId]);
 
-  const addFloatingNoteAtLine = (lineIndex: number) => {
+  const addFloatingNoteAtLine = (tapPageX: number, tapPageY: number) => {
     // Solo permitir agregar notas cuando NO está en modo escenario
     if (isStageMode) return;
     const newId = `note_${Date.now()}`;
-    const startY = Math.max(0, lineIndex * 35);
+    // Convertir coordenadas de pantalla a coordenadas del contenido del ScrollView
+    const noteX = Math.max(0, tapPageX - scrollAreaPageX.current);
+    const noteY = Math.max(0, tapPageY - scrollAreaPageY.current + scrollPosRef.current);
+    // Crear la nota y abrir el overlay de edición inmediatamente
     setMusicianNotes((p: any) => ({
       ...p,
-      [newId]: { text: '', x: 50, y: startY, isNew: true }
+      [newId]: { text: '', x: noteX, y: noteY }
     }));
+    setEditingNote({ id: newId, text: '' });
   };
+
+  const handleRequestEdit = useCallback((id: string, currentText: string) => {
+    setEditingNote({ id, text: currentText });
+  }, []);
+
+  const handleSaveNote = useCallback(() => {
+    if (!editingNote) return;
+    const { id, text } = editingNote;
+    setEditingNote(null);
+    if (!text.trim()) {
+      // Nota vacía → eliminar
+      setMusicianNotes((p: any) => { const n = { ...p }; delete n[id]; return n; });
+    } else {
+      setMusicianNotes((p: any) => ({ ...p, [id]: { ...p[id], text } }));
+    }
+  }, [editingNote]);
+
+  const handleCancelNote = useCallback(() => {
+    if (!editingNote) return;
+    const { id } = editingNote;
+    setEditingNote(null);
+    // Si la nota no tenía texto previo (nueva), eliminarla al cancelar
+    setMusicianNotes((p: any) => {
+      if (p[id] && !p[id].text) {
+        const n = { ...p }; delete n[id]; return n;
+      }
+      return p;
+    });
+  }, [editingNote]);
 
   const handleSharePdf = () => {
     Alert.alert(
@@ -466,6 +502,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       })()}
 
       {/* Contenido */}
+      <View ref={scrollAreaRef} style={{ flex: 1 }} onLayout={measureScrollArea}>
       <ScrollView
         ref={scrollRef}
         style={styles.scroll}
@@ -485,7 +522,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               <View key={lIndex}>
                 <TouchableOpacity
                   activeOpacity={0.7}
-                  onPress={() => addFloatingNoteAtLine(lIndex)}
+                  onPress={(e) => addFloatingNoteAtLine(e.nativeEvent.pageX, e.nativeEvent.pageY)}
                   style={[styles.lineWrapper, line.type === 'section' && (isTitle ? styles.titleLine : styles.sectionLine)]}
                 >
                   <View style={[
@@ -528,7 +565,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         </View>
 
         {Object.entries(musicianNotes).map(([noteId, noteData]: [string, any]) => {
-          if (typeof noteData === 'string') return null; // Ignora viejas notas ancladas si quedaron colgadas, se limpia en BBDD de a poco.
+          if (typeof noteData === 'string') return null;
           return (
             <DraggableNote
               key={noteId}
@@ -537,7 +574,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               initialX={noteData.x}
               initialY={noteData.y}
               isStageMode={isStageMode}
-              isNew={noteData.isNew}
+              onRequestEdit={handleRequestEdit}
               onUpdate={(i: string, t: string, x: number, y: number) => setMusicianNotes((p: any) => ({ ...p, [i]: { text: t, x, y } }))}
               onDelete={(i: string) => {
                 const n = { ...musicianNotes };
@@ -554,6 +591,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
           <Text style={styles.footerText}>{FOOTER_TEXT}</Text>
         </View>
       </ScrollView>
+      </View>{/* scrollAreaRef */}
 
       {/* Barra flotante de controles */}
       {!isSettingsOpen ? (
@@ -671,6 +709,48 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         onScrollStop={stopPedalScroll}
         enabled={isStageMode && !isSettingsOpen}
       />
+
+      {/* ── Overlay de edición de notas ─────────────────────────────────────
+           Posicionado FUERA del ScrollView para que el KeyboardAvoidingView
+           funcione correctamente y el teclado no tape el input.
+      */}
+      {editingNote && (
+        <KeyboardAvoidingView
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={StyleSheet.absoluteFillObject}
+          pointerEvents="box-none"
+        >
+          {/* Fondo semi-transparente: toca para cancelar */}
+          <TouchableOpacity
+            style={styles.noteOverlayBackdrop}
+            activeOpacity={1}
+            onPress={handleCancelNote}
+          />
+          <View style={styles.noteEditSheet}>
+            <View style={styles.noteEditHeader}>
+              <StickyNote size={16} color={COLORS.accent} />
+              <Text style={styles.noteEditTitle}>Nota de músico</Text>
+              <TouchableOpacity onPress={handleCancelNote} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <X size={20} color={COLORS.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <TextInput
+              autoFocus
+              style={styles.noteEditInput}
+              value={editingNote.text}
+              onChangeText={(t) => setEditingNote(prev => prev ? { ...prev, text: t } : null)}
+              placeholder="Escribe tu nota aquí..."
+              placeholderTextColor={COLORS.mutedForeground}
+              multiline
+              maxLength={300}
+              textAlignVertical="top"
+            />
+            <TouchableOpacity style={styles.noteEditSaveBtn} onPress={handleSaveNote}>
+              <Text style={styles.noteEditSaveBtnText}>Guardar nota</Text>
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      )}
     </View>
   );
 };
@@ -782,8 +862,52 @@ const styles = StyleSheet.create({
   noteBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fbbf24', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 4 },
   noteBadgeText: { fontSize: 10, fontWeight: 'bold', color: '#000' },
   deleteNoteBtn: { padding: 4, backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: 4 },
-  noteEditor: { marginTop: 5, backgroundColor: COLORS.surface, borderRadius: 8, borderWidth: 1, borderColor: COLORS.accent, padding: 8 },
-  noteInput: { color: COLORS.foreground, fontSize: 14 },
+  // Overlay de edición de notas
+  noteOverlayBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+  },
+  noteEditSheet: {
+    backgroundColor: COLORS.surface,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 24,
+    paddingBottom: 32,
+    gap: 16,
+  },
+  noteEditHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  noteEditTitle: {
+    flex: 1,
+    color: COLORS.foreground,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  noteEditInput: {
+    backgroundColor: COLORS.background,
+    color: COLORS.foreground,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 16,
+    minHeight: 100,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
+  },
+  noteEditSaveBtn: {
+    backgroundColor: COLORS.accent,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: 'center',
+  },
+  noteEditSaveBtnText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 15,
+  },
   floatingBar: { position: 'absolute', bottom: 30, left: 20, right: 20, height: 60, backgroundColor: 'rgba(26,26,26,0.95)', borderRadius: 30, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, justifyContent: 'space-between', borderWidth: 1, borderColor: COLORS.border, elevation: 5 },
   controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   smallBtn: { width: 30, height: 30, backgroundColor: COLORS.border, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
