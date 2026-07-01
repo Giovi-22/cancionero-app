@@ -193,6 +193,11 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const scrollAreaPageY = useRef(0);
   const scrollAreaPageX = useRef(0);
 
+  // Mantener ref sincronizado con el estado de velocidad del pedal
+  useEffect(() => {
+    pedalSpeedRef.current = pedalSpeed;
+  }, [pedalSpeed]);
+
   const measureScrollArea = () => {
     scrollAreaRef.current?.measure((_x, _y, _w, _h, pageX, pageY) => {
       scrollAreaPageX.current = pageX;
@@ -275,9 +280,6 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   // velocidad constante independientemente de la frecuencia de pantalla.
 
   const pedalScrollDirRef = useRef<'up' | 'down' | null>(null);
-
-  // Mantener ref sincronizado con el estado
-  useEffect(() => { pedalSpeedRef.current = pedalSpeed; }, [pedalSpeed]);
 
   const startPedalScroll = useCallback((direction: 'up' | 'down') => {
     // Si ya estamos desplazándonos en la misma dirección, ignoramos el evento redundante
