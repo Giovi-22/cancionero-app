@@ -274,19 +274,26 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   // El avance es proporcional al delta de tiempo real (px/ms), lo que garantiza
   // velocidad constante independientemente de la frecuencia de pantalla.
 
+  const pedalScrollDirRef = useRef<'up' | 'down' | null>(null);
+
   // Mantener ref sincronizado con el estado
   useEffect(() => { pedalSpeedRef.current = pedalSpeed; }, [pedalSpeed]);
 
   const startPedalScroll = useCallback((direction: 'up' | 'down') => {
+    // Si ya estamos desplazándonos en la misma dirección, ignoramos el evento redundante
+    // (los eventos de repetición de teclado HID disparan esto repetidamente y reiniciar el rAF causaría saltos)
+    if (pedalRafRef.current !== null && pedalScrollDirRef.current === direction) {
+      return;
+    }
+    
+    pedalScrollDirRef.current = direction;
+
     // Detener cualquier loop previo
     if (pedalRafRef.current !== null) {
       cancelAnimationFrame(pedalRafRef.current);
       pedalRafRef.current = null;
     }
     pedalLastTickRef.current = 0; // Resetear para que el primer frame calcule bien
-
-    // pedalSpeed * 0.3 → px/ms. A velocidad 1.0 = 300px/seg ≈ cómodo para leer
-    const PX_PER_MS = pedalSpeedRef.current * 0.3;
 
     const tick = (timestamp: number) => {
       // En el primer frame inicializamos el tiempo sin mover nada
@@ -299,6 +306,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       const delta = Math.min(timestamp - pedalLastTickRef.current, 50); // cap 50ms
       pedalLastTickRef.current = timestamp;
 
+      // pedalSpeedRef.current * 0.3 -> px/ms.
       const step = pedalSpeedRef.current * 0.3 * delta;
       const nextY = direction === 'down'
         ? scrollPosRef.current + step
@@ -319,6 +327,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       pedalRafRef.current = null;
     }
     pedalLastTickRef.current = 0;
+    pedalScrollDirRef.current = null;
   }, []);
 
   const handlePedalScrollUp = useCallback(() => startPedalScroll('up'), [startPedalScroll]);
