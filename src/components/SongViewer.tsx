@@ -433,6 +433,64 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     );
   };
 
+  const getRenderItems = useCallback((blocks: any[], isTitle: boolean) => {
+    if (isTitle) {
+      return blocks.map(b => ({ text: b.text.replace(/\[TITULO\]/i, '').trim() }));
+    }
+
+    const items: { chord?: string; text: string }[] = [];
+    let pendingSpaces = '';
+
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      const rawText = block.text || '';
+      
+      const match = rawText.match(/^(\s*)(.*?)(\s*)$/);
+      const leading = match ? match[1] : '';
+      const body = match ? match[2] : '';
+      const trailing = match ? match[3] : '';
+
+      const currentPending = pendingSpaces + leading;
+      if (currentPending && items.length > 0) {
+        items[items.length - 1].text += currentPending;
+      }
+      pendingSpaces = trailing;
+
+      if (body) {
+        const words = body.match(/\S+\s*/g) || [];
+        
+        if (block.chord) {
+          items.push({
+            chord: block.chord,
+            text: words[0] || ''
+          });
+          for (let w = 1; w < words.length; w++) {
+            items.push({
+              text: words[w]
+            });
+          }
+        } else {
+          for (let w = 0; w < words.length; w++) {
+            items.push({
+              text: words[w]
+            });
+          }
+        }
+      } else if (block.chord) {
+        items.push({
+          chord: block.chord,
+          text: ''
+        });
+      }
+    }
+
+    if (pendingSpaces && items.length > 0) {
+      items[items.length - 1].text += pendingSpaces;
+    }
+
+    return items;
+  }, []);
+
   return (
     <View style={styles.container}>
       {/* Header principal */}
@@ -563,33 +621,80 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                     isTitle && { justifyContent: 'center', width: '100%' },
                     isDebugMode && { borderWidth: 1, borderColor: '#3b82f6', borderStyle: 'dashed' }
                   ]}>
-                    {line.blocks.map((block, bIndex) => (
-                      <View key={bIndex} style={[
-                        styles.block,
-                        isTitle && { width: '100%', alignItems: 'center' },
-                        line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
-                        isDebugMode && { borderWidth: 1, borderColor: '#ef4444', padding: 1 }
-                      ]}>
-                        {block.chord && viewMode !== 'lyrics' && (
+                    {getRenderItems(line.blocks, isTitle).map((item, bIndex) => {
+                      if (isTitle) {
+                        return (
+                          <View key={bIndex} style={[styles.block, { width: '100%', alignItems: 'center' }]}>
+                            <Text style={[
+                              styles.lyricText,
+                              { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold' },
+                              isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
+                            ]}>
+                              {item.text}
+                            </Text>
+                          </View>
+                        );
+                      }
+
+                      const hasChord = !!item.chord;
+
+                      // Si no tiene acorde y es vacío o solo espacios, lo renderizamos plano (sin caja/altura del acorde)
+                      if (!hasChord && (!item.text || /^\s+$/.test(item.text))) {
+                        return (
+                          <Text
+                            key={`item-${bIndex}`}
+                            style={[
+                              styles.lyricText,
+                              { fontSize },
+                              line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
+                            ]}
+                          >
+                            {item.text || ' '}
+                          </Text>
+                        );
+                      }
+
+                      // Si tiene texto o acorde, lo normalizamos dentro del View con altura de acorde
+                      return (
+                        <View
+                          key={`item-${bIndex}`}
+                          style={[
+                            styles.block,
+                            line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
+                            isDebugMode && {
+                              borderWidth: 1,
+                              borderColor: hasChord ? '#ef4444' : '#3b82f6',
+                              borderStyle: hasChord ? 'solid' : 'dotted',
+                              padding: 1
+                            }
+                          ]}
+                        >
+                          {viewMode !== 'lyrics' && (
+                            hasChord ? (
+                              <Text style={[
+                                styles.chordText,
+                                { fontSize: fontSize },
+                                line.isMetadata && { marginRight: 4 },
+                                isNonPlayableMetadata && { color: COLORS.foreground, fontWeight: 'normal' },
+                                isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
+                              ]}>{item.chord}</Text>
+                            ) : (
+                              <Text style={[styles.chordText, { fontSize, opacity: 0 }]} numberOfLines={1}>
+                                X
+                              </Text>
+                            )
+                          )}
                           <Text style={[
-                            styles.chordText,
-                            { fontSize: fontSize },
-                            line.isMetadata && { marginRight: 4 },
-                            isNonPlayableMetadata && { color: COLORS.foreground, fontWeight: 'normal' },
-                            isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
-                          ]}>{block.chord}</Text>
-                        )}
-                        <Text style={[
-                          styles.lyricText,
-                          { fontSize },
-                          line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
-                          isTitle && { fontSize: fontSize * 1.5, textAlign: 'center' },
-                          isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
-                        ]}>
-                          {isTitle ? block.text.replace(/\[TITULO\]/i, '').trim() : (block.text || ' ')}
-                        </Text>
-                      </View>
-                    ))}
+                            styles.lyricText,
+                            { fontSize },
+                            line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
+                            isDebugMode && { backgroundColor: hasChord ? 'rgba(239, 68, 68, 0.05)' : 'rgba(59, 130, 246, 0.15)' }
+                          ]}>
+                            {item.text}
+                          </Text>
+                        </View>
+                      );
+                    })}
                   </View>
                 </TouchableOpacity>
               </View>
