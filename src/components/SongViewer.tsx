@@ -450,26 +450,39 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     }
 
     const items: { chord?: string; text: string }[] = [];
-    let pendingSpaces = '';
 
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
       const rawText = block.text || '';
-      
+
+      // Si el bloque no tiene texto o solo tiene espacios, mantenemos el acorde
+      // y creamos un ítem separado para los espacios para que no se colapsen.
+      if (!rawText.trim()) {
+        if (block.chord) {
+          items.push({
+            chord: block.chord,
+            text: ''
+          });
+        }
+        if (rawText) {
+          items.push({
+            text: rawText
+          });
+        }
+        continue;
+      }
+
       const match = rawText.match(/^(\s*)(.*?)(\s*)$/);
       const leading = match ? match[1] : '';
       const body = match ? match[2] : '';
       const trailing = match ? match[3] : '';
 
-      const currentPending = pendingSpaces + leading;
-      if (currentPending && items.length > 0) {
-        items[items.length - 1].text += currentPending;
+      if (leading) {
+        items.push({ text: leading });
       }
-      pendingSpaces = trailing;
 
       if (body) {
         const words = body.match(/\S+\s*/g) || [];
-        
         if (block.chord) {
           items.push({
             chord: block.chord,
@@ -487,16 +500,11 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             });
           }
         }
-      } else if (block.chord) {
-        items.push({
-          chord: block.chord,
-          text: ''
-        });
       }
-    }
 
-    if (pendingSpaces && items.length > 0) {
-      items[items.length - 1].text += pendingSpaces;
+      if (trailing) {
+        items.push({ text: trailing });
+      }
     }
 
     return items;
@@ -638,7 +646,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                           <View key={bIndex} style={[styles.block, { width: '100%', alignItems: 'center' }]}>
                             <Text style={[
                               styles.lyricText,
-                              { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold' },
+                              { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold', lineHeight: fontSize * 1.5 * 1.25 },
                               isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
                             ]}>
                               {item.text}

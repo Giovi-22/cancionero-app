@@ -75,10 +75,60 @@ export class PdfService {
         }
 
         // Render standard lines
+        const renderedBlocks: { chord?: string; text: string }[] = [];
+        for (let i = 0; i < line.blocks.length; i++) {
+          const block = line.blocks[i];
+          const rawText = block.text || '';
+          
+          if (!rawText.trim()) {
+            if (block.chord) {
+              renderedBlocks.push({ chord: block.chord, text: '' });
+            }
+            if (rawText) {
+              renderedBlocks.push({ text: rawText });
+            }
+            continue;
+          }
+
+          const match = rawText.match(/^(\s*)(.*?)(\s*)$/);
+          const leading = match ? match[1] : '';
+          const body = match ? match[2] : '';
+          const trailing = match ? match[3] : '';
+
+          if (leading) {
+            renderedBlocks.push({ text: leading });
+          }
+
+          if (body) {
+            const words = body.match(/\S+\s*/g) || [];
+            if (block.chord) {
+              renderedBlocks.push({
+                chord: block.chord,
+                text: words[0] || ''
+              });
+              for (let w = 1; w < words.length; w++) {
+                renderedBlocks.push({
+                  text: words[w]
+                });
+              }
+            } else {
+              for (let w = 0; w < words.length; w++) {
+                renderedBlocks.push({
+                  text: words[w]
+                });
+              }
+            }
+          }
+
+          if (trailing) {
+            renderedBlocks.push({ text: trailing });
+          }
+        }
+
         return `
           <div class="line-wrapper type-${line.type} ${line.isMetadata ? 'metadata-line' : ''}">
             <div class="blocks-container">
-              ${line.blocks
+              ${renderedBlocks
                 .map((block: { chord?: string; text: string }) => {
                   const hasChord = block.chord && showChords;
                   const chordHtml = hasChord 
