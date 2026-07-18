@@ -24,8 +24,8 @@ const COLORS = {
   mutedForeground: '#a0a0a0', accent: '#3b82f6', border: '#333333'
 };
 
-const FOOTER_TEXT = "Ministerio de Alabanza ICBS";
-
+const LEGACY_FOOTER_TEXT = "Ministerio de Alabanza ICBS";
+const DISPLAY_FOOTER_TEXT = "CANCIONERO APP";
 // ── Calculadora de Capo ─────────────────────────────────────────────────
 const NOTE_SEMITONES: Record<string, number> = {
   'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
@@ -220,11 +220,31 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
   // ── Procesar canción ───────────────────────────
   const parsedLines = useMemo(() => {
-    const contentWithoutFooter = content.replace(new RegExp(FOOTER_TEXT, 'gi'), '');
+    // 1er intento: eliminar el footer si está suelto
+    const contentWithoutFooter = content.replace(new RegExp(LEGACY_FOOTER_TEXT, 'gi'), '');
     const transposed = transposeChordPro(contentWithoutFooter, transpose - capo);
     const result = parseChordPro(transposed);
 
-    return result;
+    // 2do intento: si el footer fue fusionado con acordes (ej. Outro), 
+    // vaciamos el texto pero conservamos los acordes para no perder las notas.
+    const footerNormalized = LEGACY_FOOTER_TEXT.toLowerCase().replace(/\s+/g, ' ').trim();
+    
+    return result.map((line) => {
+      const lineText = line.blocks
+        .map((b) => b.text || '')
+        .join('')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+        
+      if (lineText.includes(footerNormalized)) {
+        return {
+          ...line,
+          blocks: line.blocks.map(b => ({ ...b, text: ' ' }))
+        };
+      }
+      return line;
+    });
   }, [content, transpose, capo]);
 
   const { originalTone, transposedTone } = useMemo(() => {
@@ -745,7 +765,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
         <View style={styles.footerContainer}>
           <View style={styles.footerLine} />
-          <Text style={styles.footerText}>{FOOTER_TEXT}</Text>
+          <Text style={styles.footerText}>{DISPLAY_FOOTER_TEXT}</Text>
         </View>
       </ScrollView>
       </View>{/* scrollAreaRef */}

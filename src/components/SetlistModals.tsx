@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Modal, TextInput, TouchableOpacity, ScrollView, StyleSheet, Keyboard } from 'react-native';
+import { View, Text, Modal, TextInput, TouchableOpacity, ScrollView, StyleSheet, Keyboard, ActivityIndicator } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { X, CheckSquare, Square } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
@@ -96,7 +96,11 @@ export const CreateSetlistModal = () => {
               onPress={handleConfirm}
               disabled={!name.trim() || isCreating}
             >
-              <Text style={styles.createModalConfirmText}>Crear</Text>
+              {isCreating ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.createModalConfirmText}>Crear</Text>
+              )}
             </TouchableOpacity>
           </View>
         </View>
@@ -118,6 +122,7 @@ export const EditSetlistModal = () => {
   const [date, setDate] = useState<Date | undefined>(undefined);
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
@@ -146,8 +151,13 @@ export const EditSetlistModal = () => {
     );
   };
 
-  const handleSave = () => {
-    handleSaveSetlistSongs(name, date, selectedSongIds);
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      await handleSaveSetlistSongs(name, date, selectedSongIds);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -220,8 +230,16 @@ export const EditSetlistModal = () => {
           })}
         </ScrollView>
         <View style={styles.editModalFooter}>
-          <TouchableOpacity style={styles.editModalSaveBtn} onPress={handleSave}>
-            <Text style={styles.editModalSaveBtnText}>Guardar Lista</Text>
+          <TouchableOpacity 
+            style={[styles.editModalSaveBtn, isSaving && { opacity: 0.7 }]} 
+            onPress={handleSave}
+            disabled={isSaving}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.editModalSaveBtnText}>Guardar Lista</Text>
+            )}
           </TouchableOpacity>
         </View>
       </View>

@@ -22,6 +22,8 @@ export interface AppContextType {
   isSyncing: boolean;
   driveFolderId: string;
   setDriveFolderId: (id: string) => void;
+  loadingSongId: string | null;
+  loadingActions: Record<string, boolean>;
   
   // Modals state
   isSettingsOpen: boolean;
@@ -101,6 +103,15 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   const [isLibrariesOpen, setIsLibrariesOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [driveFolderId, setDriveFolderId] = useState('');
+  const [loadingSongId, setLoadingSongId] = useState<string | null>(null);
+  const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>({});
+
+  const startActionLoading = (actionName: string) => {
+    setLoadingActions(prev => ({ ...prev, [actionName]: true }));
+  };
+  const stopActionLoading = (actionName: string) => {
+    setLoadingActions(prev => ({ ...prev, [actionName]: false }));
+  };
 
   // Bibliotecas
   const [libraries, setLibraries] = useState<Library[]>([]);
@@ -212,6 +223,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const setActiveLibrary = async (library: Library) => {
+    startActionLoading('setActiveLibrary');
     try {
       setActiveLibraryState(library);
       setDriveFolderId(library.driveFolderId || '');
@@ -227,6 +239,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       }
     } catch (e) {
       console.error('Error setting active library:', e);
+    } finally {
+      stopActionLoading('setActiveLibrary');
     }
   };
 
@@ -261,6 +275,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const handleSongPress = async (song: SongMetadata) => {
+    if (loadingSongId) return;
+    setLoadingSongId(song.id);
     try {
       const content = await FileSystemService.getSongContent(song.id);
       if (!content) {
@@ -288,6 +304,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       router.push({ pathname: '/song/[id]', params: { id: song.id } });
     } catch (error) {
       Alert.alert('Error', 'No se pudo abrir la canción.');
+    } finally {
+      setLoadingSongId(null);
     }
   };
 
@@ -337,8 +355,13 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const handleDeleteSetlist = async (setlist: Setlist) => {
-    await StorageService.deleteSetlistLocal(setlist.id);
-    await refreshLocalData();
+    startActionLoading(`deleteSetlist_${setlist.id}`);
+    try {
+      await StorageService.deleteSetlistLocal(setlist.id);
+      await refreshLocalData();
+    } finally {
+      stopActionLoading(`deleteSetlist_${setlist.id}`);
+    }
   };
 
   const formatDate = (isoString: string) => {
@@ -517,24 +540,37 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       Alert.alert('Error', 'Debes iniciar sesión para ser director.');
       return;
     }
-    const session = await LiveSessionService.startShow(
-      setlist.id,
-      setlist.name,
-      user.email,
-      user.user_metadata?.full_name || user.email,
-      myDirectorSession?.id
-    );
-    if (session) setMyDirectorSession(session);
+    startActionLoading('startShow');
+    try {
+      const session = await LiveSessionService.startShow(
+        setlist.id,
+        setlist.name,
+        user.email,
+        user.user_metadata?.full_name || user.email,
+        myDirectorSession?.id
+      );
+      if (session) setMyDirectorSession(session);
+    } catch (e) {
+      console.error('Error starting show:', e);
+      Alert.alert('Error', 'No se pudo iniciar el show.');
+    } finally {
+      stopActionLoading('startShow');
+    }
   };
 
   const handleStartShowFromSetlist = async (setlist: Setlist) => {
-    await handleStartShow(setlist);
-    const songsOfList = setlist.songIds
-      .map(id => songs.find(s => s.id === id))
-      .filter(Boolean) as SongMetadata[];
-    setSetlistSongs(songsOfList);
-    if (songsOfList.length > 0) {
-      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id, directorMode: 'true' } } as any);
+    startActionLoading('startShow');
+    try {
+      await handleStartShow(setlist);
+      const songsOfList = setlist.songIds
+        .map(id => songs.find(s => s.id === id))
+        .filter(Boolean) as SongMetadata[];
+      setSetlistSongs(songsOfList);
+      if (songsOfList.length > 0) {
+        router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id, directorMode: 'true' } } as any);
+      }
+    } finally {
+      stopActionLoading('startShow');
     }
   };
 
@@ -566,8 +602,16 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
 
   const handleEndShow = async () => {
     if (!myDirectorSession) return;
-    await LiveSessionService.endShow(myDirectorSession.id);
-    setMyDirectorSession(null);
+    startActionLoading('endShow');
+    try {
+      await LiveSessionService.endShow(myDirectorSession.id);
+      setMyDirectorSession(null);
+    } catch (e) {
+      console.error('Error ending show:', e);
+      Alert.alert('Error', 'No se pudo finalizar el show.');
+    } finally {
+      stopActionLoading('endShow');
+    }
   };
 
   const handleJoinSession = (session: LiveSession) => {
@@ -661,6 +705,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         setIsCreateSetlistOpen,
         isEditSetlistOpen,
         setIsEditSetlistOpen,
+        loadingSongId,
+        loadingActions,
         folders,
         isLoadingFolders,
         navigationStack,

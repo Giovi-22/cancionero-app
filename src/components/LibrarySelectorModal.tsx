@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, StyleSheet, Alert, Modal } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, TextInput, StyleSheet, Alert, Modal, ActivityIndicator } from 'react-native';
 import { X, Plus, Trash2, Edit2, Check, BookOpen, Music, Star, Heart, Settings, Folder, Mic, Headphones, Radio, Bookmark, List, Play, Volume2 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { COLORS } from '../constants/theme';
@@ -31,7 +31,8 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
     setActiveLibrary,
     handleCreateLibrary,
     handleUpdateLibrary,
-    handleDeleteLibrary
+    handleDeleteLibrary,
+    loadingActions
   } = useAppContext();
 
   // Estados del modal
@@ -43,6 +44,7 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
   const [driveFolderId, setDriveFolderId] = useState('');
   const [selectedColor, setSelectedColor] = useState(PRESETS.colors[0]);
   const [selectedIcon, setSelectedIcon] = useState(PRESETS.icons[0]);
+  const [isSaving, setIsSaving] = useState(false);
 
   const handleOpenCreate = () => {
     setName('');
@@ -68,6 +70,7 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
       return;
     }
 
+    setIsSaving(true);
     try {
       if (view === 'create') {
         await handleCreateLibrary(trimmedName, driveFolderId.trim(), selectedIcon, selectedColor);
@@ -85,6 +88,8 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
       setView('list');
     } catch (e) {
       Alert.alert('Error', 'No se pudo guardar la biblioteca');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -140,10 +145,13 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
               <ScrollView contentContainerStyle={styles.listContainer}>
                 {libraries.map(lib => {
                   const isActive = activeLibrary?.id === lib.id;
+                  const isChangingActive = loadingActions?.['setActiveLibrary'];
+                  const isThisChanging = isChangingActive && isActive;
                   return (
                     <TouchableOpacity
                       key={lib.id}
                       style={[styles.libCard, isActive && styles.libCardActive]}
+                      disabled={isChangingActive}
                       onPress={async () => {
                         await setActiveLibrary(lib);
                         onClose();
@@ -164,16 +172,21 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
                       <View style={styles.libCardRight}>
                         {isActive && (
                           <View style={styles.activeBadge}>
-                            <Check size={16} color="#fff" />
+                            {isThisChanging ? (
+                              <ActivityIndicator size="small" color="#fff" style={{ transform: [{ scale: 0.75 }] }} />
+                            ) : (
+                              <Check size={16} color="#fff" />
+                            )}
                           </View>
                         )}
-                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenEdit(lib)}>
+                        <TouchableOpacity style={styles.actionBtn} onPress={() => handleOpenEdit(lib)} disabled={isChangingActive}>
                           <Edit2 size={16} color={COLORS.mutedForeground} />
                         </TouchableOpacity>
                         {lib.id !== 'default' && (
                           <TouchableOpacity 
                             style={styles.actionBtn} 
                             onPress={() => handleDeleteLibrary(lib.id)}
+                            disabled={isChangingActive}
                           >
                             <Trash2 size={16} color="#ef4444" />
                           </TouchableOpacity>
@@ -265,8 +278,16 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
                 <TouchableOpacity style={styles.cancelFormBtn} onPress={() => setView('list')}>
                   <Text style={styles.cancelFormText}>Cancelar</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={[styles.saveFormBtn, { backgroundColor: selectedColor }]} onPress={handleSave}>
-                  <Text style={styles.saveFormText}>Guardar</Text>
+                <TouchableOpacity 
+                  style={[styles.saveFormBtn, { backgroundColor: selectedColor }, isSaving && { opacity: 0.7 }]} 
+                  onPress={handleSave}
+                  disabled={isSaving}
+                >
+                  {isSaving ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <Text style={styles.saveFormText}>Guardar</Text>
+                  )}
                 </TouchableOpacity>
               </View>
             </ScrollView>

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Dimensions, StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { Dimensions, StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -14,6 +14,7 @@ import Animated, {
 import { Music, ChevronRight, Trash2, GripVertical } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SongMetadata } from '../types';
+import { useAppContext } from '../context/AppContext';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -94,6 +95,8 @@ function SortableItem({
   onRemoveFromSetlist,
   onReorder,
 }: SortableItemProps) {
+  const { loadingSongId } = useAppContext();
+  const isLoading = loadingSongId === song.id;
   const isDragging = useSharedValue(false);
   const startPosition = useSharedValue(-1);
   const startTop = useSharedValue(0);
@@ -182,8 +185,8 @@ function SortableItem({
         {/* Song card */}
         <TouchableOpacity
           style={[styles.songItemWrapper, isSetlistMode && { marginBottom: 0 }]}
-          onPress={() => onSongPress(song)}
-          activeOpacity={0.8}
+          onPress={() => !loadingSongId && onSongPress(song)}
+          activeOpacity={loadingSongId ? 1 : 0.8}
         >
           <LinearGradient
             colors={['#18181b', '#0f172a']}
@@ -206,7 +209,11 @@ function SortableItem({
                 {song.syncStatus === 'synced' ? '✓ Sincronizado' : '⌛ Pendiente'}
               </Text>
             </View>
-            <ChevronRight size={20} color={COLORS.mutedForeground} />
+            {isLoading ? (
+              <ActivityIndicator size="small" color={COLORS.accent} />
+            ) : (
+              <ChevronRight size={20} color={COLORS.mutedForeground} />
+            )}
           </LinearGradient>
         </TouchableOpacity>
 

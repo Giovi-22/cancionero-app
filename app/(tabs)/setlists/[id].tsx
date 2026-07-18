@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
 import { ArrowLeft, Plus, Edit2, Play, Radio, Search, X, Square } from 'lucide-react-native';
 import { useAppContext } from '../../../src/context/AppContext';
 import { SongList } from '../../../src/components/SongList';
@@ -26,7 +26,8 @@ export default function SetlistDetailScreen() {
     myDirectorSession,
     user,
     setIsEditSetlistOpen,
-    setlists
+    setlists,
+    loadingActions
   } = useAppContext();
 
   const insets = useSafeAreaInsets();
@@ -62,6 +63,9 @@ export default function SetlistDetailScreen() {
   const handleOpenEditSetlist = () => {
     setIsEditSetlistOpen(true);
   };
+
+  const isStartingShow = loadingActions['startShow'];
+  const isEndingShow = loadingActions['endShow'];
 
   return (
     <View style={styles.container}>
@@ -103,8 +107,13 @@ export default function SetlistDetailScreen() {
               { flex: 1 }
             ]}
             onPress={() => handleStartShowFromSetlist(activeSetlist)}
+            disabled={isStartingShow || isEndingShow}
           >
-            <Radio size={16} color="#fff" />
+            {isStartingShow ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Radio size={16} color="#fff" />
+            )}
             <Text style={styles.startShowHeaderText}>
               {myDirectorSession?.setlist_id === activeSetlist.id ? 'En Vivo' : 'Iniciar Show'}
             </Text>
@@ -115,8 +124,13 @@ export default function SetlistDetailScreen() {
           <TouchableOpacity
             style={styles.stopShowBtn}
             onPress={handleEndShow}
+            disabled={isStartingShow || isEndingShow}
           >
-            <Square size={16} color="#fff" fill="#fff" />
+            {isEndingShow ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Square size={16} color="#fff" fill="#fff" />
+            )}
             <Text style={styles.startShowHeaderText}>Terminar</Text>
           </TouchableOpacity>
         )}
