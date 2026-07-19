@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet, Modal, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Modal, ScrollView, ActivityIndicator } from 'react-native';
 import { Search, X, ArrowUpDown, Check, FolderOpen, Folder, ChevronRight, ArrowLeft } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { SongList } from '../components/SongList';
