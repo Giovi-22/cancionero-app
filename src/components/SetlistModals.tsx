@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, Modal, TextInput, TouchableOpacity, ScrollView, StyleSheet, Keyboard, ActivityIndicator } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { X, CheckSquare, Square } from 'lucide-react-native';
+import { X, CheckSquare, Square, Folder, ChevronRight, ArrowLeft, Search } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { COLORS } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -123,17 +123,50 @@ export const EditSetlistModal = () => {
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [currentFolder, setCurrentFolder] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (isEditSetlistOpen && activeSetlist) {
-      // Limpiar fecha previa del nombre si existe
       const cleanName = activeSetlist.name.split(' - ')[0];
       setName(cleanName);
       setDate(activeSetlist.date ? new Date(activeSetlist.date) : undefined);
       setSelectedSongIds([...activeSetlist.songIds]);
+      setCurrentFolder(null);
+      setSearchQuery('');
     }
   }, [isEditSetlistOpen, activeSetlist]);
+
+  const folders = useMemo(() => {
+    const names = new Set<string>();
+    songs.forEach(song => {
+      if (song.folderName) {
+        names.add(song.folderName);
+      }
+    });
+    return Array.from(names).map(name => ({
+      name,
+      songCount: songs.filter(s => s.folderName === name).length
+    })).sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+  }, [songs]);
+
+  const displaySongs = useMemo(() => {
+    let list = [...songs];
+    if (searchQuery.trim().length > 0) {
+      list = list.filter(song =>
+        song.name.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+    } else {
+      list = list.filter(song => {
+        if (currentFolder === null) {
+          return !song.folderName;
+        }
+        return song.folderName === currentFolder;
+      });
+    }
+    return list.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+  }, [songs, searchQuery, currentFolder]);
 
   if (!isEditSetlistOpen || !activeSetlist) return null;
 
@@ -159,6 +192,8 @@ export const EditSetlistModal = () => {
       setIsSaving(false);
     }
   };
+
+  const isSearching = searchQuery.trim().length > 0;
 
   return (
     <Modal
@@ -204,10 +239,74 @@ export const EditSetlistModal = () => {
               }}
             />
           )}
+
+          {/* Buscador dentro de Editar Lista */}
+          <View style={styles.searchRow}>
+            <View style={styles.searchContainer}>
+              <Search size={18} color={COLORS.mutedForeground} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Buscar canción..."
+                placeholderTextColor={COLORS.mutedForeground}
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
+                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+                  <X size={16} color={COLORS.foreground} />
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
         </View>
 
-        <ScrollView style={styles.editModalList} contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>
-          {songs.map(song => {
+        <ScrollView style={styles.editModalList} contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
+          {/* Breadcrumb de navegación */}
+          {!isSearching && currentFolder !== null && (
+            <View style={styles.breadcrumbContainer}>
+              <TouchableOpacity onPress={() => setCurrentFolder(null)} style={styles.backButton}>
+                <ArrowLeft size={20} color={COLORS.accent} />
+              </TouchableOpacity>
+              <Text style={styles.breadcrumbText}>
+                Inicio / <Text style={styles.breadcrumbCurrent}>{currentFolder}</Text>
+              </Text>
+            </View>
+          )}
+
+          {/* Listado de carpetas raíz */}
+          {!isSearching && currentFolder === null && folders.length > 0 && (
+            <View style={styles.foldersContainer}>
+              {folders.map(folder => (
+                <TouchableOpacity
+                  key={folder.name}
+                  style={styles.folderRow}
+                  onPress={() => setCurrentFolder(folder.name)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.folderIconContainer}>
+                    <Folder size={22} color={COLORS.accent} />
+                  </View>
+                  <View style={styles.folderInfo}>
+                    <Text style={styles.folderNameText}>{folder.name}</Text>
+                    <Text style={styles.folderMetaText}>{folder.songCount} canciones</Text>
+                  </View>
+                  <ChevronRight size={20} color={COLORS.mutedForeground} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Encabezado canciones sueltas */}
+          {!isSearching && currentFolder === null && folders.length > 0 && displaySongs.length > 0 && (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderText}>Canciones</Text>
+            </View>
+          )}
+
+          {/* Listado de canciones */}
+          {displaySongs.map(song => {
             const isSelected = selectedSongIds.includes(song.id);
             return (
               <TouchableOpacity
@@ -230,8 +329,8 @@ export const EditSetlistModal = () => {
           })}
         </ScrollView>
         <View style={styles.editModalFooter}>
-          <TouchableOpacity 
-            style={[styles.editModalSaveBtn, isSaving && { opacity: 0.7 }]} 
+          <TouchableOpacity
+            style={[styles.editModalSaveBtn, isSaving && { opacity: 0.7 }]}
             onPress={handleSave}
             disabled={isSaving}
           >
@@ -388,5 +487,108 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  // Buscador
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 15,
+    gap: 10,
+  },
+  searchContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    color: COLORS.foreground,
+    paddingVertical: 10,
+    fontSize: 15,
+  },
+  clearSearchBtn: {
+    padding: 5,
+  },
+  // Breadcrumb navigation
+  breadcrumbContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${COLORS.accent}12`,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    marginBottom: 12,
+    gap: 12,
+  },
+  backButton: {
+    padding: 4,
+  },
+  breadcrumbText: {
+    fontSize: 15,
+    color: COLORS.mutedForeground,
+    fontWeight: '500',
+  },
+  breadcrumbCurrent: {
+    color: COLORS.accent,
+    fontWeight: '700',
+  },
+  // Folder browser items
+  foldersContainer: {
+    gap: 10,
+    marginBottom: 15,
+  },
+  folderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 14,
+  },
+  folderIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: `${COLORS.accent}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  folderInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  folderNameText: {
+    color: COLORS.foreground,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  folderMetaText: {
+    color: COLORS.mutedForeground,
+    fontSize: 13,
+  },
+  // Section Headers
+  sectionHeader: {
+    paddingHorizontal: 4,
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  sectionHeaderText: {
+    color: COLORS.mutedForeground,
+    fontSize: 13,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
 });

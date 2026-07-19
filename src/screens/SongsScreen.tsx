@@ -162,7 +162,7 @@ export const SongsScreen = () => {
           {/* Encabezado de canciones sueltas si hay carpetas y también canciones en la raíz */}
           {currentFolder === null && folders.length > 0 && displaySongs.length > 0 && (
             <View style={styles.sectionHeader}>
-              <Text style={styles.sectionHeaderText}>Canciones sueltas</Text>
+              <Text style={styles.sectionHeaderText}>Canciones</Text>
             </View>
           )}
 
@@ -195,9 +195,9 @@ export const SongsScreen = () => {
         animationType="fade"
         onRequestClose={() => setIsSortOpen(false)}
       >
-        <TouchableOpacity 
-          style={styles.modalOverlay} 
-          activeOpacity={1} 
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
           onPress={() => setIsSortOpen(false)}
         >
           <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
