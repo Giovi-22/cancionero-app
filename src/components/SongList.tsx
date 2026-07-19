@@ -44,6 +44,7 @@ interface SongListProps {
   onRemoveFromSetlist?: (songId: string) => void;
   onAddSongsPress?: () => void;
   onReorder?: (fromIndex: number, toIndex: number) => void;
+  scrollEnabled?: boolean;
 }
 
 // ── Worklet helpers ─────────────────────────────────────────────────────────
@@ -241,6 +242,7 @@ export const SongList: React.FC<SongListProps> = ({
   onRemoveFromSetlist,
   onAddSongsPress,
   onReorder,
+  scrollEnabled = true,
 }) => {
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollY = useSharedValue(0);
@@ -297,6 +299,7 @@ export const SongList: React.FC<SongListProps> = ({
       style={styles.container}
       onScroll={scrollHandler}
       scrollEventThrottle={16}
+      scrollEnabled={scrollEnabled}
       contentContainerStyle={{ height: listHeight, paddingHorizontal: 16 }}
     >
       <View style={{ height: listHeight, position: 'relative' }}>

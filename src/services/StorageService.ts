@@ -84,6 +84,12 @@ export class StorageService {
       console.log('Added library_id column to setlists table');
     } catch (e) {}
 
+    // Migración manual: Añadir folder_name a canciones si no existe
+    try {
+      await db.execAsync('ALTER TABLE songs ADD COLUMN folder_name TEXT;');
+      console.log('Added folder_name column to songs table');
+    } catch (e) {}
+
     // Migración inicial: si no hay bibliotecas, crear la de por defecto y migrar los datos locales
     try {
       const libCount = await db.getFirstAsync<any>('SELECT COUNT(*) as count FROM libraries');
@@ -257,12 +263,12 @@ export class StorageService {
     await db.withTransactionAsync(async () => {
       for (const song of songs) {
         await db.runAsync(
-          'INSERT OR IGNORE INTO songs (id, name, mimeType, modifiedTime, localPath, syncStatus, lastSyncedAt, library_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-          [song.id, song.name, song.mimeType || '', song.modifiedTime || '', song.localPath || '', song.syncStatus || 'synced', song.lastSyncedAt || new Date().toISOString(), targetLibrary]
+          'INSERT OR IGNORE INTO songs (id, name, mimeType, modifiedTime, localPath, syncStatus, lastSyncedAt, library_id, folder_name) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+          [song.id, song.name, song.mimeType || '', song.modifiedTime || '', song.localPath || '', song.syncStatus || 'synced', song.lastSyncedAt || new Date().toISOString(), targetLibrary, song.folderName || null]
         );
         await db.runAsync(
-          'UPDATE songs SET name = ?, mimeType = ?, modifiedTime = ?, localPath = ?, syncStatus = ?, lastSyncedAt = ?, library_id = ? WHERE id = ?',
-          [song.name, song.mimeType || '', song.modifiedTime || '', song.localPath || '', song.syncStatus || 'synced', song.lastSyncedAt || new Date().toISOString(), targetLibrary, song.id]
+          'UPDATE songs SET name = ?, mimeType = ?, modifiedTime = ?, localPath = ?, syncStatus = ?, lastSyncedAt = ?, library_id = ?, folder_name = ? WHERE id = ?',
+          [song.name, song.mimeType || '', song.modifiedTime || '', song.localPath || '', song.syncStatus || 'synced', song.lastSyncedAt || new Date().toISOString(), targetLibrary, song.folderName || null, song.id]
         );
       }
     });
@@ -312,7 +318,7 @@ export class StorageService {
     } else {
       rows = await db.getAllAsync<any>('SELECT * FROM songs ORDER BY name ASC');
     }
-    return rows || [];
+    return (rows || []).map(row => ({ ...row, folderName: row.folder_name || undefined }));
   }
 
   // --- Operaciones de Ajustes ---

@@ -1,4 +1,4 @@
-import { driveService } from './DriveService';
+import { driveService, DriveService } from './DriveService';
 import { StorageService } from './StorageService';
 import { FileSystemService } from './FileSystemService';
 import { authService } from './AuthService';
@@ -30,8 +30,10 @@ export class SyncService {
       // Traer listas, estadísticas y ajustes de la nube antes de empezar con Drive
       await StorageService.pullFromSupabase();
 
-      // 2. Obtener lista de canciones remotas
-      const remoteFiles = await driveService.getSongsFromFolder(folderId);
+      // 2. Obtener lista de canciones remotas (incluyendo subcarpetas recursivamente)
+      console.log('[Sync] Scanning Drive folder recursively (including subfolders)...');
+      const remoteFiles = await DriveService.getSongsFromFolderRecursive(folderId);
+      console.log(`[Sync] Found ${remoteFiles.length} total files across all subfolders.`);
       
       // 3. Obtener lista local para comparar
       const localSongs = await StorageService.getAllSongs(libraryId);
@@ -114,6 +116,7 @@ export class SyncService {
           localPath: FileSystemService.getLocalPath(rf.id),
           syncStatus: 'synced',
           lastSyncedAt: new Date().toISOString(),
+          folderName: rf.folderName,
         }));
       
       await StorageService.saveSongs(finalMetadata, libraryId);

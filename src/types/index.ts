@@ -11,6 +11,7 @@ export interface SongMetadata extends Song {
   // Additional metadata for local database
   lastSyncedAt?: string;
   libraryId?: string;
+  folderName?: string; // Subcarpeta de Drive de origen (raíz = undefined)
 }
 
 export interface AppSettings {
