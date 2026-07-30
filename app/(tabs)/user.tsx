@@ -7,6 +7,10 @@ import { Settings, LogOut, BookOpen, Search, AlertTriangle, Bluetooth, ShieldAle
 import { authService } from '../../src/services/AuthService';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
+import packageJson from '../../package.json';
+
+const APP_VERSION = Constants.expoConfig?.version || packageJson.version || '1.0.0';
 
 export default function UserTab() {
     const insets = useSafeAreaInsets();
@@ -82,7 +86,7 @@ export default function UserTab() {
                                 </View>
                             </View>
                             <TouchableOpacity 
-                                style={[styles.actionButton, styles.logoutBtn]}
+                                style={styles.logoutBtn}
                                 onPress={handleSignOut}
                                 disabled={isAuthLoading}
                             >
@@ -213,6 +217,12 @@ export default function UserTab() {
                             </Text>
                         </View>
                     </TouchableOpacity>
+                </View>
+
+                {/* Información de la Versión */}
+                <View style={styles.footerContainer}>
+                    <Text style={styles.footerAppName}>Cancionero Mobile</Text>
+                    <Text style={styles.footerVersion}>Versión {APP_VERSION}</Text>
                 </View>
 
             </ScrollView>
@@ -406,5 +416,23 @@ const styles = StyleSheet.create({
     dangerSubtitle: {
         fontSize: 12,
         color: COLORS.mutedForeground,
+    },
+    footerContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 10,
+        marginBottom: 10,
+        paddingVertical: 10,
+    },
+    footerAppName: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: COLORS.mutedForeground,
+        marginBottom: 2,
+    },
+    footerVersion: {
+        fontSize: 12,
+        color: COLORS.mutedForeground,
+        opacity: 0.7,
     },
 });
