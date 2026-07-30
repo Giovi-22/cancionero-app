@@ -2,6 +2,7 @@ import { Tabs } from "expo-router";
 import { useEffect } from "react";
 import { Pressable, StyleSheet } from "react-native";
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from "react-native-reanimated";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
     Home,
     Music,
@@ -41,6 +42,8 @@ function AnimatedTabButton({ children, onPress, accessibilityState }: any) {
 }
 
 export default function TabsLayout() {
+    const insets = useSafeAreaInsets();
+
     return (
         <Tabs
             screenOptions={{
@@ -48,8 +51,8 @@ export default function TabsLayout() {
                 tabBarStyle: {
                     backgroundColor: COLORS.surface,
                     borderTopColor: COLORS.border,
-                    height: 60,
-                    paddingBottom: 8,
+                    height: 60 + insets.bottom,
+                    paddingBottom: 8 + insets.bottom,
                     paddingTop: 8,
                 },
                 tabBarActiveTintColor: COLORS.accent,

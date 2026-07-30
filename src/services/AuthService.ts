@@ -186,8 +186,23 @@ export class AuthService {
   }
 
   public async getCurrentUser() {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        console.warn('[AuthService] getUser error (possibly offline), falling back to local session:', error);
+        const { data: { session } } = await supabase.auth.getSession();
+        return session?.user ?? null;
+      }
+      return user;
+    } catch (e) {
+      console.warn('[AuthService] getUser threw error (possibly offline), falling back to local session:', e);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        return session?.user ?? null;
+      } catch (err) {
+        return null;
+      }
+    }
   }
 
   private parseQueryParams(url: string) {

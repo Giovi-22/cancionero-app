@@ -180,10 +180,15 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   }, [liveSessions, user]);
 
   const loadInitialData = async () => {
+    let currentUser = null;
     try {
-      const currentUser = await authService.getCurrentUser();
+      currentUser = await authService.getCurrentUser();
       setUser(currentUser);
+    } catch (e) {
+      console.warn('[AppContext] Failed to get user during loadInitialData (offline mode):', e);
+    }
 
+    try {
       // Cargar bibliotecas desde DB
       const allLibraries = await StorageService.getAllLibraries();
       setLibraries(allLibraries);
@@ -203,7 +208,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         }
       }
     } catch (e) {
-      console.error('Error loading initial data:', e);
+      console.error('Error loading initial local data:', e);
     }
   };
 

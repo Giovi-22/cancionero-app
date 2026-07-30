@@ -406,9 +406,9 @@ export class StorageService {
     const db = await this.getDb();
     let rows;
     if (libraryId) {
-      rows = await db.getAllAsync<any>('SELECT * FROM setlists WHERE library_id = ? ORDER BY name ASC', [libraryId]);
+      rows = await db.getAllAsync<any>('SELECT * FROM setlists WHERE library_id = ? ORDER BY COALESCE(date, lastUpdated, id) DESC', [libraryId]);
     } else {
-      rows = await db.getAllAsync<any>('SELECT * FROM setlists ORDER BY name ASC');
+      rows = await db.getAllAsync<any>('SELECT * FROM setlists ORDER BY COALESCE(date, lastUpdated, id) DESC');
     }
     return rows.map(row => ({
       ...row,

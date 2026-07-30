@@ -31,7 +31,7 @@ export const SetlistList: React.FC<SetlistListProps> = ({
   onDeleteSetlist
 }) => {
   const [pendingDelete, setPendingDelete] = useState<Setlist | null>(null);
-  const [sortBy, setSortBy] = useState<'name' | 'date-newest' | 'date-oldest'>('name');
+  const [sortBy, setSortBy] = useState<'name' | 'date-newest' | 'date-oldest'>('date-newest');
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [pendingSort, setPendingSort] = useState<string | null>(null);
 
