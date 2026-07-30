@@ -292,64 +292,86 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     return () => clearInterval(scrollIntervalRef.current);
   }, [isScrolling, scrollSpeed]);
 
-  // ── Pedal BT: Scroll Fluido (requestAnimationFrame + time-delta) ────────────
-  // Modelo: PedalHandler notifica START (dirección) y STOP (botón suelto).
-  // Usamos rAF en lugar de setInterval para sincronizarnos con el ciclo de
-  // render del display y evitar artefactos visuales en el primer frame.
-  // El avance es proporcional al delta de tiempo real (px/ms), lo que garantiza
-  // velocidad constante independientemente de la frecuencia de pantalla.
+  // ── Pedal BT: Scroll Fluido con momentum ────────────────────────────────────
+  // En lugar de detener/reiniciar el rAF loop, mantenemos UNA SOLA instancia
+  // del loop corriendo siempre mientras la velocidad sea > 0. Esto elimina
+  // completamente el micro-salto que se produce al reiniciar el loop.
+  //
+  // Modelo:
+  //   pedalVelocityRef  → velocidad actual en px/ms (rampa suave arriba/abajo)
+  //   pedalTargetVelRef → velocidad objetivo: >0 scrolling, 0 detenido
+  //   pedalScrollDirRef → 'up' | 'down' | null
+  //
+  // Al presionar pedal:  pedalTargetVelRef = speed, pedalScrollDirRef = dir
+  // Al soltar pedal:     pedalTargetVelRef = 0  (el loop desacelera solo)
 
-  const pedalScrollDirRef = useRef<'up' | 'down' | null>(null);
+  const pedalScrollDirRef    = useRef<'up' | 'down' | null>(null);
+  const pedalVelocityRef     = useRef<number>(0);   // velocidad actual px/ms
+  const pedalTargetVelRef    = useRef<number>(0);   // velocidad objetivo px/ms
+  const ACCEL_RATE           = 0.008;               // aceleración px/ms²
+  const DECEL_RATE           = 0.012;               // desaceleración px/ms²
+  const MIN_VELOCITY         = 0.005;               // umbral para considerar detenido
 
   const startPedalScroll = useCallback((direction: 'up' | 'down') => {
-    // Si ya estamos desplazándonos en la misma dirección, ignoramos el evento redundante
-    // (los eventos de repetición de teclado HID disparan esto repetidamente y reiniciar el rAF causaría saltos)
-    if (pedalRafRef.current !== null && pedalScrollDirRef.current === direction) {
-      return;
-    }
-    
     pedalScrollDirRef.current = direction;
+    pedalTargetVelRef.current = pedalSpeedRef.current * 0.3; // px/ms objetivo
 
-    // Detener cualquier loop previo
-    if (pedalRafRef.current !== null) {
-      cancelAnimationFrame(pedalRafRef.current);
-      pedalRafRef.current = null;
-    }
-    pedalLastTickRef.current = 0; // Resetear para que el primer frame calcule bien
+    // Arrancar el loop solo si no estaba corriendo
+    if (pedalRafRef.current !== null) return;
+
+    pedalLastTickRef.current = 0;
 
     const tick = (timestamp: number) => {
-      // En el primer frame inicializamos el tiempo sin mover nada
       if (pedalLastTickRef.current === 0) {
         pedalLastTickRef.current = timestamp;
         pedalRafRef.current = requestAnimationFrame(tick);
         return;
       }
 
-      const delta = Math.min(timestamp - pedalLastTickRef.current, 50); // cap 50ms
+      const delta = Math.min(timestamp - pedalLastTickRef.current, 50);
       pedalLastTickRef.current = timestamp;
 
-      // pedalSpeedRef.current * 0.3 -> px/ms.
-      const step = pedalSpeedRef.current * 0.3 * delta;
-      const nextY = direction === 'down'
-        ? scrollPosRef.current + step
-        : Math.max(0, scrollPosRef.current - step);
+      const target = pedalTargetVelRef.current;
+      const current = pedalVelocityRef.current;
 
-      scrollRef.current?.scrollTo({ y: nextY, animated: false });
-      scrollPosRef.current = nextY;
+      // Interpolar suavemente hacia la velocidad objetivo
+      if (current < target) {
+        pedalVelocityRef.current = Math.min(current + ACCEL_RATE * delta, target);
+      } else if (current > target) {
+        pedalVelocityRef.current = Math.max(current - DECEL_RATE * delta, 0);
+      }
 
-      pedalRafRef.current = requestAnimationFrame(tick);
+      const vel = pedalVelocityRef.current;
+
+      if (vel > MIN_VELOCITY) {
+        const step = vel * delta;
+        const dir = pedalScrollDirRef.current;
+        const nextY = dir === 'down'
+          ? scrollPosRef.current + step
+          : Math.max(0, scrollPosRef.current - step);
+
+        scrollRef.current?.scrollTo({ y: nextY, animated: false });
+        scrollPosRef.current = nextY;
+      }
+
+      // Continuar el loop solo si hay velocidad residual
+      if (pedalVelocityRef.current > MIN_VELOCITY || target > 0) {
+        pedalRafRef.current = requestAnimationFrame(tick);
+      } else {
+        // Loop completamente detenido
+        pedalRafRef.current = null;
+        pedalVelocityRef.current = 0;
+        pedalScrollDirRef.current = null;
+        pedalLastTickRef.current = 0;
+      }
     };
 
     pedalRafRef.current = requestAnimationFrame(tick);
   }, []);
 
   const stopPedalScroll = useCallback(() => {
-    if (pedalRafRef.current !== null) {
-      cancelAnimationFrame(pedalRafRef.current);
-      pedalRafRef.current = null;
-    }
-    pedalLastTickRef.current = 0;
-    pedalScrollDirRef.current = null;
+    // Solo bajamos el objetivo a 0; el loop desacelera suavemente por sí solo
+    pedalTargetVelRef.current = 0;
   }, []);
 
   const handlePedalScrollUp = useCallback(() => startPedalScroll('up'), [startPedalScroll]);
@@ -637,7 +659,11 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         ref={scrollRef}
         style={styles.scroll}
         contentContainerStyle={styles.scrollContent}
-        onScroll={e => { scrollPosRef.current = e.nativeEvent.contentOffset.y; }}
+        onScroll={e => {
+          if (!isScrolling && pedalScrollDirRef.current === null) {
+            scrollPosRef.current = e.nativeEvent.contentOffset.y;
+          }
+        }}
         scrollEventThrottle={1}
         scrollEnabled={isScrollEnabled}
       >

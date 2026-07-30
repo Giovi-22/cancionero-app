@@ -73,7 +73,7 @@ export const PedalHandler: React.FC<PedalHandlerProps> = ({
 
   // ── Re-enrutamiento HID (fix Android BT reconnect) ────────────────────────
   const reaquireFocus = () => {
-    if (!inputRef.current) return;
+    if (!inputRef.current || activeDirectionRef.current !== null) return;
     inputRef.current.blur();
     setTimeout(() => { inputRef.current?.focus(); }, 50);
   };
@@ -109,7 +109,7 @@ export const PedalHandler: React.FC<PedalHandlerProps> = ({
    * - Si es la misma dirección: solo resetea el watchdog (sin interrumpir el rAF).
    * - El watchdog dispara onScrollStop si no llegan eventos en WATCHDOG_MS.
    */
-  const WATCHDOG_MS = 200; // ms sin eventos → botón suelto
+  const WATCHDOG_MS = 700; // ms sin eventos → botón suelto
 
   const handleKeyDetected = (key: string) => {
     const action = mappingsRef.current[key];
