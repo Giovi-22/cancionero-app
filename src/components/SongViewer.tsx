@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   StyleSheet, Text, View, ScrollView, TouchableOpacity,
   Dimensions, TextInput, Keyboard, Platform, AppState,
-  PanResponder, Animated, Alert, ActivityIndicator, KeyboardAvoidingView
+  PanResponder, Animated, Alert, ActivityIndicator, KeyboardAvoidingView, Modal
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -18,6 +18,9 @@ import { LiveSessionService } from '../services/LiveSessionService';
 import { SongMetadata } from '../types';
 import { PdfService } from '../services/PdfService';
 import { PedalHandler } from './PedalHandler';
+import { Audio } from 'expo-av';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+
 
 const COLORS = {
   background: '#0a0a0a', surface: '#1a1a1a', foreground: '#ffffff',
@@ -53,6 +56,9 @@ interface SongViewerProps {
   // Follower mode
   followSessionId?: string;
   onFollowSongChange?: (newSongId: string) => void;
+  // Global theme
+  globalTheme?: any;
+  onSaveGlobalTheme?: (theme: any) => void;
 }
 
 /**
@@ -139,7 +145,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   initialSettings, onSaveSettings,
   isDirector = false, directorSessionId,
   setlistSongs = [], onDirectorNext, onDirectorPrev,
-  followSessionId, onFollowSongChange
+  followSessionId, onFollowSongChange,
+  globalTheme, onSaveGlobalTheme
 }) => {
   const [transpose, setTranspose] = useState<number>(initialSettings?.transpose || 0);
   const [capo, setCapo] = useState(initialSettings?.capo || 0);
@@ -154,9 +161,30 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const [bpm, setBpm] = useState(initialSettings?.bpm || 120);
   const [isMetronomeActive, setIsMetronomeActive] = useState(false);
   const [beat, setBeat] = useState(false);
+  const [beatCount, setBeatCount] = useState(0);       // 0 = downbeat, >0 = other beats
+  const [metronomeMuted, setMetronomeMuted] = useState(false);
+  const [timeSignature, setTimeSignature] = useState(4); // beats per measure
+  const beatCountRef = useRef(0);
+  const soundAccentRef = useRef<Audio.Sound | null>(null);
+  const soundNormalRef = useRef<Audio.Sound | null>(null);
   const [isScrollEnabled, setIsScrollEnabled] = useState(true);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [isDebugMode, setIsDebugMode] = useState(false);
+  const [theme, setTheme] = useState(globalTheme || initialSettings?.theme || {
+    background: COLORS.background,
+    lyrics: COLORS.foreground,
+    chords: COLORS.accent
+  });
+  const [colorPickerOpen, setColorPickerOpen] = useState(false);
+  const [pickerTab, setPickerTab] = useState<'background'|'lyrics'|'chords'>('background');
+  // helper: true si el color es oscuro
+  const isDark = (hex: string) => {
+    const r = parseInt(hex.slice(1,3)||'0',16);
+    const g = parseInt(hex.slice(3,5)||'0',16);
+    const b = parseInt(hex.slice(5,7)||'0',16);
+    return (r*299 + g*587 + b*114) / 1000 < 128;
+  };
+  const headerFg = isDark(theme.background) ? '#ffffff' : '#111111';
   // Estado del overlay de edición de notas
   const [editingNote, setEditingNote] = useState<{ id: string; text: string } | null>(null);
 
@@ -173,6 +201,11 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       setPedalSpeed(initialSettings?.pedalSpeed || 0.5);
       setMusicianNotes(initialSettings?.musicianNotes || {});
       setBpm(initialSettings?.bpm || 120);
+      setTheme(globalTheme || initialSettings?.theme || {
+        background: COLORS.background,
+        lyrics: COLORS.foreground,
+        chords: COLORS.accent
+      });
       setIsScrolling(false);
     }
   }, [songId, initialSettings]);
@@ -208,15 +241,69 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
   // ── Metrónomo ──────────────────────────────────
   useEffect(() => {
+    let isMounted = true;
+    async function loadSounds() {
+      try {
+        const { sound: soundAccent } = await Audio.Sound.createAsync(
+          require('../../assets/click_accent.wav')
+        );
+        const { sound: soundNormal } = await Audio.Sound.createAsync(
+          require('../../assets/click_normal.wav')
+        );
+        if (isMounted) {
+          soundAccentRef.current = soundAccent;
+          soundNormalRef.current = soundNormal;
+        } else {
+          soundAccent.unloadAsync();
+          soundNormal.unloadAsync();
+        }
+      } catch (err) {
+        console.log('Error loading metronome sounds', err);
+      }
+    }
+    loadSounds();
+
+    return () => {
+      isMounted = false;
+      if (soundAccentRef.current) soundAccentRef.current.unloadAsync();
+      if (soundNormalRef.current) soundNormalRef.current.unloadAsync();
+    };
+  }, []);
+
+  const playMetronomeClick = async (isAccent: boolean) => {
+    try {
+      const sound = isAccent ? soundAccentRef.current : soundNormalRef.current;
+      if (sound) {
+        await sound.setPositionAsync(0);
+        await sound.playAsync();
+      }
+    } catch (err) {
+      console.log('Error playing metronome click', err);
+    }
+  };
+
+  useEffect(() => {
     let interval: any;
     if (isMetronomeActive) {
+      // Reiniciar contador al activar
+      beatCountRef.current = 0;
+      setBeatCount(0);
+
       interval = setInterval(() => {
+        const isDownbeat = beatCountRef.current === 0;
         setBeat(true);
-        setTimeout(() => setBeat(false), 100);
+        setBeatCount(beatCountRef.current);
+        if (!metronomeMuted) playMetronomeClick(isDownbeat);
+        setTimeout(() => setBeat(false), 80);
+
+        beatCountRef.current = (beatCountRef.current + 1) % timeSignature;
       }, 60000 / bpm);
+    } else {
+      beatCountRef.current = 0;
+      setBeatCount(0);
     }
     return () => clearInterval(interval);
-  }, [isMetronomeActive, bpm]);
+  }, [isMetronomeActive, bpm, metronomeMuted, timeSignature]);
 
   // ── Procesar canción ───────────────────────────
   const parsedLines = useMemo(() => {
@@ -395,6 +482,13 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     return unsub;
   }, [followSessionId, songId, onFollowSongChange]);
 
+  // ── Sincronizar GlobalTheme ───────────────────
+  useEffect(() => {
+    if (globalTheme) {
+      setTheme(globalTheme);
+    }
+  }, [globalTheme]);
+
   // ── Guardar ajustes ────────────────────────────
   useEffect(() => {
     onSaveSettings?.({
@@ -553,14 +647,14 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   }, []);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header principal */}
       <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 5 }]}>
         <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
-          <ChevronLeft size={28} color={COLORS.foreground} />
+          <ChevronLeft size={28} color={headerFg} />
         </TouchableOpacity>
         <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 10 }}>
-          <Text style={[styles.title, { marginHorizontal: 0, flex: 0 }]} numberOfLines={1}>{title}</Text>
+          <Text style={[styles.title, { marginHorizontal: 0, flex: 0, color: headerFg }]} numberOfLines={1}>{title}</Text>
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <TouchableOpacity
@@ -571,11 +665,11 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             {isGeneratingPdf ? (
               <ActivityIndicator size="small" color={COLORS.accent} />
             ) : (
-              <Share2 size={22} color={COLORS.foreground} />
+              <Share2 size={22} color={headerFg} />
             )}
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setIsStageMode(!isStageMode)} style={styles.headerBtn}>
-            <Maximize2 size={24} color={isStageMode ? COLORS.accent : COLORS.foreground} />
+            <Maximize2 size={24} color={isStageMode ? COLORS.accent : headerFg} />
           </TouchableOpacity>
         </View>
       </View>
@@ -609,12 +703,24 @@ export const SongViewer: React.FC<SongViewerProps> = ({
             {isScrolling ? `${scrollSpeed}x` : 'Scroll'}
           </Text>
         </View>
-        <View style={[styles.infoBadge, !isMetronomeActive && styles.infoBadgeInactive]}>
-          <Activity size={12} color={isMetronomeActive ? (beat ? COLORS.accent : COLORS.foreground) : COLORS.mutedForeground} />
+        <TouchableOpacity 
+          activeOpacity={0.7}
+          onPress={() => setIsMetronomeActive(!isMetronomeActive)}
+          style={[
+          styles.infoBadge,
+          !isMetronomeActive && styles.infoBadgeInactive,
+          isMetronomeActive && beat && beatCount === 0 && { borderColor: '#f59e0b', borderWidth: 1, backgroundColor: 'rgba(245,158,11,0.1)' },
+        ]}>
+          <Activity size={12} color={
+            !isMetronomeActive ? COLORS.mutedForeground
+            : beat && beatCount === 0 ? '#f59e0b'  // downbeat: amarillo
+            : beat ? COLORS.accent                  // otros beats: azul
+            : COLORS.foreground
+          } />
           <Text style={[styles.infoBadgeText, !isMetronomeActive && styles.infoBadgeTextInactive]}>
             {isMetronomeActive ? `${bpm} BPM` : 'BPM'}
           </Text>
-        </View>
+        </TouchableOpacity>
       </View>
 
       {/* Sub-header de navegación de lista (reemplaza el widget flotante) */}
@@ -670,7 +776,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         <View style={styles.songContainer}>
           {parsedLines.map((line, lIndex) => {
             const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
-            const sectionColor = isStageMode ? '#fbbf24' : COLORS.accent;
+            const sectionColor = isStageMode ? '#fbbf24' : theme.chords;
             const fullLineText = line.blocks.map(b => b.text).join('');
             const isNonPlayableMetadata = line.isMetadata && /^(NOTA|TONO|KEY|BPM|TEMPO|CAPO|COMP[ÁA]S):/i.test(fullLineText);
 
@@ -692,7 +798,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                           <View key={bIndex} style={[styles.block, { width: '100%', alignItems: 'center' }]}>
                             <Text style={[
                               styles.lyricText,
-                              { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold', lineHeight: fontSize * 1.5 * 1.25 },
+                              { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold', lineHeight: fontSize * 1.5 * 1.25, color: theme.lyrics },
                               isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
                             ]}>
                               {item.text}
@@ -710,7 +816,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                             key={`item-${bIndex}`}
                             style={[
                               styles.lyricText,
-                              { fontSize },
+                              { fontSize, color: theme.lyrics },
                               line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
                             ]}
                           >
@@ -738,9 +844,9 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                             hasChord ? (
                               <Text style={[
                                 styles.chordText,
-                                { fontSize: fontSize },
+                                { fontSize: fontSize, color: theme.chords },
                                 line.isMetadata && { marginRight: 4 },
-                                isNonPlayableMetadata && { color: COLORS.foreground, fontWeight: 'normal' },
+                                isNonPlayableMetadata && { color: theme.lyrics, fontWeight: 'normal' },
                                 isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
                               ]}>{item.chord}</Text>
                             ) : (
@@ -751,7 +857,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                           )}
                           <Text style={[
                             styles.lyricText,
-                            { fontSize },
+                            { fontSize, color: theme.lyrics },
                             line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
                             isDebugMode && { backgroundColor: hasChord ? 'rgba(239, 68, 68, 0.05)' : 'rgba(59, 130, 246, 0.15)' }
                           ]}>
@@ -912,9 +1018,30 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               <TouchableOpacity onPress={() => setIsMetronomeActive(!isMetronomeActive)} style={[styles.smallBtn, isMetronomeActive && { backgroundColor: COLORS.accent }]}>
                 <Clock size={18} color="#fff" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 1))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 5))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 1))} style={[styles.smallBtn, { width: 28 }]}><Text style={{ color: '#fff', fontSize: 12 }}>-1</Text></TouchableOpacity>
               <Text style={styles.ctrlText}>{bpm} BPM</Text>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 1))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 1))} style={[styles.smallBtn, { width: 28 }]}><Text style={{ color: '#fff', fontSize: 12 }}>+1</Text></TouchableOpacity>
+              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 5))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+            </View>
+            {/* Compás y silencio */}
+            <View style={[styles.controlGroup, { marginTop: 10 }]}>
+              <Text style={[styles.ctrlText, { fontSize: 13, marginRight: 8 }]}>Compás:</Text>
+              {[2, 3, 4, 6].map(ts => (
+                <TouchableOpacity
+                  key={ts}
+                  onPress={() => { setTimeSignature(ts); beatCountRef.current = 0; }}
+                  style={[styles.smallBtn, timeSignature === ts && { backgroundColor: '#f59e0b' }]}
+                >
+                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>{ts}/4</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity
+                onPress={() => setMetronomeMuted(m => !m)}
+                style={[styles.smallBtn, { marginLeft: 8 }, metronomeMuted && { backgroundColor: '#ef4444' }]}
+              >
+                <Text style={{ color: '#fff', fontSize: 11 }}>{metronomeMuted ? '🔇' : '🔊'}</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Tamaño letra */}
@@ -939,6 +1066,20 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               <TouchableOpacity onPress={() => setPedalSpeed((p: number) => Math.max(0.1, +(p - 0.1).toFixed(1)))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
               <Text style={styles.ctrlText}>{pedalSpeed}x</Text>
               <TouchableOpacity onPress={() => setPedalSpeed((p: number) => Math.min(10, +(p + 0.1).toFixed(1)))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
+            </View>
+
+            {/* Colores */}
+            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Colores (Globales)</Text>
+            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 10, alignItems: 'center' }}>
+              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.background, borderWidth: 1, borderColor: COLORS.border }} />
+              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.lyrics, borderWidth: 1, borderColor: COLORS.border }} />
+              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.chords, borderWidth: 1, borderColor: COLORS.border }} />
+              <TouchableOpacity
+                onPress={() => { setPickerTab('background'); setColorPickerOpen(true); }}
+                style={{ marginLeft: 'auto', backgroundColor: COLORS.accent, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }}
+              >
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>Personalizar</Text>
+              </TouchableOpacity>
             </View>
 
             {/* Vista */}
@@ -1017,6 +1158,159 @@ export const SongViewer: React.FC<SongViewerProps> = ({
           </View>
         </KeyboardAvoidingView>
       )}
+
+      {/* ── Modal Color Picker Unificado ─────────────────────── */}
+      <Modal visible={colorPickerOpen} transparent animationType="slide" onRequestClose={() => setColorPickerOpen(false)}>
+        <TouchableOpacity style={styles.colorPickerBackdrop} activeOpacity={1} onPress={() => setColorPickerOpen(false)}>
+          <TouchableOpacity activeOpacity={1} style={styles.colorPickerContainer} onPress={(e) => e.stopPropagation()}>
+            {/* Titulo + Reset */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 16 }}>
+              <Text style={[styles.colorPickerTitle, { flex: 1, marginBottom: 0 }]}>Colores del Visor</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  const def = { background: COLORS.background, lyrics: COLORS.foreground, chords: COLORS.accent };
+                  setTheme(def);
+                  onSaveGlobalTheme?.(def);
+                }}
+                style={{ backgroundColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}
+              >
+                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>Restablecer</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Tabs: Fondo / Letra / Acordes */}
+            <View style={{ flexDirection: 'row', width: '100%', marginBottom: 20, backgroundColor: COLORS.background, borderRadius: 12, padding: 3 }}>
+              {(['background','lyrics','chords'] as const).map(tab => (
+                <TouchableOpacity
+                  key={tab}
+                  onPress={() => setPickerTab(tab)}
+                  style={[
+                    { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
+                    pickerTab === tab && { backgroundColor: COLORS.surface }
+                  ]}
+                >
+                  <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: theme[tab], borderWidth: 1, borderColor: COLORS.border }} />
+                  <Text style={{ color: pickerTab === tab ? COLORS.foreground : COLORS.mutedForeground, fontSize: 13, fontWeight: pickerTab === tab ? 'bold' : 'normal' }}>
+                    {tab === 'background' ? 'Fondo' : tab === 'lyrics' ? 'Letra' : 'Acordes'}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            {/* Preview en vivo */}
+            <View style={{ width: '100%', borderRadius: 14, backgroundColor: theme.background, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
+              <Text style={{ color: COLORS.mutedForeground, fontSize: 10, fontWeight: 'bold', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>Vista previa</Text>
+              {/* Línea con acorde + letra */}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 }}>
+                <View style={{ marginRight: 4 }}>
+                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>Am</Text>
+                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Santo, </Text>
+                </View>
+                <View style={{ marginRight: 4 }}>
+                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>F</Text>
+                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Santo, </Text>
+                </View>
+                <View>
+                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>G</Text>
+                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Santo</Text>
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
+                <View style={{ marginRight: 4 }}>
+                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>C</Text>
+                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>es el </Text>
+                </View>
+                <View>
+                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>Em</Text>
+                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Señor</Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Paleta expandida */}
+            {((): React.ReactNode => {
+              const SWATCH_SETS: Record<string, string[]> = {
+                background: [
+                  '#0a0a0a','#111827','#1e1e1e','#0d1117',
+                  '#1a0a2e','#0d1b2a','#0f2027','#1c1c2e',
+                  '#fdf6e3','#fffff8','#f8f9fa','#ffffff',
+                  '#f0e6d3','#e8f4f8','#f0f4ff','#fff9e6',
+                ],
+                lyrics: [
+                  '#ffffff','#f8f8f8','#e5e7eb','#d1d5db',
+                  '#9ca3af','#6b7280','#4b5563','#374151',
+                  '#1f2937','#111827','#657b83','#93a1a1',
+                  '#ffd700','#ffa500','#98fb98','#87ceeb',
+                ],
+                chords: [
+                  '#3b82f6','#2563eb','#1d4ed8','#60a5fa',
+                  '#ef4444','#dc2626','#f87171','#fca5a5',
+                  '#10b981','#059669','#34d399','#6ee7b7',
+                  '#f59e0b','#d97706','#fbbf24','#fde68a',
+                  '#8b5cf6','#7c3aed','#a78bfa','#c4b5fd',
+                  '#ec4899','#db2777','#f472b6','#fbcfe8',
+                  '#06b6d4','#0891b2','#22d3ee','#67e8f9',
+                  '#f97316','#ea580c','#fb923c','#fed7aa',
+                ],
+              };
+              const swatches = SWATCH_SETS[pickerTab] || [];
+              const [hexInput, setHexInput] = React.useState(theme[pickerTab]);
+              // sync hex input when tab changes
+              React.useEffect(() => { setHexInput(theme[pickerTab]); }, [pickerTab, theme]);
+              return (
+                <View style={{ width: '100%' }}>
+                  <Text style={{ color: COLORS.mutedForeground, fontSize: 12, marginBottom: 10 }}>Paleta de colores</Text>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
+                    {swatches.map(c => (
+                      <TouchableOpacity
+                        key={c}
+                        onPress={() => {
+                          const newTheme = { ...theme, [pickerTab]: c };
+                          setTheme(newTheme);
+                          onSaveGlobalTheme?.(newTheme);
+                          setHexInput(c);
+                        }}
+                        style={[
+                          { width: 40, height: 40, borderRadius: 20, backgroundColor: c },
+                          theme[pickerTab] === c
+                            ? { borderWidth: 3, borderColor: COLORS.accent }
+                            : { borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' }
+                        ]}
+                      />
+                    ))}
+                  </View>
+                  <Text style={{ color: COLORS.mutedForeground, fontSize: 12, marginBottom: 8 }}>O ingresá un color hex</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme[pickerTab], borderWidth: 1, borderColor: COLORS.border }} />
+                    <TextInput
+                      style={[styles.noteEditInput, { flex: 1, height: 44, marginBottom: 0 }]}
+                      value={hexInput}
+                      onChangeText={(val) => {
+                        setHexInput(val);
+                        const cleaned = val.startsWith('#') ? val : '#' + val;
+                        if (/^#[0-9A-Fa-f]{6}$/.test(cleaned)) {
+                          const newTheme = { ...theme, [pickerTab]: cleaned };
+                          setTheme(newTheme);
+                          onSaveGlobalTheme?.(newTheme);
+                        }
+                      }}
+                      maxLength={7}
+                      autoCapitalize="none"
+                      placeholder="#3b82f6"
+                      placeholderTextColor={COLORS.mutedForeground}
+                    />
+                  </View>
+                </View>
+              );
+            })()}
+
+            <TouchableOpacity style={[styles.doneBtn, { width: '100%', marginTop: 20 }]} onPress={() => setColorPickerOpen(false)}>
+              <Text style={styles.doneBtnText}>Cerrar</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
+
     </View>
   );
 };
@@ -1173,6 +1467,31 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 15,
+  },
+  colorPickerBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  colorPickerContainer: {
+    backgroundColor: COLORS.surface,
+    padding: 24,
+    borderRadius: 24,
+    width: '100%',
+    maxWidth: 400,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  colorPickerTitle: {
+    color: COLORS.foreground,
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginBottom: 20,
   },
   floatingBar: { position: 'absolute', bottom: 30, left: 20, right: 20, height: 60, backgroundColor: 'rgba(26,26,26,0.95)', borderRadius: 30, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, justifyContent: 'space-between', borderWidth: 1, borderColor: COLORS.border, elevation: 5 },
   controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },

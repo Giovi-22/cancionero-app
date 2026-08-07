@@ -59,8 +59,11 @@ export interface AppContextType {
   setActiveSetlist: (setlist: Setlist | null) => void;
   setlistSongs: SongMetadata[];
   setSetlistSongs: (songs: SongMetadata[]) => void;
-  searchQuery: string;
   setSearchQuery: (query: string) => void;
+
+  // Global Theme
+  globalTheme: any;
+  handleSaveGlobalTheme: (theme: any) => Promise<void>;
 
   // Live session states & actions
   liveSessions: LiveSession[];
@@ -136,6 +139,9 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   // Estado de Setlist Activa
   const [activeSetlist, setActiveSetlist] = useState<Setlist | null>(null);
 
+  // Tema global
+  const [globalTheme, setGlobalTheme] = useState<any>({ background: '#0a0a0a', lyrics: '#ffffff', chords: '#3b82f6' });
+
   // Modals de creación / edición
   const [isCreateSetlistOpen, setIsCreateSetlistOpen] = useState(false);
   const [isEditSetlistOpen, setIsEditSetlistOpen] = useState(false);
@@ -206,6 +212,12 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         if (activeLib.driveFolderId && currentUser) {
           triggerBackgroundSync(activeLib.driveFolderId, activeLib.id);
         }
+      }
+
+      // Cargar tema global
+      const savedGlobalTheme = await StorageService.getSetting<any>('global_theme');
+      if (savedGlobalTheme) {
+        setGlobalTheme(savedGlobalTheme);
       }
     } catch (e) {
       console.error('Error loading initial local data:', e);
@@ -343,6 +355,11 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       const libId = activeLibrary?.id || 'default';
       await StorageService.saveSetting(`song_settings_${libId}_${data.songId}`, data.settings);
     }
+  };
+
+  const handleSaveGlobalTheme = async (theme: any) => {
+    setGlobalTheme(theme);
+    await StorageService.saveSetting('global_theme', theme);
   };
 
   const handleSaveConfig = async (newFolderId: string) => {
@@ -731,6 +748,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         setSetlistSongs,
         searchQuery,
         setSearchQuery,
+        globalTheme,
+        handleSaveGlobalTheme,
         liveSessions,
         myDirectorSession,
         followingSession,

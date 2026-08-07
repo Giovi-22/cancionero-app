@@ -20,7 +20,9 @@ export default function SongScreen() {
         handleDirectorPrev,
         setSelectedSong,
         setSongContent,
-        setSetlistSongs
+        setSetlistSongs,
+        globalTheme,
+        handleSaveGlobalTheme
     } = useAppContext();
 
     if (!selectedSong || !songContent) {
@@ -53,6 +55,8 @@ export default function SongScreen() {
                 onClose={handleClose}
                 initialSettings={songSettings}
                 onSaveSettings={handleSaveSongSettings}
+                globalTheme={globalTheme}
+                onSaveGlobalTheme={handleSaveGlobalTheme}
                 isDirector={!!myDirectorSession}
                 directorSessionId={myDirectorSession?.id}
                 followSessionId={followingSession?.id}

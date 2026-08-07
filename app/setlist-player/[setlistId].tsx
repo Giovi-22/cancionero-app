@@ -35,6 +35,8 @@ export default function SetlistPlayerScreen() {
     handleSaveSongSettings,
     handleFollowSongChange,
     setSetlistSongs,
+    globalTheme,
+    handleSaveGlobalTheme,
   } = useAppContext();
 
   const isDirector = directorMode === 'true';
@@ -159,6 +161,8 @@ export default function SetlistPlayerScreen() {
           onClose={handleClose}
           initialSettings={item.settings}
           onSaveSettings={handleSaveSettings}
+          globalTheme={globalTheme}
+          onSaveGlobalTheme={handleSaveGlobalTheme}
           isDirector={isDirector}
           directorSessionId={myDirectorSession?.id}
           followSessionId={followingSession?.id}
