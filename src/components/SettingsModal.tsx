@@ -5,6 +5,10 @@ import { useAppContext } from '../context/AppContext';
 import { authService } from '../services/AuthService';
 import { COLORS } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
+import packageJson from '../../package.json';
+
+const APP_VERSION = Constants.expoConfig?.version || packageJson.version || '1.0.0';
 
 interface SettingsModalProps {
   onOpenLibraries: () => void;
@@ -113,6 +117,11 @@ export const SettingsModal = ({ onOpenLibraries }: SettingsModalProps) => {
           >
             <Text style={styles.clearButtonText}>Limpiar Repertorio Local</Text>
           </TouchableOpacity>
+        </View>
+
+        {/* Versión */}
+        <View style={styles.versionContainer}>
+          <Text style={styles.versionText}>Cancionero Mobile v{APP_VERSION}</Text>
         </View>
       </ScrollView>
     </View>
@@ -283,5 +292,14 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontWeight: 'bold',
     fontSize: 14,
+  },
+  versionContainer: {
+    marginTop: 15,
+    alignItems: 'center',
+  },
+  versionText: {
+    fontSize: 12,
+    color: COLORS.mutedForeground,
+    opacity: 0.7,
   },
 });

@@ -1,6 +1,6 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, TextInput, StyleSheet } from 'react-native';
-import { ArrowLeft, Plus, Edit2, Play, Radio, Search, X } from 'lucide-react-native';
+import React, { useState, useMemo } from 'react';
+import { View, Text, TouchableOpacity, TextInput, StyleSheet, Modal, ScrollView, ActivityIndicator } from 'react-native';
+import { Search, X, ArrowUpDown, Check, FolderOpen, Folder, ChevronRight, ArrowLeft } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { SongList } from '../components/SongList';
 import { COLORS } from '../constants/theme';
@@ -20,21 +20,65 @@ export const SongsScreen = () => {
     isSyncing
   } = useAppContext();
 
+  const [sortBy, setSortBy] = useState<'default' | 'az' | 'za'>('default');
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [pendingSort, setPendingSort] = useState<string | null>(null);
+  const [currentFolder, setCurrentFolder] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
+  const handleSelectSort = (value: 'default' | 'az' | 'za') => {
+    setPendingSort(value);
+    setTimeout(() => {
+      setSortBy(value);
+      setPendingSort(null);
+      setIsSortOpen(false);
+    }, 350);
+  };
+
+  const folders = useMemo(() => {
+    const names = new Set<string>();
+    songs.forEach(song => {
+      if (song.folderName) {
+        names.add(song.folderName);
+      }
+    });
+    return Array.from(names).map(name => ({
+      name,
+      songCount: songs.filter(s => s.folderName === name).length
+    })).sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+  }, [songs]);
+
   const getDisplaySongs = (): SongMetadata[] => {
-    let list: SongMetadata[] = songs;
+    let list: SongMetadata[] = [...songs];
 
     if (searchQuery.trim().length > 0) {
-      return list.filter(song =>
+      list = list.filter(song =>
         song.name.toLowerCase().includes(searchQuery.toLowerCase())
       );
+    } else {
+      list = list.filter(song => {
+        if (currentFolder === null) {
+          return !song.folderName;
+        }
+        return song.folderName === currentFolder;
+      });
+    }
+
+    if (sortBy === 'az') {
+      list.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+    } else if (sortBy === 'za') {
+      list.sort((a, b) => b.name.localeCompare(a.name, 'es', { sensitivity: 'base' }));
     }
 
     return list;
   };
 
+  const handleSortPress = () => {
+    setIsSortOpen(true);
+  };
+
   const displaySongs = getDisplaySongs();
+  const isSearching = searchQuery.trim().length > 0;
 
   return (
     <View style={styles.container}>
@@ -46,32 +90,151 @@ export const SongsScreen = () => {
         hasUser={!!user}
       />
 
-      {/* Buscador de canciones */}
-      <View style={styles.searchContainer}>
-        <Search size={18} color={COLORS.mutedForeground} style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar canción..."
-          placeholderTextColor={COLORS.mutedForeground}
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {searchQuery.length > 0 && (
-          <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
-            <X size={16} color={COLORS.foreground} />
-          </TouchableOpacity>
-        )}
+      {/* Buscador y Ordenamiento */}
+      <View style={styles.searchRow}>
+        <View style={styles.searchContainer}>
+          <Search size={18} color={COLORS.mutedForeground} style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar canción..."
+            placeholderTextColor={COLORS.mutedForeground}
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          {searchQuery.length > 0 && (
+            <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearSearchBtn}>
+              <X size={16} color={COLORS.foreground} />
+            </TouchableOpacity>
+          )}
+        </View>
+        <TouchableOpacity style={styles.sortButton} onPress={handleSortPress}>
+          <ArrowUpDown size={20} color={sortBy !== 'default' ? COLORS.accent : COLORS.foreground} />
+        </TouchableOpacity>
       </View>
 
       {/* Listado de canciones */}
-      <SongList
-        songs={displaySongs}
-        onSongPress={handleSongPress}
-        onSyncPress={handleSync}
-        isSetlistMode={false}
-      />
+      {isSearching ? (
+        <SongList
+          songs={displaySongs}
+          onSongPress={handleSongPress}
+          onSyncPress={handleSync}
+          isSetlistMode={false}
+        />
+      ) : (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 100 }}>
+          {/* Breadcrumb de navegación al entrar a una subcarpeta */}
+          {currentFolder !== null && (
+            <View style={styles.breadcrumbContainer}>
+              <TouchableOpacity onPress={() => setCurrentFolder(null)} style={styles.backButton}>
+                <ArrowLeft size={20} color={COLORS.accent} />
+              </TouchableOpacity>
+              <Text style={styles.breadcrumbText}>
+                Inicio / <Text style={styles.breadcrumbCurrent}>{currentFolder}</Text>
+              </Text>
+            </View>
+          )}
+
+          {/* Listado de carpetas en el nivel raíz */}
+          {currentFolder === null && folders.length > 0 && (
+            <View style={styles.foldersContainer}>
+              {folders.map(folder => (
+                <TouchableOpacity
+                  key={folder.name}
+                  style={styles.folderRow}
+                  onPress={() => setCurrentFolder(folder.name)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.folderIconContainer}>
+                    <Folder size={22} color={COLORS.accent} />
+                  </View>
+                  <View style={styles.folderInfo}>
+                    <Text style={styles.folderNameText}>{folder.name}</Text>
+                    <Text style={styles.folderMetaText}>{folder.songCount} canciones</Text>
+                  </View>
+                  <ChevronRight size={20} color={COLORS.mutedForeground} />
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {/* Encabezado de canciones sueltas si hay carpetas y también canciones en la raíz */}
+          {currentFolder === null && folders.length > 0 && displaySongs.length > 0 && (
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionHeaderText}>Canciones</Text>
+            </View>
+          )}
+
+          {/* Lista de canciones del nivel actual */}
+          {displaySongs.length > 0 ? (
+            <SongList
+              songs={displaySongs}
+              onSongPress={handleSongPress}
+              onSyncPress={handleSync}
+              isSetlistMode={false}
+              scrollEnabled={false}
+            />
+          ) : (
+            (currentFolder !== null || folders.length === 0) && (
+              <SongList
+                songs={[]}
+                onSongPress={handleSongPress}
+                onSyncPress={handleSync}
+                isSetlistMode={false}
+              />
+            )
+          )}
+        </ScrollView>
+      )}
+
+      {/* Modal de Ordenamiento */}
+      <Modal
+        visible={isSortOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsSortOpen(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setIsSortOpen(false)}
+        >
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Ordenar Canciones</Text>
+              <TouchableOpacity onPress={() => setIsSortOpen(false)} style={styles.closeBtn}>
+                <X size={20} color={COLORS.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionsContainer}>
+              {(['default', 'az', 'za'] as const).map((option) => {
+                const labels = { default: 'Por defecto', az: 'Alfabético (A-Z)', za: 'Alfabético (Z-A)' };
+                const isActive = sortBy === option;
+                const isPending = pendingSort === option;
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[styles.optionRow, (isActive || isPending) && styles.optionRowActive]}
+                    onPress={() => handleSelectSort(option)}
+                    disabled={pendingSort !== null}
+                  >
+                    <Text style={[styles.optionText, (isActive || isPending) && styles.optionTextActive]}>
+                      {labels[option]}
+                    </Text>
+                    {isPending ? (
+                      <ActivityIndicator size="small" color={COLORS.accent} />
+                    ) : isActive ? (
+                      <Check size={18} color={COLORS.accent} />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -124,15 +287,32 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
   },
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    marginTop: 15,
+    marginBottom: 5,
+    gap: 10,
+  },
   searchContainer: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
     borderRadius: 10,
-    margin: 15,
     paddingHorizontal: 12,
     borderWidth: 1,
     borderColor: COLORS.border,
+  },
+  sortButton: {
+    backgroundColor: COLORS.surface,
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   searchIcon: {
     marginRight: 8,
@@ -145,5 +325,136 @@ const styles = StyleSheet.create({
   },
   clearSearchBtn: {
     padding: 5,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.75)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCard: {
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+    width: '100%',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    color: COLORS.foreground,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  optionsContainer: {
+    gap: 8,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  optionRowActive: {
+    borderColor: COLORS.accent,
+    backgroundColor: `${COLORS.accent}10`,
+  },
+  optionText: {
+    color: COLORS.mutedForeground,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  optionTextActive: {
+    color: COLORS.accent,
+    fontWeight: '600',
+  },
+  // Breadcrumb navigation
+  breadcrumbContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: `${COLORS.accent}12`,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.border,
+    gap: 12,
+  },
+  backButton: {
+    padding: 4,
+  },
+  breadcrumbText: {
+    fontSize: 15,
+    color: COLORS.mutedForeground,
+    fontWeight: '500',
+  },
+  breadcrumbCurrent: {
+    color: COLORS.accent,
+    fontWeight: '700',
+  },
+
+  // Folder browser items
+  foldersContainer: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+    gap: 12,
+  },
+  folderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surface,
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    gap: 14,
+  },
+  folderIconContainer: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    backgroundColor: `${COLORS.accent}15`,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  folderInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  folderNameText: {
+    color: COLORS.foreground,
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  folderMetaText: {
+    color: COLORS.mutedForeground,
+    fontSize: 13,
+  },
+
+  // Section Headers
+  sectionHeader: {
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 8,
+  },
+  sectionHeaderText: {
+    color: COLORS.mutedForeground,
+    fontSize: 14,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
 });

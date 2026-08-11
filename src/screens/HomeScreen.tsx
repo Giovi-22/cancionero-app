@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { Music, List, TrendingUp, Star, Play, Radio, BookOpen, Heart, Settings, Folder, Mic, Headphones, Bookmark, Volume2 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { LiveSessionBanners } from '../components/LiveSessionBanners';
@@ -21,7 +21,8 @@ export const HomeScreen = () => {
     myDirectorSession,
     setActiveSetlist,
     isSyncing,
-    handleSync
+    handleSync,
+    loadingActions
   } = useAppContext();
 
   const handleSetlistPress = (setlist: any) => {
@@ -49,6 +50,8 @@ export const HomeScreen = () => {
         return <BookOpen size={size} color={color} />;
     }
   };
+
+  const isStartingShow = loadingActions['startShow'];
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -169,8 +172,13 @@ export const HomeScreen = () => {
                     { marginTop: 0, flex: 1, justifyContent: 'center' }
                   ]}
                   onPress={() => handleStartShow(setlist)}
+                  disabled={isStartingShow}
                 >
-                  <Radio size={12} color="#fff" />
+                  {isStartingShow ? (
+                    <ActivityIndicator size="small" color="#fff" style={{ transform: [{ scale: 0.7 }] }} />
+                  ) : (
+                    <Radio size={12} color="#fff" />
+                  )}
                   <Text style={styles.startShowText} numberOfLines={1}>
                     {myDirectorSession?.setlist_id === setlist.id ? 'Vivo' : 'Show'}
                   </Text>

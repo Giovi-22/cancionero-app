@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import {
   StyleSheet, Text, View, TouchableOpacity,
-  ScrollView, Modal, Alert
+  ScrollView, Modal, Alert, ActivityIndicator
 } from 'react-native';
-import { ListMusic, ChevronRight, Plus, Trash2, X } from 'lucide-react-native';
+import { ListMusic, ChevronRight, Plus, Trash2, X, ArrowUpDown, Check } from 'lucide-react-native';
 import { Setlist } from '../types';
 
 const COLORS = {
@@ -31,6 +31,18 @@ export const SetlistList: React.FC<SetlistListProps> = ({
   onDeleteSetlist
 }) => {
   const [pendingDelete, setPendingDelete] = useState<Setlist | null>(null);
+  const [sortBy, setSortBy] = useState<'name' | 'date-newest' | 'date-oldest'>('date-newest');
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [pendingSort, setPendingSort] = useState<string | null>(null);
+
+  const handleSelectSort = (value: 'name' | 'date-newest' | 'date-oldest') => {
+    setPendingSort(value);
+    setTimeout(() => {
+      setSortBy(value);
+      setPendingSort(null);
+      setIsSortOpen(false);
+    }, 350);
+  };
 
   const handleConfirmDelete = () => {
     if (!pendingDelete) return;
@@ -38,10 +50,53 @@ export const SetlistList: React.FC<SetlistListProps> = ({
     setPendingDelete(null);
   };
 
+  const handleSortPress = () => {
+    setIsSortOpen(true);
+  };
+
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return '';
+    try {
+      if (dateStr.includes('/') && dateStr.length <= 10) return dateStr;
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    } catch (e) {
+      return dateStr;
+    }
+  };
+
+  const getSortedSetlists = () => {
+    const list = [...setlists];
+    if (sortBy === 'date-newest') {
+      list.sort((a, b) => {
+        const valA = a.date || a.lastUpdated || '';
+        const valB = b.date || b.lastUpdated || '';
+        return valB.localeCompare(valA);
+      });
+    } else if (sortBy === 'date-oldest') {
+      list.sort((a, b) => {
+        const valA = a.date || a.lastUpdated || '';
+        const valB = b.date || b.lastUpdated || '';
+        return valA.localeCompare(valB);
+      });
+    } else {
+      list.sort((a, b) => a.name.localeCompare(b.name, 'es', { sensitivity: 'base' }));
+    }
+    return list;
+  };
+
+  const sortedSetlists = getSortedSetlists();
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>Mis Listas</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+          <Text style={styles.title}>Mis Listas</Text>
+          <TouchableOpacity style={styles.sortButton} onPress={handleSortPress}>
+            <ArrowUpDown size={18} color={sortBy !== 'name' ? COLORS.accent : COLORS.mutedForeground} />
+          </TouchableOpacity>
+        </View>
         <TouchableOpacity style={styles.createButton} onPress={onCreatePress}>
           <Plus size={20} color="#fff" />
           <Text style={styles.createButtonText}>Nueva</Text>
@@ -49,14 +104,14 @@ export const SetlistList: React.FC<SetlistListProps> = ({
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        {setlists.length === 0 ? (
+        {sortedSetlists.length === 0 ? (
           <View style={styles.emptyState}>
             <ListMusic size={64} color={COLORS.muted} />
             <Text style={styles.emptyText}>No tienes listas creadas.</Text>
             <Text style={styles.emptySubText}>Sincroniza o crea una nueva lista.</Text>
           </View>
         ) : (
-          setlists.map((setlist) => (
+          sortedSetlists.map((setlist) => (
             <View key={setlist.id} style={styles.setlistRow}>
               <TouchableOpacity
                 style={styles.setlistItem}
@@ -68,7 +123,10 @@ export const SetlistList: React.FC<SetlistListProps> = ({
                 </View>
                 <View style={styles.setlistInfo}>
                   <Text style={styles.setlistName} numberOfLines={1}>{setlist.name}</Text>
-                  <Text style={styles.setlistMeta}>{setlist.songIds.length} canciones</Text>
+                  <Text style={styles.setlistMeta}>
+                    {setlist.songIds.length} canciones
+                    {setlist.date ? ` • ${formatDate(setlist.date)}` : ''}
+                  </Text>
                 </View>
                 <ChevronRight size={20} color={COLORS.mutedForeground} />
               </TouchableOpacity>
@@ -122,6 +180,58 @@ export const SetlistList: React.FC<SetlistListProps> = ({
           </View>
         </View>
       </Modal>
+
+      {/* Modal de Ordenamiento */}
+      <Modal
+        visible={isSortOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsSortOpen(false)}
+      >
+        <TouchableOpacity 
+          style={styles.modalOverlay} 
+          activeOpacity={1} 
+          onPress={() => setIsSortOpen(false)}
+        >
+          <View style={styles.modalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalHeaderTitle}>Ordenar Listas</Text>
+              <TouchableOpacity onPress={() => setIsSortOpen(false)} style={styles.closeBtn}>
+                <X size={20} color={COLORS.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.optionsContainer}>
+              {(['name', 'date-newest', 'date-oldest'] as const).map((option) => {
+                const labels = {
+                  'name': 'Nombre (A-Z)',
+                  'date-newest': 'Fecha (Más nuevas primero)',
+                  'date-oldest': 'Fecha (Más viejas primero)'
+                };
+                const isActive = sortBy === option;
+                const isPending = pendingSort === option;
+                return (
+                  <TouchableOpacity
+                    key={option}
+                    style={[styles.optionRow, (isActive || isPending) && styles.optionRowActive]}
+                    onPress={() => handleSelectSort(option)}
+                    disabled={pendingSort !== null}
+                  >
+                    <Text style={[styles.optionText, (isActive || isPending) && styles.optionTextActive]}>
+                      {labels[option]}
+                    </Text>
+                    {isPending ? (
+                      <ActivityIndicator size="small" color={COLORS.accent} />
+                    ) : isActive ? (
+                      <Check size={18} color={COLORS.accent} />
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 };
@@ -142,6 +252,15 @@ const styles = StyleSheet.create({
     color: COLORS.foreground,
     fontSize: 22,
     fontWeight: 'bold',
+  },
+  sortButton: {
+    backgroundColor: COLORS.surface,
+    padding: 8,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   createButton: {
     flexDirection: 'row',
@@ -299,5 +418,47 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 15,
+  },
+  // Sort modal
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  modalHeaderTitle: {
+    color: COLORS.foreground,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  closeBtn: {
+    padding: 4,
+  },
+  optionsContainer: {
+    gap: 8,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  optionRowActive: {
+    borderColor: COLORS.accent,
+    backgroundColor: `${COLORS.accent}15`,
+  },
+  optionText: {
+    color: COLORS.mutedForeground,
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  optionTextActive: {
+    color: COLORS.accent,
+    fontWeight: '600',
   },
 });

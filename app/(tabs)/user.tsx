@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, Platform } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, TextInput, Alert, Platform, ActivityIndicator } from 'react-native';
 import { AppHeader } from '../../src/components/layout/AppHeader';
 import { useAppContext } from '../../src/context/AppContext';
 import { COLORS } from '../../src/constants/theme';
@@ -7,6 +7,10 @@ import { Settings, LogOut, BookOpen, Search, AlertTriangle, Bluetooth, ShieldAle
 import { authService } from '../../src/services/AuthService';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Constants from 'expo-constants';
+import packageJson from '../../package.json';
+
+const APP_VERSION = Constants.expoConfig?.version || packageJson.version || '1.0.0';
 
 export default function UserTab() {
     const insets = useSafeAreaInsets();
@@ -19,8 +23,37 @@ export default function UserTab() {
         driveFolderId,
         handleSaveConfig,
         openFolderPicker,
-        handleClearRepertoire
+        handleClearRepertoire,
+        isLoadingFolders
     } = useAppContext();
+
+    const [isAuthLoading, setIsAuthLoading] = useState(false);
+
+    const handleGoogleSignIn = async () => {
+        if (isAuthLoading) return;
+        setIsAuthLoading(true);
+        try {
+            await authService.signInWithGoogle();
+        } catch (e) {
+            console.error(e);
+            Alert.alert('Error', 'No se pudo iniciar sesión con Google.');
+        } finally {
+            setIsAuthLoading(false);
+        }
+    };
+
+    const handleSignOut = async () => {
+        if (isAuthLoading) return;
+        setIsAuthLoading(true);
+        try {
+            await authService.signOut();
+        } catch (e) {
+            console.error(e);
+            Alert.alert('Error', 'No se pudo cerrar sesión.');
+        } finally {
+            setIsAuthLoading(false);
+        }
+    };
 
     return (
         <View style={styles.container}>
@@ -53,11 +86,18 @@ export default function UserTab() {
                                 </View>
                             </View>
                             <TouchableOpacity 
-                                style={[styles.actionButton, styles.logoutBtn]}
-                                onPress={() => authService.signOut()}
+                                style={styles.logoutBtn}
+                                onPress={handleSignOut}
+                                disabled={isAuthLoading}
                             >
-                                <LogOut size={18} color="#ef4444" />
-                                <Text style={styles.logoutBtnText}>Cerrar Sesión</Text>
+                                {isAuthLoading ? (
+                                    <ActivityIndicator size="small" color="#ef4444" />
+                                ) : (
+                                    <LogOut size={18} color="#ef4444" />
+                                )}
+                                <Text style={styles.logoutBtnText}>
+                                    {isAuthLoading ? 'Cerrando sesión...' : 'Cerrar Sesión'}
+                                </Text>
                             </TouchableOpacity>
                         </>
                     ) : (
@@ -66,10 +106,15 @@ export default function UserTab() {
                             <Text style={styles.noUserTitle}>Iniciá Sesión</Text>
                             <Text style={styles.noUserText}>Para sincronizar tus canciones y acceder a funciones online.</Text>
                             <TouchableOpacity 
-                                style={styles.loginBtn}
-                                onPress={() => authService.signInWithGoogle()}
+                                style={[styles.loginBtn, isAuthLoading && { opacity: 0.7 }]}
+                                onPress={handleGoogleSignIn}
+                                disabled={isAuthLoading}
                             >
-                                <Text style={styles.loginBtnText}>Iniciar Sesión con Google</Text>
+                                {isAuthLoading ? (
+                                    <ActivityIndicator size="small" color="#fff" />
+                                ) : (
+                                    <Text style={styles.loginBtnText}>Iniciar Sesión con Google</Text>
+                                )}
                             </TouchableOpacity>
                         </View>
                     )}
@@ -113,9 +158,13 @@ export default function UserTab() {
                         <TouchableOpacity 
                             style={styles.browseBtn}
                             onPress={() => openFolderPicker()}
-                            disabled={!user}
+                            disabled={!user || isLoadingFolders}
                         >
-                            <Search size={18} color="#fff" />
+                            {isLoadingFolders ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Search size={18} color="#fff" />
+                            )}
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -142,6 +191,7 @@ export default function UserTab() {
                 <View style={[styles.glassCard, styles.dangerZone]}>
                     <TouchableOpacity 
                         style={styles.dangerRow}
+                        disabled={isSyncing}
                         onPress={() => {
                             Alert.alert(
                                 'Limpiar Repertorio Local',
@@ -154,13 +204,25 @@ export default function UserTab() {
                         }}
                     >
                         <View style={[styles.settingRowIcon, { backgroundColor: 'rgba(239,68,68,0.1)' }]}>
-                            <ShieldAlert size={20} color="#ef4444" />
+                            {isSyncing ? (
+                                <ActivityIndicator size="small" color="#ef4444" />
+                            ) : (
+                                <ShieldAlert size={20} color="#ef4444" />
+                            )}
                         </View>
                         <View style={styles.settingRowInfo}>
                             <Text style={styles.dangerTitle}>Limpiar Repertorio Local</Text>
-                            <Text style={styles.dangerSubtitle}>Liberar espacio de almacenamiento local.</Text>
+                            <Text style={styles.dangerSubtitle}>
+                                {isSyncing ? 'Borrando canciones...' : 'Liberar espacio de almacenamiento local.'}
+                            </Text>
                         </View>
                     </TouchableOpacity>
+                </View>
+
+                {/* Información de la Versión */}
+                <View style={styles.footerContainer}>
+                    <Text style={styles.footerAppName}>Cancionero Mobile</Text>
+                    <Text style={styles.footerVersion}>Versión {APP_VERSION}</Text>
                 </View>
 
             </ScrollView>
@@ -354,5 +416,23 @@ const styles = StyleSheet.create({
     dangerSubtitle: {
         fontSize: 12,
         color: COLORS.mutedForeground,
+    },
+    footerContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: 10,
+        marginBottom: 10,
+        paddingVertical: 10,
+    },
+    footerAppName: {
+        fontSize: 13,
+        fontWeight: 'bold',
+        color: COLORS.mutedForeground,
+        marginBottom: 2,
+    },
+    footerVersion: {
+        fontSize: 12,
+        color: COLORS.mutedForeground,
+        opacity: 0.7,
     },
 });

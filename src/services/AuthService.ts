@@ -186,17 +186,41 @@ export class AuthService {
   }
 
   public async getCurrentUser() {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user;
+    try {
+      const { data: { user }, error } = await supabase.auth.getUser();
+      if (error) {
+        console.warn('[AuthService] getUser error (possibly offline), falling back to local session:', error);
+        const { data: { session } } = await supabase.auth.getSession();
+        return session?.user ?? null;
+      }
+      return user;
+    } catch (e) {
+      console.warn('[AuthService] getUser threw error (possibly offline), falling back to local session:', e);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        return session?.user ?? null;
+      } catch (err) {
+        return null;
+      }
+    }
   }
 
   private parseQueryParams(url: string) {
     const params: Record<string, string> = {};
-    const regex = /[#?&]([^=#]+)=([^&#]*)/g;
-    let match;
-    while ((match = regex.exec(url)) !== null) {
-      params[match[1]] = decodeURIComponent(match[2]);
-    }
+    // Los tokens de Supabase OAuth vienen en el fragmento (#) de la URL
+    // Ejemplo: cancionero-app://callback#access_token=xxx&refresh_token=yyy
+    // También soportamos query params normales (?key=value) como fallback
+    const fragment = url.split('#')[1] ?? '';
+    const query = url.split('?')[1]?.split('#')[0] ?? '';
+    const combined = [fragment, query].filter(Boolean).join('&');
+    combined.split('&').forEach((pair) => {
+      const eqIdx = pair.indexOf('=');
+      if (eqIdx !== -1) {
+        const key = pair.substring(0, eqIdx);
+        const value = pair.substring(eqIdx + 1);
+        params[key] = decodeURIComponent(value);
+      }
+    });
     return params;
   }
 }
