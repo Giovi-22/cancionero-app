@@ -91,7 +91,8 @@ function convertMetadataLineToChordPro(line: string): string {
 
 /**
  * Une una línea de acordes con una línea de letra en formato ChordPro posicionando
- * cada acorde en su índice exacto.
+ * cada acorde en su índice de columna. Si el índice cae en medio de una palabra,
+ * el acorde se desplaza hacia atrás hasta el inicio de esa palabra para no partirla.
  */
 function mergeLineToChordPro(chordLine: string, lyricLine: string): string {
   const chordRegex = /\S+/g;
@@ -110,10 +111,21 @@ function mergeLineToChordPro(chordLine: string, lyricLine: string): string {
 
   let result = lyricLine;
   for (const c of chords) {
+    // Si el índice del acorde cae más allá del texto de letra, extender con espacios
     if (c.index > result.length) {
       result = result + ' '.repeat(c.index - result.length);
     }
-    result = result.substring(0, c.index) + `[${c.chord}]` + result.substring(c.index);
+
+    // Ajustar el índice de inserción: si cae en medio de una palabra,
+    // retroceder hasta el inicio de esa palabra para no partirla.
+    let insertAt = c.index;
+    if (insertAt < result.length && result[insertAt] !== ' ') {
+      while (insertAt > 0 && result[insertAt - 1] !== ' ') {
+        insertAt--;
+      }
+    }
+
+    result = result.substring(0, insertAt) + `[${c.chord}]` + result.substring(insertAt);
   }
 
   return result;
