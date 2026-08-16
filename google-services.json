@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "947725534425",
+    "project_id": "cancionero-app-505214",
+    "storage_bucket": "cancionero-app-505214.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:947725534425:android:ae777470b8941c03116ac8",
+        "android_client_info": {
+          "package_name": "com.giovi.cancionero"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "947725534425-amn6n4lcf6omeup69iqntvh2cs1ckdjv.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.giovi.cancionero",
+            "certificate_hash": "42f530706ec2d4ec5969b9a659b171be285feb03"
+          }
+        },
+        {
+          "client_id": "947725534425-2po3cmv389vgo9uo9saabotu9rltqseq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCScydxC8rpcVd-JWUIz4UVIphnHuhSTHc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "947725534425-2po3cmv389vgo9uo9saabotu9rltqseq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

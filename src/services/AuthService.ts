@@ -1,19 +1,20 @@
-import * as WebBrowser from 'expo-web-browser';
-import * as Linking from 'expo-linking';
-import * as AuthSession from 'expo-auth-session';
-import { supabase } from '../lib/supabase';
-import { StorageService } from './StorageService';
+import { auth } from '../lib/firebase';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
-const GOOGLE_TOKEN_KEY      = 'google_access_token';
-const GOOGLE_REFRESH_KEY    = 'google_refresh_token';
-const GOOGLE_TOKEN_EXPIRY   = 'google_token_expiry'; // timestamp en ms
+const GOOGLE_WEB_CLIENT_ID = '947725534425-2po3cmv389vgo9uo9saabotu9rltqseq.apps.googleusercontent.com';
 
-WebBrowser.maybeCompleteAuthSession();
+// Configurar Google Sign-In con los scopes de Drive y Docs
+GoogleSignin.configure({
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+  scopes: [
+    'https://www.googleapis.com/auth/drive.readonly',
+    'https://www.googleapis.com/auth/documents.readonly',
+  ],
+  offlineAccess: true,
+});
 
 export class AuthService {
   private static instance: AuthService;
-  private session: any = null;
-  private googleAccessToken: string | null = null;
 
   private constructor() {}
 
@@ -25,205 +26,108 @@ export class AuthService {
   }
 
   /**
-   * Inicia sesión con Google usando Supabase
+   * Inicia sesión nativa con Google y autentica en Firebase
    */
-  public async signInWithGoogle() {
-    const redirectUrl = AuthSession.makeRedirectUri({
-      path: 'callback',
-    });
-    
-    console.log('--- REDIRECT URL:', redirectUrl, '---');
-    
-    const { data, error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: redirectUrl,
-        scopes: 'https://www.googleapis.com/auth/drive.readonly',
-        skipBrowserRedirect: true,
-        queryParams: {
-          prompt: 'consent',
-          access_type: 'offline',
-        },
-      },
-    });
+  public async signInWithGoogle(): Promise<any> {
+    try {
+      // Verificar disponibilidad de Play Services (Android)
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
 
-    if (error) throw error;
+      // Obtener credenciales de Google
+      const signInResult = await GoogleSignin.signIn();
+      const idToken = signInResult.data?.idToken;
 
-    const res = await WebBrowser.openAuthSessionAsync(data.url, redirectUrl);
-
-    if (res.type === 'success') {
-      const { url } = res;
-      const params = this.parseQueryParams(url);
-      
-      console.log('--- URL PARAMS KEYS:', Object.keys(params));
-
-      // Persistir el Google Access Token
-      if (params.provider_token) {
-        this.googleAccessToken = params.provider_token;
-        await StorageService.saveSetting(GOOGLE_TOKEN_KEY, params.provider_token);
-        // Guardar tiempo de expiración (Google tokens duran 1 hora = 3600 segundos)
-        const expiresAt = Date.now() + 3600 * 1000;
-        await StorageService.saveSetting(GOOGLE_TOKEN_EXPIRY, expiresAt);
-        console.log('--- Google Access Token capturado y guardado. Expira:', new Date(expiresAt).toISOString(), '---');
+      if (!idToken) {
+        throw new Error('No se pudo obtener idToken de Google Sign-In');
       }
 
-      // Persistir el Google Refresh Token (de larga duración, no expira)
-      if (params.provider_refresh_token) {
-        await StorageService.saveSetting(GOOGLE_REFRESH_KEY, params.provider_refresh_token);
-        console.log('--- Google Refresh Token capturado y guardado. ---');
-      }
-      
-      if (params.refresh_token || params.access_token) {
-        const { data: sessionData, error: sessionError } = await supabase.auth.setSession({
-          access_token: params.access_token || params.code,
-          refresh_token: params.refresh_token || '',
-        });
-        
-        if (sessionError) throw sessionError;
-        this.session = sessionData.session;
-        
-        // A veces el token viene dentro de la sesión recién creada
-        if ((this.session as any).provider_token && !params.provider_token) {
-          this.googleAccessToken = (this.session as any).provider_token;
-          await StorageService.saveSetting(GOOGLE_TOKEN_KEY, this.googleAccessToken!);
-          await StorageService.saveSetting(GOOGLE_TOKEN_EXPIRY, Date.now() + 3600 * 1000);
-        }
+      // Autenticar en Firebase Auth
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+      const userCredential = await auth().signInWithCredential(googleCredential);
 
-        return this.session;
-      }
+      console.log('[AuthService] Autenticación Firebase exitosa para:', userCredential.user.email);
+      return userCredential.user;
+    } catch (error) {
+      console.error('[AuthService] Error durante signInWithGoogle:', error);
+      throw error;
     }
-    
-    return null;
   }
 
   /**
-   * Obtiene el Access Token de Google para la sesión actual.
-   * Refresca automáticamente si el token expiró, usando el Refresh Token guardado
-   * y la Edge Function de Supabase que tiene las credenciales seguras.
+   * Obtiene el Access Token de Google (válido para APIs de Google Drive y Docs).
+   * GoogleSignin.getTokens() refresca automáticamente el token si expiró.
    */
   public async getGoogleAccessToken(): Promise<string | null> {
-    // 1. Verificar si el token en memoria está vigente
-    const expiresAt = await StorageService.getSetting<number>(GOOGLE_TOKEN_EXPIRY);
-    const isExpired = !expiresAt || Date.now() >= expiresAt - 5 * 60 * 1000; // 5 min de margen
-
-    if (this.googleAccessToken && !isExpired) {
-      return this.googleAccessToken;
-    }
-
-    // 2. Token expirado o ausente: intentar refrescar con Refresh Token
-    const refreshToken = await StorageService.getSetting<string>(GOOGLE_REFRESH_KEY);
-    if (refreshToken) {
-      console.log('[AuthService] Token expirado. Refrescando via Edge Function...');
-      const newToken = await this.refreshGoogleToken(refreshToken);
-      if (newToken) return newToken;
-    }
-
-    // 3. Restaurar desde SQLite como fallback (puede estar expirado si no hubo internet)
-    const savedToken = await StorageService.getSetting<string>(GOOGLE_TOKEN_KEY);
-    if (savedToken) {
-      this.googleAccessToken = savedToken;
-      return savedToken;
-    }
-
-    // 4. Último fallback: desde la sesión activa de Supabase
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return null;
-    
-    const providerToken = (session as any).provider_token || null;
-    if (providerToken) {
-      this.googleAccessToken = providerToken;
-    }
-    return providerToken;
-  }
-
-  /**
-   * Llama a la Edge Function de Supabase para obtener un nuevo Google Access Token.
-   * La Edge Function tiene el client_secret almacenado de forma segura en los secrets de Supabase.
-   */
-  private async refreshGoogleToken(refreshToken: string): Promise<string | null> {
     try {
-      const { data, error } = await supabase.functions.invoke('refresh-google-token', {
-        body: { refresh_token: refreshToken },
-      });
-
-      if (error || !data?.access_token) {
-        console.error('[AuthService] Error al refrescar el token de Google:', error || 'No access_token en respuesta');
-        return null;
+      const tokens = await GoogleSignin.getTokens();
+      if (tokens.accessToken) {
+        return tokens.accessToken;
       }
-
-      const newToken: string = data.access_token;
-      const expiresIn: number = data.expires_in || 3600;
-      const newExpiry = Date.now() + expiresIn * 1000;
-
-      // Actualizar memoria y SQLite
-      this.googleAccessToken = newToken;
-      await StorageService.saveSetting(GOOGLE_TOKEN_KEY, newToken);
-      await StorageService.saveSetting(GOOGLE_TOKEN_EXPIRY, newExpiry);
-
-      console.log(`[AuthService] Token de Google refrescado exitosamente. Expira: ${new Date(newExpiry).toISOString()}`);
-      return newToken;
+      return null;
     } catch (e) {
-      console.error('[AuthService] Excepción al refrescar el token de Google:', e);
+      console.warn('[AuthService] Error al obtener Google Access Token:', e);
       return null;
     }
   }
 
-  public async signOut() {
-    await supabase.auth.signOut();
-    this.session = null;
-    this.googleAccessToken = null;
-    // Eliminar todos los tokens de Google de SQLite
+  /**
+   * Cierra sesión en Firebase y Google Sign-In
+   */
+  public async signOut(): Promise<void> {
     try {
-      const db = await StorageService.getDb();
-      await db.runAsync(
-        'DELETE FROM settings WHERE key IN (?, ?, ?)',
-        [GOOGLE_TOKEN_KEY, GOOGLE_REFRESH_KEY, GOOGLE_TOKEN_EXPIRY]
-      );
-      console.log('[AuthService] Sesión cerrada y tokens eliminados.');
+      await GoogleSignin.signOut();
     } catch (e) {
-      console.error('Error al eliminar tokens en sign out:', e);
+      console.warn('[AuthService] Error en GoogleSignin.signOut:', e);
+    }
+    try {
+      await auth().signOut();
+      console.log('[AuthService] Sesión de Firebase cerrada exitosamente.');
+    } catch (e) {
+      console.error('[AuthService] Error en auth().signOut:', e);
     }
   }
 
-  public async getCurrentUser() {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error) {
-        console.warn('[AuthService] getUser error (possibly offline), falling back to local session:', error);
-        const { data: { session } } = await supabase.auth.getSession();
-        return session?.user ?? null;
-      }
-      return user;
-    } catch (e) {
-      console.warn('[AuthService] getUser threw error (possibly offline), falling back to local session:', e);
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        return session?.user ?? null;
-      } catch (err) {
-        return null;
-      }
-    }
+  /**
+   * Devuelve el usuario actualmente autenticado en Firebase
+   */
+  public async getCurrentUser(): Promise<any> {
+    const user = auth().currentUser;
+    if (!user) return null;
+
+    // Retornamos una estructura compatible con el resto de la app
+    return {
+      id: user.uid,
+      uid: user.uid,
+      email: user.email,
+      user_metadata: {
+        full_name: user.displayName || user.email,
+        name: user.displayName || user.email,
+        avatar_url: user.photoURL,
+      },
+    };
   }
 
-  private parseQueryParams(url: string) {
-    const params: Record<string, string> = {};
-    // Los tokens de Supabase OAuth vienen en el fragmento (#) de la URL
-    // Ejemplo: cancionero-app://callback#access_token=xxx&refresh_token=yyy
-    // También soportamos query params normales (?key=value) como fallback
-    const fragment = url.split('#')[1] ?? '';
-    const query = url.split('?')[1]?.split('#')[0] ?? '';
-    const combined = [fragment, query].filter(Boolean).join('&');
-    combined.split('&').forEach((pair) => {
-      const eqIdx = pair.indexOf('=');
-      if (eqIdx !== -1) {
-        const key = pair.substring(0, eqIdx);
-        const value = pair.substring(eqIdx + 1);
-        params[key] = decodeURIComponent(value);
+  /**
+   * Listener para cambios de estado de autenticación (onAuthStateChanged)
+   */
+  public onAuthStateChanged(callback: (user: any) => void) {
+    return auth().onAuthStateChanged((user: any) => {
+      if (user) {
+        callback({
+          id: user.uid,
+          uid: user.uid,
+          email: user.email,
+          user_metadata: {
+            full_name: user.displayName || user.email,
+            name: user.displayName || user.email,
+            avatar_url: user.photoURL,
+          },
+        });
+      } else {
+        callback(null);
       }
     });
-    return params;
   }
 }
 
 export const authService = AuthService.getInstance();
-

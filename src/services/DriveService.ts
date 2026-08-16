@@ -1,7 +1,9 @@
 import { authService } from './AuthService';
+import { legacyToChordPro } from '../utils/legacyToChordPro';
 
 export class DriveService {
   private static DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
+  private static DOCS_API_URL = 'https://docs.googleapis.com/v1/documents';
 
   /**
    * Lista carpetas de Google Drive (propias o compartidas)
@@ -136,7 +138,7 @@ export class DriveService {
     const token = await authService.getGoogleAccessToken();
     if (!token) throw new Error('No hay token de acceso a Google');
 
-    // Si es un Google Doc, vamos directo a exportar
+    // Si es un Google Doc, vamos directo a procesar con Docs API / export
     if (mimeType === 'application/vnd.google-apps.document') {
       return this.exportGoogleDoc(fileId, token);
     }
@@ -162,7 +164,37 @@ export class DriveService {
     }
   }
 
+  /**
+   * Obtiene y convierte un Google Doc. Intenta primero usar Google Docs API v1
+   * para obtener la estructura interna; si falla (ej. sin scope), usa fallback a export text/plain.
+   */
   private async exportGoogleDoc(fileId: string, token: string): Promise<string> {
+    // 1. Intentar obtener el documento a través de Google Docs API v1
+    try {
+      const response = await fetch(
+        `${DriveService.DOCS_API_URL}/${fileId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (response.ok) {
+        const docJson = await response.json();
+        const extractedText = this.extractTextFromGoogleDocJson(docJson);
+        if (extractedText && extractedText.trim().length > 0) {
+          console.log('[DriveService] Google Doc procesado exitosamente vía Google Docs API v1.');
+          return legacyToChordPro(extractedText);
+        }
+      } else {
+        console.warn('[DriveService] Google Docs API devolvió status:', response.status, '- Usando fallback a export plain text');
+      }
+    } catch (e) {
+      console.warn('[DriveService] Error llamando a Google Docs API, usando fallback:', e);
+    }
+
+    // 2. Fallback: exportar como text/plain desde Drive API
     const exportResponse = await fetch(
       `${DriveService.DRIVE_API_URL}/${fileId}/export?mimeType=text/plain`,
       {
@@ -176,9 +208,36 @@ export class DriveService {
       throw new Error('No se pudo exportar el Google Doc');
     }
     
-    return await exportResponse.text();
+    const plainText = await exportResponse.text();
+    return legacyToChordPro(plainText);
+  }
+
+  /**
+   * Extrae el texto estructural de la respuesta JSON de Google Docs API v1
+   */
+  private extractTextFromGoogleDocJson(docJson: any): string {
+    if (!docJson?.body?.content) return '';
+
+    const lines: string[] = [];
+
+    for (const structElem of docJson.body.content) {
+      if (!structElem.paragraph?.elements) continue;
+
+      let lineBuffer = '';
+      for (const elem of structElem.paragraph.elements) {
+        if (!elem.textRun?.content) continue;
+        lineBuffer += elem.textRun.content;
+      }
+
+      const splitLines = lineBuffer.split('\n');
+      for (let i = 0; i < splitLines.length; i++) {
+        if (i === splitLines.length - 1 && splitLines[i] === '') continue;
+        lines.push(splitLines[i]);
+      }
+    }
+
+    return lines.join('\n');
   }
 }
 
 export const driveService = new DriveService();
-

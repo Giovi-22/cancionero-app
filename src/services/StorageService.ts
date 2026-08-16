@@ -1,9 +1,8 @@
 import * as SQLite from 'expo-sqlite';
 import { SongMetadata, Library } from '../types';
-import { supabase } from '../lib/supabase';
+import { auth, firestore } from '../lib/firebase';
 import { FileSystemService } from './FileSystemService';
 import { legacyToChordPro } from '../utils/legacyToChordPro';
-
 import { isSingleChord } from '../utils/chordpro';
 
 const DB_NAME = 'cancionero.db';
@@ -67,36 +66,26 @@ export class StorageService {
       await db.execAsync('ALTER TABLE setlists ADD COLUMN date TEXT;');
     } catch (e) {}
 
-    // Migración manual: Añadir view_count si no existe
     try {
       await db.execAsync('ALTER TABLE songs ADD COLUMN view_count INTEGER DEFAULT 0;');
-      console.log('Added view_count column to songs table');
     } catch (e) {}
 
-    // Migración manual: Añadir library_id a canciones y setlists si no existen
     try {
       await db.execAsync('ALTER TABLE songs ADD COLUMN library_id TEXT;');
-      console.log('Added library_id column to songs table');
     } catch (e) {}
 
     try {
       await db.execAsync('ALTER TABLE setlists ADD COLUMN library_id TEXT;');
-      console.log('Added library_id column to setlists table');
     } catch (e) {}
 
-    // Migración manual: Añadir folder_name a canciones si no existe
     try {
       await db.execAsync('ALTER TABLE songs ADD COLUMN folder_name TEXT;');
-      console.log('Added folder_name column to songs table');
     } catch (e) {}
 
-    // Migración inicial: si no hay bibliotecas, crear la de por defecto y migrar los datos locales
+    // Migración inicial de bibliotecas
     try {
       const libCount = await db.getFirstAsync<any>('SELECT COUNT(*) as count FROM libraries');
       if (!libCount || libCount.count === 0) {
-        console.log('No libraries found. Starting initial migration...');
-
-        // Intentar leer la carpeta de Drive actual guardada
         const driveFolderIdRow = await db.getFirstAsync<any>("SELECT value FROM settings WHERE key = 'drive_folder_id'");
         let driveFolderId = '';
         if (driveFolderIdRow) {
@@ -108,33 +97,26 @@ export class StorageService {
         }
 
         const now = Date.now();
-        // Crear biblioteca 'default'
         await db.runAsync(
           'INSERT INTO libraries (id, name, driveFolderId, syncEnabled, icon, color, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
           ['default', 'Mi Biblioteca', driveFolderId, 1, 'book-open', '#3b82f6', now, now]
         );
-        console.log('Created default library: Mi Biblioteca');
 
-        // Asignar todas las canciones y listas huérfanas a la biblioteca por defecto
         await db.runAsync("UPDATE songs SET library_id = 'default' WHERE library_id IS NULL");
         await db.runAsync("UPDATE setlists SET library_id = 'default' WHERE library_id IS NULL");
-        console.log('Assigned existing songs and setlists to default library');
 
-        // Establecer la biblioteca por defecto como activa
         const activeLibRow = await db.getFirstAsync<any>("SELECT value FROM settings WHERE key = 'active_library_id'");
         if (!activeLibRow) {
           await db.runAsync(
             "INSERT OR REPLACE INTO settings (key, value) VALUES ('active_library_id', ?)",
             [JSON.stringify('default')]
           );
-          console.log("Set active_library_id to default");
         }
       }
     } catch (e) {
       console.error('Error during initial libraries migration:', e);
     }
 
-    // Migración local de canciones a ChordPro
     try {
       await this.migrateLocalSongsToChordPro(db);
     } catch (e) {
@@ -144,18 +126,13 @@ export class StorageService {
 
   private static async migrateLocalSongsToChordPro(db: SQLite.SQLiteDatabase) {
     try {
-      console.log('[Migration] Starting local songs migration to ChordPro...');
       const songs = await db.getAllAsync<any>('SELECT id FROM songs');
-      if (!songs || songs.length === 0) {
-        console.log('[Migration] No local songs found to migrate.');
-        return;
-      }
+      if (!songs || songs.length === 0) return;
 
       let migratedCount = 0;
       for (const song of songs) {
         const content = await FileSystemService.getSongContent(song.id);
         if (content) {
-          // Si tiene acordes entre corchetes válidos, ya está convertida
           let hasBracketedChords = false;
           const matches = content.match(/\[([^\]]+)\]/g);
           if (matches) {
@@ -234,8 +211,6 @@ export class StorageService {
 
   static async deleteLibrary(id: string) {
     const db = await this.getDb();
-    
-    // Obtener canciones de esta biblioteca para borrarlas físicamente
     const songs = await db.getAllAsync<any>('SELECT id FROM songs WHERE library_id = ?', [id]);
     for (const song of songs) {
       await FileSystemService.deleteSongFile(song.id);
@@ -245,14 +220,22 @@ export class StorageService {
     await db.runAsync('DELETE FROM setlists WHERE library_id = ?', [id]);
     await db.runAsync('DELETE FROM libraries WHERE id = ?', [id]);
     
-    // Sincronizar borrado de listas en Supabase
+    // Sincronizar borrado de listas en Firestore
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = auth().currentUser;
       if (user) {
-        await supabase.from('setlists').delete().match({ library_id: id, user_id: user.id });
+        const snapshot = await firestore()
+          .collection('setlists')
+          .where('user_id', '==', user.uid)
+          .where('library_id', '==', id)
+          .get();
+
+        const batch = firestore().batch();
+        snapshot.docs.forEach((doc: any) => batch.delete(doc.ref));
+        await batch.commit();
       }
     } catch (e) {
-      console.error('Error deleting library setlists from Supabase:', e);
+      console.error('Error deleting library setlists from Firestore:', e);
     }
   }
 
@@ -278,27 +261,27 @@ export class StorageService {
     const db = await this.getDb();
     await db.runAsync('UPDATE songs SET view_count = view_count + 1 WHERE id = ?', [songId]);
     
-    // Sincronizar con Supabase en background
-    this.syncStatsToSupabase(songId);
+    this.syncStatsToFirestore(songId);
   }
 
-  private static async syncStatsToSupabase(songId: string) {
+  private static async syncStatsToFirestore(songId: string) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = auth().currentUser;
       if (!user) return;
 
       const db = await this.getDb();
       const row = await db.getFirstAsync<any>('SELECT view_count FROM songs WHERE id = ?', [songId]);
       if (!row) return;
 
-      await supabase.from('song_stats').upsert({
-        user_id: user.id,
+      const docId = `${user.uid}_${songId}`;
+      await firestore().collection('song_stats').doc(docId).set({
+        user_id: user.uid,
         song_id: songId,
         view_count: row.view_count,
         last_played_at: new Date().toISOString()
-      }, { onConflict: 'user_id,song_id' });
+      }, { merge: true });
     } catch (e) {
-      console.error('Error syncing stats to Supabase:', e);
+      console.error('Error syncing stats to Firestore:', e);
     }
   }
 
@@ -329,13 +312,12 @@ export class StorageService {
       [key, JSON.stringify(value)]
     );
 
-    // Sincronizar TODAS las configuraciones a Supabase (modo silencioso)
-    this.syncSettingsToSupabase();
+    this.syncSettingsToFirestore();
   }
 
-  private static async syncSettingsToSupabase() {
+  private static async syncSettingsToFirestore() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = auth().currentUser;
       if (!user) return;
 
       const db = await this.getDb();
@@ -349,13 +331,13 @@ export class StorageService {
         }
       }
       
-      await supabase.from('user_settings').upsert({
-        user_id: user.id,
+      await firestore().collection('user_settings').doc(user.uid).set({
+        user_id: user.uid,
         settings: allSettings,
         updated_at: new Date().toISOString()
-      });
+      }, { merge: true });
     } catch (e) {
-      console.error('Error syncing settings to Supabase:', e);
+      console.error('Error syncing settings to Firestore:', e);
     }
   }
 
@@ -378,27 +360,26 @@ export class StorageService {
       [setlist.id, setlist.name, setlist.date || null, JSON.stringify(setlist.songIds), setlist.isPublic ? 1 : 0, new Date().toISOString(), libId]
     );
     
-    // Sincronizar con Supabase
-    this.syncSetlistToSupabase({ ...setlist, libraryId: libId });
+    this.syncSetlistToFirestore({ ...setlist, libraryId: libId });
   }
 
-  private static async syncSetlistToSupabase(setlist: any) {
+  private static async syncSetlistToFirestore(setlist: any) {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = auth().currentUser;
       if (!user) return;
 
-      await supabase.from('setlists').upsert({
+      await firestore().collection('setlists').doc(setlist.id).set({
         id: setlist.id,
-        user_id: user.id,
+        user_id: user.uid,
         name: setlist.name,
         date: setlist.date || null,
         song_ids: setlist.songIds,
         is_public: !!setlist.isPublic,
         last_updated: new Date().toISOString(),
         library_id: setlist.libraryId || 'default'
-      });
+      }, { merge: true });
     } catch (e) {
-      console.error('Error syncing setlist to Supabase:', e);
+      console.error('Error syncing setlist to Firestore:', e);
     }
   }
 
@@ -427,51 +408,60 @@ export class StorageService {
     const db = await this.getDb();
     await db.runAsync('DELETE FROM setlists WHERE id = ?', [id]);
     
-    // También borrar en Supabase
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = auth().currentUser;
       if (user) {
-        await supabase.from('setlists').delete().match({ id, user_id: user.id });
+        await firestore().collection('setlists').doc(id).delete();
       }
     } catch (e) {}
   }
 
-  static async pullFromSupabase() {
+  static async pullFromFirestore() {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
+      const user = auth().currentUser;
       if (!user) return;
 
       // 1. Traer Estadísticas
-      const { data: stats } = await supabase.from('song_stats').select('*').eq('user_id', user.id);
-      if (stats) {
+      const statsSnapshot = await firestore()
+        .collection('song_stats')
+        .where('user_id', '==', user.uid)
+        .get();
+
+      if (!statsSnapshot.empty) {
         const db = await this.getDb();
-        for (const s of stats) {
+        for (const doc of statsSnapshot.docs) {
+          const s = doc.data();
           await db.runAsync('UPDATE songs SET view_count = ? WHERE id = ?', [s.view_count, s.song_id]);
         }
       }
 
       // 2. Traer Listas
-      const { data: remoteSetlists } = await supabase.from('setlists').select('*').eq('user_id', user.id);
-      if (remoteSetlists) {
+      const setlistsSnapshot = await firestore()
+        .collection('setlists')
+        .where('user_id', '==', user.uid)
+        .get();
+
+      if (!setlistsSnapshot.empty) {
         const db = await this.getDb();
-        for (const rs of remoteSetlists) {
+        for (const doc of setlistsSnapshot.docs) {
+          const rs = doc.data();
           await db.runAsync(
             'INSERT OR REPLACE INTO setlists (id, name, songIds, isPublic, lastUpdated, library_id) VALUES (?, ?, ?, ?, ?, ?)',
-            [rs.id, rs.name, JSON.stringify(rs.song_ids), rs.is_public ? 1 : 0, rs.last_updated, rs.library_id || 'default']
+            [doc.id, rs.name, JSON.stringify(rs.song_ids), rs.is_public ? 1 : 0, rs.last_updated, rs.library_id || 'default']
           );
         }
       }
 
       // 3. Traer Ajustes
-      const { data: settingsRow } = await supabase.from('user_settings').select('settings').eq('user_id', user.id).single();
-      if (settingsRow?.settings) {
-        for (const [key, value] of Object.entries(settingsRow.settings)) {
+      const settingsDoc = await firestore().collection('user_settings').doc(user.uid).get();
+      if (settingsDoc.exists && settingsDoc.data()?.settings) {
+        const settingsObj = settingsDoc.data()?.settings;
+        for (const [key, value] of Object.entries(settingsObj)) {
           await this.saveSetting(key, value);
         }
       }
     } catch (e) {
-      console.error('Error pulling from Supabase:', e);
+      console.error('Error pulling from Firestore:', e);
     }
   }
 }
-

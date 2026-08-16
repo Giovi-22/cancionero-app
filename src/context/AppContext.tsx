@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { SongMetadata, Library, Setlist } from '../types';
 import { LiveSession, LiveSessionService } from '../services/LiveSessionService';
-import { supabase } from '../lib/supabase';
+import { firestore } from '../lib/firebase';
 import { authService } from '../services/AuthService';
 import { StorageService } from '../services/StorageService';
 import { SyncService } from '../services/SyncService';
@@ -59,6 +59,7 @@ export interface AppContextType {
   setActiveSetlist: (setlist: Setlist | null) => void;
   setlistSongs: SongMetadata[];
   setSetlistSongs: (songs: SongMetadata[]) => void;
+  searchQuery: string;
   setSearchQuery: (query: string) => void;
 
   // Global Theme
@@ -158,8 +159,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     loadInitialData();
 
-    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, session) => {
-      setUser(session?.user ?? null);
+    const unsubAuth = authService.onAuthStateChanged((u) => {
+      setUser(u);
     });
 
     // Suscribirse a sesiones live en tiempo real
@@ -168,7 +169,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     });
 
     return () => {
-      authListener.subscription.unsubscribe();
+      unsubAuth();
       unsubSessions();
     };
   }, []);
@@ -473,10 +474,16 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       const db = await StorageService.getDb();
       await db.runAsync('DELETE FROM songs WHERE library_id = ?', [activeLibrary.id]);
       
-      // 4. Borrar estadísticas en Supabase si está autenticado
+      // 4. Borrar estadísticas en Firestore si está autenticado
       if (user) {
-        const { error } = await supabase.from('song_stats').delete().eq('user_id', user.id);
-        if (error) console.error('[Clear Repertoire] Error clearing Supabase stats:', error);
+        try {
+          const snapshot = await firestore().collection('song_stats').where('user_id', '==', user.id || user.uid).get();
+          const batch = firestore().batch();
+          snapshot.docs.forEach((doc: any) => batch.delete(doc.ref));
+          await batch.commit();
+        } catch (error) {
+          console.error('[Clear Repertoire] Error clearing Firestore stats:', error);
+        }
       }
       
       // 5. Recargar datos locales

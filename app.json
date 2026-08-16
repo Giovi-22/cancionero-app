@@ -24,6 +24,7 @@
     },
     "android": {
       "package": "com.giovi.cancionero",
+      "googleServicesFile": "./google-services.json",
       "adaptiveIcon": {
         "foregroundImage": "./assets/app-icon-v3.png",
         "backgroundColor": "#ffffff"
@@ -47,7 +48,10 @@
       "expo-sqlite",
       "expo-router",
       "@react-native-community/datetimepicker",
-      "expo-updates"
+      "expo-updates",
+      "@react-native-firebase/app",
+      "@react-native-firebase/auth",
+      "@react-native-google-signin/google-signin"
     ],
     "extra": {
       "router": {},

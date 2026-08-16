@@ -23,12 +23,12 @@ export class SyncService {
     try {
       console.log(`[Sync] Starting full repertoire sync for folder: ${folderId} (Force: ${force})`);
 
-      // 1. Verificar autenticación y traer datos de Supabase
+      // 1. Verificar autenticación y traer datos de Firestore
       const token = await authService.getGoogleAccessToken();
       if (!token) throw new Error('Usuario no autenticado en Google');
 
       // Traer listas, estadísticas y ajustes de la nube antes de empezar con Drive
-      await StorageService.pullFromSupabase();
+      await StorageService.pullFromFirestore();
 
       // 2. Obtener lista de canciones remotas (incluyendo subcarpetas recursivamente)
       console.log('[Sync] Scanning Drive folder recursively (including subfolders)...');

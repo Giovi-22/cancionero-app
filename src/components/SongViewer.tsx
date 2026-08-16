@@ -582,7 +582,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 
   const getRenderItems = useCallback((blocks: any[], isTitle: boolean) => {
     if (isTitle) {
-      return blocks.map(b => ({ text: b.text.replace(/\[TITULO\]/i, '').trim() }));
+      return blocks.map(b => ({ chord: undefined as string | undefined, text: b.text.replace(/\[TITULO\]/i, '').trim() }));
     }
 
     const items: { chord?: string; text: string }[] = [];
