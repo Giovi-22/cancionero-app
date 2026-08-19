@@ -53,21 +53,31 @@ export class AuthService {
     }
   }
 
+  private tokenPromise: Promise<string | null> | null = null;
+
   /**
    * Obtiene el Access Token de Google (válido para APIs de Google Drive y Docs).
    * GoogleSignin.getTokens() refresca automáticamente el token si expiró.
+   * Evita llamadas concurrentes que causan errores en la librería.
    */
   public async getGoogleAccessToken(): Promise<string | null> {
-    try {
-      const tokens = await GoogleSignin.getTokens();
-      if (tokens.accessToken) {
-        return tokens.accessToken;
-      }
-      return null;
-    } catch (e) {
-      console.warn('[AuthService] Error al obtener Google Access Token:', e);
-      return null;
+    if (this.tokenPromise) {
+      return this.tokenPromise;
     }
+
+    this.tokenPromise = (async () => {
+      try {
+        const tokens = await GoogleSignin.getTokens();
+        return tokens.accessToken || null;
+      } catch (e) {
+        console.warn('[AuthService] Error al obtener Google Access Token:', e);
+        return null;
+      } finally {
+        this.tokenPromise = null;
+      }
+    })();
+
+    return this.tokenPromise;
   }
 
   /**

@@ -110,7 +110,8 @@ export class SyncService {
         .filter((rf: any) => !failedSongIds.has(rf.id))
         .map((rf: any) => ({
           id: rf.id,
-          name: rf.name,
+          // Quitar extensiones ChordPro del nombre para mostrar títulos limpios
+          name: rf.name.replace(/\.(chordpro|pro|cho|chopro|crd)$/i, ''),
           mimeType: rf.mimeType,
           modifiedTime: rf.modifiedTime,
           localPath: FileSystemService.getLocalPath(rf.id),
@@ -150,12 +151,29 @@ export class SyncService {
     }
   }
 
+  /**
+   * Devuelve true si el archivo ya está en formato ChordPro nativo
+   * (.chordpro, .pro, .cho, .chopro) y no necesita conversión.
+   */
+  private static isNativeChordPro(song: Song): boolean {
+    const name = (song.name || '').toLowerCase();
+    return (
+      name.endsWith('.chordpro') ||
+      name.endsWith('.pro') ||
+      name.endsWith('.cho') ||
+      name.endsWith('.chopro') ||
+      name.endsWith('.crd')
+    );
+  }
+
   private static async downloadAndStoreSong(song: Song): Promise<boolean> {
     try {
       const content = await driveService.getSongContent(song.id, song.mimeType);
       if (content) {
-        const chordProContent = legacyToChordPro(content);
-        await FileSystemService.saveSongContent(song.id, chordProContent);
+        // Pasar siempre por legacyToChordPro para limpiar directivas con llaves {...}
+        // y unir acordes/letras de forma uniforme
+        const finalContent = legacyToChordPro(content);
+        await FileSystemService.saveSongContent(song.id, finalContent);
         return true;
       }
       return false;

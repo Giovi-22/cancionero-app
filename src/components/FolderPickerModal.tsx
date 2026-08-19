@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, StyleSheet } from 'react-native';
-import { X, Folder, Users, ChevronRight } from 'lucide-react-native';
+import { X, Folder, Users, CheckCircle2 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { COLORS } from '../constants/theme';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,7 +82,10 @@ export const FolderPickerModal = () => {
                   style={styles.selectButton}
                   onPress={() => selectFolder(folder.id)}
                 >
-                  <ChevronRight size={24} color={COLORS.accent} />
+                  <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.accent + '20', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, gap: 4 }}>
+                    <CheckCircle2 size={16} color={COLORS.accent} />
+                    <Text style={{ color: COLORS.accent, fontSize: 12, fontWeight: 'bold' }}>Elegir</Text>
+                  </View>
                 </TouchableOpacity>
               </View>
             ))}

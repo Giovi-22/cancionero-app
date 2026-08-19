@@ -72,6 +72,9 @@ export function isChordLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
 
+  // Lines starting with '[' are section headers, never chord lines
+  if (trimmed.startsWith('[')) return false;
+
   const chordRegex = /^[A-G][b#]?(m|maj|min|dim|aug|sus|add|v|i|[0-9]|sus|add|dim|aug|maj|min)*\d*(?:[b#+-]\d+)?(?:\([^)]+\))?(?:\/[A-G][b#]?)?$/i;
 
   const cleanTrimmed = trimmed.replace(METADATA_REGEX, '');

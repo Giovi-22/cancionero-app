@@ -42,7 +42,7 @@ export interface AppContextType {
   isLoadingFolders: boolean;
   navigationStack: any[];
   showShared: boolean;
-  openFolderPicker: (parentId?: string, folderName?: string, shared?: boolean) => Promise<void>;
+  openFolderPicker: (parentId?: string, folderName?: string, shared?: boolean, onSelect?: (id: string) => void) => Promise<void>;
   navigateBack: () => void;
   selectFolder: (id: string) => void;
 
@@ -149,6 +149,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
 
   // Estado para el explorador de carpetas
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
+  const [folderPickerCallback, setFolderPickerCallback] = useState<((id: string) => void) | null>(null);
   const [folders, setFolders] = useState<any[]>([]);
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
   const [navigationStack, setNavigationStack] = useState<any[]>([{ id: 'root', name: 'Mi unidad' }]);
@@ -165,7 +166,10 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
 
     // Suscribirse a sesiones live en tiempo real
     const unsubSessions = LiveSessionService.subscribeToAllSessions((sessions) => {
-      setLiveSessions(sessions);
+      setLiveSessions(prev => {
+        if (JSON.stringify(prev) === JSON.stringify(sessions)) return prev;
+        return sessions;
+      });
     });
 
     return () => {
@@ -181,9 +185,17 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
 
   // Actualizar "mi sesión de director"
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setMyDirectorSession(null);
+      return;
+    }
     const mine = liveSessions.find(s => s.director_email === user.email) ?? null;
-    setMyDirectorSession(mine);
+    setMyDirectorSession(prev => {
+      if (prev?.id === mine?.id && prev?.current_song_id === mine?.current_song_id && prev?.status === mine?.status) {
+        return prev;
+      }
+      return mine;
+    });
   }, [liveSessions, user]);
 
   const loadInitialData = async () => {
@@ -676,7 +688,12 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   // Lógica del Explorador de Carpetas Drive
-  const openFolderPicker = async (parentId: string = 'root', folderName: string = 'Mi unidad', shared: boolean = false) => {
+  const openFolderPicker = async (parentId: string = 'root', folderName: string = 'Mi unidad', shared: boolean = false, onSelect?: (id: string) => void) => {
+    if (onSelect) {
+      setFolderPickerCallback(() => onSelect);
+    } else if (parentId === 'root') {
+      setFolderPickerCallback(null);
+    }
     setIsLoadingFolders(true);
     setIsFolderPickerOpen(true);
     setShowShared(shared);
@@ -688,8 +705,9 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       } else {
         setNavigationStack([...navigationStack, { id: parentId, name: folderName }]);
       }
-    } catch (error) {
-      Alert.alert('Error', 'No se pudieron cargar las carpetas de Drive');
+    } catch (error: any) {
+      console.error('[AppContext] Error en openFolderPicker:', error);
+      Alert.alert('Error al acceder a Drive', error?.message || 'No se pudieron cargar las carpetas de Drive. Por favor, verifica tu conexión o intenta volver a iniciar sesión.');
     } finally {
       setIsLoadingFolders(false);
     }
@@ -705,7 +723,11 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const selectFolder = (id: string) => {
-    handleSaveConfig(id);
+    if (folderPickerCallback) {
+      folderPickerCallback(id);
+    } else {
+      handleSaveConfig(id);
+    }
     setIsFolderPickerOpen(false);
     Keyboard.dismiss();
   };
