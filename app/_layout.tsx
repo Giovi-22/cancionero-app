@@ -15,10 +15,10 @@ function GlobalModals() {
     const { isLibrariesOpen, setIsLibrariesOpen } = useAppContext();
     return (
         <>
-            <FolderPickerModal />
             <CreateSetlistModal />
             <EditSetlistModal />
             <LibrarySelectorModal isOpen={isLibrariesOpen} onClose={() => setIsLibrariesOpen(false)} />
+            <FolderPickerModal />
         </>
     );
 }
@@ -36,6 +36,7 @@ export default function RootLayout() {
                     <Stack
                         screenOptions={{
                             headerShown: false,
+
                         }}
                     >
                         <Stack.Screen name="(tabs)" />

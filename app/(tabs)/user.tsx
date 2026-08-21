@@ -10,7 +10,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
 import packageJson from '../../package.json';
 
-const APP_VERSION = Constants.expoConfig?.version || packageJson.version || '1.0.0';
+const APP_VERSION = Constants.expoConfig?.version || packageJson.version || '1.1.0';
 
 export default function UserTab() {
     const insets = useSafeAreaInsets();

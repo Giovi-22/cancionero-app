@@ -168,11 +168,10 @@ export class SyncService {
 
   private static async downloadAndStoreSong(song: Song): Promise<boolean> {
     try {
-      const content = await driveService.getSongContent(song.id, song.mimeType);
+      const cleanTitle = (song.name || '').replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '');
+      const content = await driveService.getSongContent(song.id, song.mimeType, cleanTitle);
       if (content) {
-        // Pasar siempre por legacyToChordPro para limpiar directivas con llaves {...}
-        // y unir acordes/letras de forma uniforme
-        const finalContent = legacyToChordPro(content);
+        const finalContent = legacyToChordPro(content, cleanTitle);
         await FileSystemService.saveSongContent(song.id, finalContent);
         return true;
       }

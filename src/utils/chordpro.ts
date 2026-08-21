@@ -8,6 +8,26 @@ export function isSingleChord(token: string): boolean {
   return chordRegex.test(token.trim());
 }
 
+/** 
+* Normaliza texto ChordPro proveniente de diferentes fuentes. 
+* Limpia caracteres de control/invisibles que pueden aparecer 
+* al copiar desde Word, Google Docs, etc. 
+* */
+export function normalizeChordProText(text: string): string {
+  return (text || '') // Saltos de línea Windows / Mac
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    // Vertical Tab y Form Feed
+    .replace(/\u000B/g, '\n')
+    .replace(/\u000C/g, '\n')
+    // Caracteres Unicode de espacio que pueden generar problemas
+    .replace(/\u00A0/g, ' ') // Non-breaking space
+    .replace(/\u200B/g, '') // Zero-width space
+    .replace(/\u200C/g, '') // Zero-width non-joiner
+    .replace(/\u200D/g, '') // Zero-width joiner
+    .replace(/\uFEFF/g, ''); // BOM / zero-width no-break space
+}
+
 // ─── Directivas ChordPro estándar ────────────────────────────────────────────
 
 interface ChordProDirective {
@@ -21,16 +41,24 @@ interface ChordProDirective {
  */
 function parseDirective(line: string): ChordProDirective | null {
   const trimmed = line.trim();
+  console.log('LINEA ORIGINAL:', JSON.stringify(line));
+  console.log('TRIMMED:', JSON.stringify(trimmed));
+  //detectamos si la linea es una directiva
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
   const inside = trimmed.slice(1, -1).trim();
   const colonIdx = inside.indexOf(':');
+  //divimos la directiva en key y value
+  console.log('INSIDE:', JSON.stringify(inside));
+  console.log('COLON:', colonIdx);
   if (colonIdx === -1) {
     return { key: inside.toLowerCase().trim(), value: null };
   }
-  return {
+  const result = {
     key: inside.slice(0, colonIdx).trim().toLowerCase(),
     value: inside.slice(colonIdx + 1).trim() || null,
   };
+  console.log('DIRECTIVA PARSEADA:', result);
+  return result;
 }
 
 /**
@@ -40,21 +68,37 @@ function parseDirective(line: string): ChordProDirective | null {
  */
 function directiveToSectionLabel(key: string, value: string | null): string {
   const aliases: Record<string, string> = {
-    start_of_verse:   'VERSO',
-    sov:              'VERSO',
-    start_of_chorus:  'CORO',
-    soc:              'CORO',
-    start_of_bridge:  'PUENTE',
-    sob:              'PUENTE',
-    start_of_tab:     'TABLATURA',
-    sot:              'TABLATURA',
-    start_of_grid:    'GRILLA',
-    start_of_part:    'PARTE',
+    start_of_verse: 'VERSO',
+    sov: 'VERSO',
+    start_of_chorus: 'CORO',
+    soc: 'CORO',
+    start_of_bridge: 'PUENTE',
+    sob: 'PUENTE',
+    start_of_intro: 'INTRO',
+    soi: 'INTRO',
+    start_of_outro: 'OUTRO',
+    soo: 'OUTRO',
+    start_of_prechorus: 'PRE-CORO',
+    sopc: 'PRE-CORO',
+    start_of_interlude: 'INTERLUDIO',
+    soil: 'INTERLUDIO',
+    start_of_tab: 'TABLATURA',
+    sot: 'TABLATURA',
+    start_of_grid: 'GRILLA',
+    sog: 'GRILLA',
+    start_of_part: 'PARTE',
+    sop: 'PARTE',
   };
-  // Si el directivo trae el nombre (ej. "VERSO 1"), lo usamos directamente
-  if (value) return `[${value}]`;
-  // Si no trae nombre, usamos el alias (ej. start_of_chorus → CORO)
-  const base = aliases[key] || key.replace('start_of_', '').toUpperCase();
+
+  // Si el directivo trae el nombre (ej. "VERSO 1" o "Interludio Especial"), lo usamos envuelto en corchetes
+  if (value && value.trim()) {
+    const trimmedVal = value.trim();
+    console.log("directiva: ", trimmedVal);
+    return trimmedVal.startsWith('[') ? trimmedVal : `[${trimmedVal}]`;
+  }
+
+  // Si no trae nombre, usamos el alias o la clave normalizada
+  const base = aliases[key] || key.replace(/^(start|end)_of_/, '').toUpperCase();
   return `[${base}]`;
 }
 
@@ -73,7 +117,8 @@ function directiveToSectionLabel(key: string, value: string | null): string {
  *  - Acordes inline: [A]Texto [G]más texto
  */
 export function parseChordPro(text: string): SongLineParsed[] {
-  const normalizedText = (text || '').replace(/\r\n/g, '\n');
+  //NORMALIZAMOS EL TEXTO
+  const normalizedText = normalizeChordProText(text);
   const lines = normalizedText.split('\n');
   const result: SongLineParsed[] = [];
 
@@ -96,9 +141,15 @@ export function parseChordPro(text: string): SongLineParsed[] {
     if (directive) {
       const { key, value } = directive;
 
-      // Directivas de título: no renderizar como texto en el cuerpo
+      // Directivas de título: renderizar sección de título centrada en el cuerpo
       if (key === 'title' || key === 't') {
-        titleEmitted = true;
+        if (value && !titleEmitted) {
+          result.push({
+            type: 'section',
+            blocks: [{ text: `[TITULO] ${value}` }]
+          });
+          titleEmitted = true;
+        }
         continue;
       }
 
@@ -143,8 +194,11 @@ export function parseChordPro(text: string): SongLineParsed[] {
         continue;
       }
 
-      // Inicio de sección: start_of_verse, start_of_chorus, etc.
-      if (key.startsWith('start_of_') || key === 'sov' || key === 'soc' || key === 'sob' || key === 'sot') {
+      // Inicio de sección: start_of_verse, start_of_chorus, sov, soc, sob, soi, soo, sopc, soil, sot, sog, sop, etc.
+      if (
+        key.startsWith('start_of_') ||
+        ['sov', 'soc', 'sob', 'soi', 'soo', 'sopc', 'soil', 'sot', 'sog', 'sop'].includes(key)
+      ) {
         inSection = true;
         const label = directiveToSectionLabel(key, value);
         if (result.length > 0 && result[result.length - 1].blocks[0]?.text !== '') {
@@ -154,8 +208,11 @@ export function parseChordPro(text: string): SongLineParsed[] {
         continue;
       }
 
-      // Fin de sección: end_of_verse, end_of_chorus, etc.
-      if (key.startsWith('end_of_') || key === 'eov' || key === 'eoc' || key === 'eob' || key === 'eot') {
+      // Fin de sección: end_of_verse, end_of_chorus, eov, eoc, eob, eoi, eoo, eopc, eoil, eot, eog, eop, etc.
+      if (
+        key.startsWith('end_of_') ||
+        ['eov', 'eoc', 'eob', 'eoi', 'eoo', 'eopc', 'eoil', 'eot', 'eog', 'eop'].includes(key)
+      ) {
         inSection = false;
         if (result.length > 0 && result[result.length - 1].blocks[0]?.text !== '') {
           result.push({ type: 'text', blocks: [{ text: '' }] });
@@ -165,8 +222,8 @@ export function parseChordPro(text: string): SongLineParsed[] {
 
       // Directivas ignoradas silenciosamente
       if (['subtitle', 'st', 'columns', 'col', 'new_page', 'np', 'new_song', 'ns',
-           'pagetype', 'textfont', 'tf', 'textsize', 'ts', 'chordfont', 'cf',
-           'chordsize', 'cs', 'no_grid', 'ng', 'grid', 'g'].includes(key)) {
+        'pagetype', 'textfont', 'tf', 'textsize', 'ts', 'chordfont', 'cf',
+        'chordsize', 'cs', 'no_grid', 'ng', 'grid', 'g'].includes(key)) {
         continue;
       }
 
@@ -207,13 +264,21 @@ export function parseChordPro(text: string): SongLineParsed[] {
 
     // ── Línea con acordes inline [A]texto [G]más texto ────────────────────
     const blocks = parseInlineChordLine(line);
-    const hasChords = blocks.some(b => b.chord !== undefined);
-
     result.push({
       type: 'chords-lyrics',
       isMetadata: false,
       blocks,
     });
+  }
+
+  if (!titleEmitted) {
+    const extractedTitle = extractTitleFromChordPro(normalizedText);
+    if (extractedTitle) {
+      result.unshift({
+        type: 'section',
+        blocks: [{ text: `[TITULO] ${extractedTitle}` }]
+      });
+    }
   }
 
   return result;
@@ -289,11 +354,19 @@ export function transposeChordPro(chordProText: string, semitones: number): stri
 export function extractTitleFromChordPro(text: string): string | null {
   if (!text) return null;
 
-  // 1. Buscar {title: ...}
+  // 1. Buscar {title: ...} o {t: ...}
   const titleMatch = text.match(/\{\s*(?:title|t)\s*:\s*([^}]+)\}/i);
-  if (titleMatch) return titleMatch[1].trim();
+  if (titleMatch) {
+    return titleMatch[1].trim();
+  }
 
-  // 2. Buscar primera línea de texto que no sea directiva ni sección
+  // 2. Buscar legacy [TITULO] ...
+  const legacyMatch = text.match(/^\[TITULO\]\s*(.*)$/mi);
+  if (legacyMatch) {
+    return legacyMatch[1].trim();
+  }
+
+  // 3. Buscar primera línea de texto que no sea directiva ni sección
   const lines = text.replace(/\r\n/g, '\n').split('\n');
   for (const line of lines) {
     const t = line.trim();
@@ -331,7 +404,10 @@ export function rebuildChordProFromParsedLines(parsedLines: SongLineParsed[]): s
 
     if (line.type === 'section') {
       const sectionText = (line.blocks || []).map(b => b ? b.text : '').join('').trim();
-      if (sectionText) {
+      if (sectionText.toUpperCase().startsWith('[TITULO]')) {
+        const titleVal = sectionText.replace(/^\[TITULO\]\s*/i, '');
+        resultLines.push(`{title: ${titleVal}}`);
+      } else if (sectionText) {
         resultLines.push(sectionText.startsWith('[') ? sectionText : `[${sectionText}]`);
       } else {
         resultLines.push('');

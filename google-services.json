@@ -14,11 +14,56 @@
       },
       "oauth_client": [
         {
+          "client_id": "947725534425-5n85m93m3q488kbcm5lfeelm73t15s0q.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.giovi.cancionero",
+            "certificate_hash": "4fc15a7523dd8053492188dbff4f498bd5b993d2"
+          }
+        },
+        {
           "client_id": "947725534425-amn6n4lcf6omeup69iqntvh2cs1ckdjv.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.giovi.cancionero",
             "certificate_hash": "42f530706ec2d4ec5969b9a659b171be285feb03"
+          }
+        },
+        {
+          "client_id": "947725534425-2po3cmv389vgo9uo9saabotu9rltqseq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCScydxC8rpcVd-JWUIz4UVIphnHuhSTHc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "947725534425-2po3cmv389vgo9uo9saabotu9rltqseq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:947725534425:android:03f200d940b4019a116ac8",
+        "android_client_info": {
+          "package_name": "com.giovi.cancionero.dev"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "947725534425-8r2dqrnkakdau4607tietorg6cgno8up.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.giovi.cancionero.dev",
+            "certificate_hash": "4fc15a7523dd8053492188dbff4f498bd5b993d2"
           }
         },
         {

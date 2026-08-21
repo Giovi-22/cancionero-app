@@ -78,9 +78,9 @@ export const SongViewer: React.FC<SongViewerProps> = ({
 }) => {
   // Título a mostrar: prioriza {title:} del contenido ChordPro sobre el nombre del archivo
   const displayTitle = useMemo(() => {
-    const fromContent = extractTitleFromChordPro(content);
-    if (fromContent) return fromContent;
-    return title.replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '');
+    const titleFromContent = extractTitleFromChordPro(content || '');
+    if (titleFromContent) return titleFromContent;
+    return (title || '').replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '');
   }, [content, title]);
 
   const [transpose, setTranspose] = useState<number>(initialSettings?.transpose || 0);
@@ -470,6 +470,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         transpose,
         capo,
         fontSize,
+        viewMode,
+        bpm,
         theme
       });
     } catch (error) {
@@ -599,6 +601,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         originalTone={originalTone}
         transposedTone={transposedTone}
         transpose={transpose}
+        onTransposeChange={setTranspose}
         capo={capo}
         isScrolling={isScrolling}
         scrollSpeed={scrollSpeed}
@@ -644,6 +647,17 @@ export const SongViewer: React.FC<SongViewerProps> = ({
               const sectionColor = isStageMode ? '#fbbf24' : theme.chords;
               const fullLineText = line.blocks.map(b => b.text).join('');
               const isNonPlayableMetadata = line.isMetadata && /^(NOTA|TONO|KEY|BPM|TEMPO|CAPO|COMP[ÁA]S):/i.test(fullLineText);
+              // Línea de "solo acordes" (interludios, instrumentales, etc.): tiene acordes
+              // pero ningún texto de letra real debajo (sólo espacios, guiones separadores
+              // como "-", marcas de repetición, etc. entre corchetes).
+              // Sin esto, dos acordes separados por un único espacio en el ChordPro fuente
+              // (ej. "[A] [D] [F#m]") quedan pegados visualmente, porque el ancho del
+              // nombre del acorde suele ser mayor que el de un simple espacio.
+              const isChordOnlyLine =
+                line.type !== 'section' &&
+                !line.isMetadata &&
+                line.blocks.some(b => !!b.chord) &&
+                !/\p{L}{2,}/u.test(fullLineText);
 
               return (
                 <View key={lIndex}>
@@ -709,6 +723,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                               styles.block,
                               line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
                               isSpaceOnly && item.text.length > 1 && { minWidth: Math.max(fontSize, item.text.length * (fontSize * 0.45)) },
+                              isChordOnlyLine && hasChord && { marginRight: Math.max(6, fontSize * 0.4) },
                               isDebugMode && {
                                 borderWidth: 1,
                                 borderColor: hasChord ? '#ef4444' : '#3b82f6',

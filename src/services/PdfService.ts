@@ -1,8 +1,34 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import { parseChordPro } from '../utils/chordpro';
 
+export interface PdfOptions {
+  transpose?: number;
+  capo?: number;
+  fontSize?: number;
+  viewMode?: 'all' | 'lyrics';
+  bpm?: number;
+  theme?: any;
+}
 
 export class PdfService {
+  /**
+   * Generates a beautifully formatted PDF for a song content string and opens native sharing dialog.
+   */
+  static async generateAndShareSongPdf(
+    title: string,
+    content: string,
+    options: PdfOptions = {}
+  ): Promise<void> {
+    const parsedLines = parseChordPro(content);
+    const viewMode = options.viewMode || 'all';
+    const transpose = options.transpose ?? 0;
+    const capo = options.capo ?? 0;
+    const bpm = options.bpm;
+
+    return this.generateAndShare(title, parsedLines, viewMode, transpose, capo, bpm);
+  }
+
   /**
    * Generates a beautifully formatted PDF for a song and opens the native sharing dialog.
    */
@@ -151,13 +177,28 @@ export class PdfService {
               ${renderedBlocks
                 .map((block: { chord?: string; text: string }) => {
                   const hasChord = block.chord && showChords;
+                  const isSpaceOnly = !block.text || /^\s+$/.test(block.text);
+                  const spaceCount = isSpaceOnly 
+                    ? (block.text ? block.text.length : 0) 
+                    : (block.text?.match(/\s+$/)?.[0].length || 0);
+
+                  const spaceWidth = 8;
+                  let rightPadding = 0;
+                  if (hasChord) {
+                    if (isSpaceOnly) {
+                      rightPadding = Math.max(4, spaceCount * spaceWidth);
+                    } else if (spaceCount > 0) {
+                      rightPadding = spaceCount * spaceWidth;
+                    }
+                  }
+
                   const chordHtml = hasChord 
                     ? `<span class="chord">${this.escapeHtml(block.chord!)}</span>` 
                     : '';
                   const textHtml = `<span class="lyric">${this.escapeHtml(block.text || ' ')}</span>`;
                   
                   return `
-                    <div class="block">
+                    <div class="block"${rightPadding > 0 ? ` style="padding-right: ${rightPadding}px;"` : ''}>
                       ${chordHtml}
                       ${textHtml}
                     </div>

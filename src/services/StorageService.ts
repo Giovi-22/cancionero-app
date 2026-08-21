@@ -126,35 +126,22 @@ export class StorageService {
 
   private static async migrateLocalSongsToChordPro(db: SQLite.SQLiteDatabase) {
     try {
-      const songs = await db.getAllAsync<any>('SELECT id FROM songs');
+      const songs = await db.getAllAsync<any>('SELECT id, name FROM songs');
       if (!songs || songs.length === 0) return;
 
       let migratedCount = 0;
       for (const song of songs) {
         const content = await FileSystemService.getSongContent(song.id);
         if (content) {
-          let hasBracketedChords = false;
-          const matches = content.match(/\[([^\]]+)\]/g);
-          if (matches) {
-            for (const m of matches) {
-              const inside = m.slice(1, -1).trim();
-              if (isSingleChord(inside)) {
-                hasBracketedChords = true;
-                break;
-              }
-            }
-          }
-
-          if (!hasBracketedChords) {
-            const converted = legacyToChordPro(content);
-            if (converted !== content) {
-              await FileSystemService.saveSongContent(song.id, converted);
-              migratedCount++;
-            }
+          const cleanName = (song.name || '').replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '');
+          const converted = legacyToChordPro(content, cleanName);
+          if (converted && converted !== content) {
+            await FileSystemService.saveSongContent(song.id, converted);
+            migratedCount++;
           }
         }
       }
-      console.log(`[Migration] Local songs migration completed. Converted ${migratedCount}/${songs.length} songs.`);
+      console.log(`[Migration] Local songs migration completed. Standardized ${migratedCount}/${songs.length} songs to ChordPro.`);
     } catch (error) {
       console.error('[Migration] Failed to migrate local songs:', error);
     }

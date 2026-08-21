@@ -140,13 +140,13 @@ export class DriveService {
   /**
    * Obtiene el contenido de un archivo con reintentos para Google Docs
    */
-  async getSongContent(fileId: string, mimeType?: string): Promise<string> {
+  async getSongContent(fileId: string, mimeType?: string, songName?: string): Promise<string> {
     const token = await authService.getGoogleAccessToken();
     if (!token) throw new Error('No hay token de acceso a Google');
 
     // Si es un Google Doc, vamos directo a procesar con Docs API / export
     if (mimeType === 'application/vnd.google-apps.document') {
-      return this.exportGoogleDoc(fileId, token);
+      return this.exportGoogleDoc(fileId, token, songName);
     }
 
     try {
@@ -161,12 +161,13 @@ export class DriveService {
 
       if (!response.ok) {
         // Si falla el media, intentamos exportar por si acaso es un formato de Google
-        return this.exportGoogleDoc(fileId, token);
+        return this.exportGoogleDoc(fileId, token, songName);
       }
 
-      return await response.text();
+      const textContent = await response.text();
+      return legacyToChordPro(textContent, songName);
     } catch (e) {
-      return this.exportGoogleDoc(fileId, token);
+      return this.exportGoogleDoc(fileId, token, songName);
     }
   }
 
@@ -174,7 +175,7 @@ export class DriveService {
    * Obtiene y convierte un Google Doc. Intenta primero usar Google Docs API v1
    * para obtener la estructura interna; si falla (ej. sin scope), usa fallback a export text/plain.
    */
-  private async exportGoogleDoc(fileId: string, token: string): Promise<string> {
+  private async exportGoogleDoc(fileId: string, token: string, songName?: string): Promise<string> {
     // 1. Intentar obtener el documento a través de Google Docs API v1 (detección por color)
     try {
       const response = await fetch(
@@ -187,7 +188,7 @@ export class DriveService {
         const chordPro = this.convertGoogleDocJsonToChordPro(docJson);
         if (chordPro && chordPro.trim().length > 0) {
           console.log('[DriveService] Google Doc convertido a ChordPro via Docs API v1 (detección por color).');
-          return legacyToChordPro(chordPro);
+          return legacyToChordPro(chordPro, songName);
         }
       } else {
         console.warn('[DriveService] Google Docs API devolvió status:', response.status, '- Usando fallback a export plain text');
@@ -204,7 +205,7 @@ export class DriveService {
 
     if (!exportResponse.ok) throw new Error('No se pudo exportar el Google Doc');
     const plainText = await exportResponse.text();
-    return legacyToChordPro(plainText);
+    return legacyToChordPro(plainText, songName);
   }
 
   /**
