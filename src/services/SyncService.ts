@@ -17,7 +17,7 @@ export class SyncService {
   public static async syncFullRepertoire(folderId: string, force: boolean = false, libraryId?: string): Promise<boolean> {
     if (this.isSyncing) return false;
     if (!folderId) throw new Error('No se ha configurado un ID de carpeta');
-    
+
     this.isSyncing = true;
 
     try {
@@ -34,7 +34,7 @@ export class SyncService {
       console.log('[Sync] Scanning Drive folder recursively (including subfolders)...');
       const remoteFiles = await DriveService.getSongsFromFolderRecursive(folderId);
       console.log(`[Sync] Found ${remoteFiles.length} total files across all subfolders.`);
-      
+
       // 3. Obtener lista local para comparar
       const localSongs = await StorageService.getAllSongs(libraryId);
       const localSongsMap = new Map(localSongs.map(s => [s.id, s]));
@@ -45,7 +45,7 @@ export class SyncService {
       // 4. Identificar qué descargar y qué borrar
       for (const remoteFile of remoteFiles) {
         const localSong = localSongsMap.get(remoteFile.id);
-        
+
         // Verificamos si el archivo local realmente existe físicamente
         const fileContent = await FileSystemService.getSongContent(remoteFile.id);
         const fileExists = fileContent !== null;
@@ -119,7 +119,7 @@ export class SyncService {
           lastSyncedAt: new Date().toISOString(),
           folderName: rf.folderName,
         }));
-      
+
       await StorageService.saveSongs(finalMetadata, libraryId);
 
       console.log('[Sync] Sync completed successfully.');
@@ -171,8 +171,7 @@ export class SyncService {
       const cleanTitle = (song.name || '').replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '');
       const content = await driveService.getSongContent(song.id, song.mimeType, cleanTitle);
       if (content) {
-        const finalContent = legacyToChordPro(content, cleanTitle);
-        await FileSystemService.saveSongContent(song.id, finalContent);
+        await FileSystemService.saveSongContent(song.id, content);
         return true;
       }
       return false;

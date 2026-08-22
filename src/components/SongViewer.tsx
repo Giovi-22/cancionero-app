@@ -579,6 +579,67 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     return items;
   }, []);
 
+  /**
+ * Renderiza una línea que contiene únicamente acordes y separadores.
+ *
+ * Ejemplo:
+ *   [A] - [F#] - [B]
+ *
+ * Se muestra como:
+ *   A - F# - B
+ *
+ * manteniendo los acordes con el color configurado.
+ */
+  const renderChordOnlyLine = useCallback(
+    (blocks: any[]) => {
+      return (
+        <Text
+          style={[
+            styles.lyricText,
+            {
+              fontSize,
+              color: theme.lyrics,
+              lineHeight: fontSize * 1.4,
+            },
+          ]}
+        >
+          {blocks.map((block, index) => (
+            <React.Fragment key={`chord-only-${index}`}>
+              {block.chord && (
+                <Text
+                  style={[
+                    styles.chordText,
+                    {
+                      fontSize,
+                      color: theme.chords,
+                    },
+                  ]}
+                >
+                  {block.chord}
+                </Text>
+              )}
+
+              {block.text && (
+                <Text
+                  style={[
+                    styles.lyricText,
+                    {
+                      fontSize,
+                      color: theme.lyrics,
+                    },
+                  ]}
+                >
+                  {block.text.replace(/ /g, '\u00A0')}
+                </Text>
+              )}
+            </React.Fragment>
+          ))}
+        </Text>
+      );
+    },
+    [fontSize, theme.chords, theme.lyrics]
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header principal */}
@@ -681,83 +742,85 @@ export const SongViewer: React.FC<SongViewerProps> = ({
                       isTitle && { justifyContent: 'center', width: '100%' },
                       isDebugMode && { borderWidth: 1, borderColor: '#3b82f6', borderStyle: 'dashed' }
                     ]}>
-                      {getRenderItems(line.blocks, isTitle).map((item, bIndex) => {
-                        if (isTitle) {
-                          return (
-                            <View key={bIndex} style={[styles.block, { width: '100%', alignItems: 'center' }]}>
-                              <Text style={[
-                                styles.lyricText,
-                                { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold', lineHeight: fontSize * 1.5 * 1.25, color: theme.lyrics },
-                                isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
-                              ]}>
-                                {item.text}
+                      {isChordOnlyLine ?
+                        renderChordOnlyLine(line.blocks) :
+                        getRenderItems(line.blocks, isTitle).map((item, bIndex) => {
+                          if (isTitle) {
+                            return (
+                              <View key={bIndex} style={[styles.block, { width: '100%', alignItems: 'center' }]}>
+                                <Text style={[
+                                  styles.lyricText,
+                                  { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold', lineHeight: fontSize * 1.5 * 1.25, color: theme.lyrics },
+                                  isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
+                                ]}>
+                                  {item.text}
+                                </Text>
+                              </View>
+                            );
+                          }
+
+                          const hasChord = !!item.chord;
+
+                          if (!hasChord && (!item.text || /^\s+$/.test(item.text))) {
+                            return (
+                              <Text
+                                key={`item-${bIndex}`}
+                                style={[
+                                  styles.lyricText,
+                                  { fontSize, color: theme.lyrics },
+                                  line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
+                                ]}
+                              >
+                                {(item.text || ' ').replace(/ /g, '\u00A0')}
                               </Text>
-                            </View>
-                          );
-                        }
+                            );
+                          }
 
-                        const hasChord = !!item.chord;
+                          const displayText = (item.text || '').replace(/ /g, '\u00A0');
+                          const isSpaceOnly = /^\s+$/.test(item.text || '');
 
-                        if (!hasChord && (!item.text || /^\s+$/.test(item.text))) {
                           return (
-                            <Text
+                            <View
                               key={`item-${bIndex}`}
                               style={[
+                                styles.block,
+                                line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
+                                isSpaceOnly && item.text.length > 1 && { minWidth: Math.max(fontSize, item.text.length * (fontSize * 0.45)) },
+                                isChordOnlyLine && hasChord && { marginRight: Math.max(6, fontSize * 0.4) },
+                                isDebugMode && {
+                                  borderWidth: 1,
+                                  borderColor: hasChord ? '#ef4444' : '#3b82f6',
+                                  borderStyle: hasChord ? 'solid' : 'dotted',
+                                  padding: 1
+                                }
+                              ]}
+                            >
+                              {viewMode !== 'lyrics' && (
+                                hasChord ? (
+                                  <Text style={[
+                                    styles.chordText,
+                                    { fontSize: fontSize, color: theme.chords },
+                                    line.isMetadata && { marginRight: 4 },
+                                    isNonPlayableMetadata && { color: theme.lyrics, fontWeight: 'normal' },
+                                    isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
+                                  ]}>{item.chord}</Text>
+                                ) : (
+                                  <Text style={[styles.chordText, { fontSize, opacity: 0 }]} numberOfLines={1}>
+                                    X
+                                  </Text>
+                                )
+                              )}
+                              <Text style={[
                                 styles.lyricText,
                                 { fontSize, color: theme.lyrics },
                                 line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
-                              ]}
-                            >
-                              {(item.text || ' ').replace(/ /g, '\u00A0')}
-                            </Text>
+                                isDebugMode && { backgroundColor: hasChord ? 'rgba(239, 68, 68, 0.05)' : 'rgba(59, 130, 246, 0.15)' }
+                              ]}>
+                                {displayText || '\u00A0'}
+                              </Text>
+                            </View>
                           );
-                        }
-
-                        const displayText = (item.text || '').replace(/ /g, '\u00A0');
-                        const isSpaceOnly = /^\s+$/.test(item.text || '');
-
-                        return (
-                          <View
-                            key={`item-${bIndex}`}
-                            style={[
-                              styles.block,
-                              line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
-                              isSpaceOnly && item.text.length > 1 && { minWidth: Math.max(fontSize, item.text.length * (fontSize * 0.45)) },
-                              isChordOnlyLine && hasChord && { marginRight: Math.max(6, fontSize * 0.4) },
-                              isDebugMode && {
-                                borderWidth: 1,
-                                borderColor: hasChord ? '#ef4444' : '#3b82f6',
-                                borderStyle: hasChord ? 'solid' : 'dotted',
-                                padding: 1
-                              }
-                            ]}
-                          >
-                            {viewMode !== 'lyrics' && (
-                              hasChord ? (
-                                <Text style={[
-                                  styles.chordText,
-                                  { fontSize: fontSize, color: theme.chords },
-                                  line.isMetadata && { marginRight: 4 },
-                                  isNonPlayableMetadata && { color: theme.lyrics, fontWeight: 'normal' },
-                                  isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
-                                ]}>{item.chord}</Text>
-                              ) : (
-                                <Text style={[styles.chordText, { fontSize, opacity: 0 }]} numberOfLines={1}>
-                                  X
-                                </Text>
-                              )
-                            )}
-                            <Text style={[
-                              styles.lyricText,
-                              { fontSize, color: theme.lyrics },
-                              line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
-                              isDebugMode && { backgroundColor: hasChord ? 'rgba(239, 68, 68, 0.05)' : 'rgba(59, 130, 246, 0.15)' }
-                            ]}>
-                              {displayText || '\u00A0'}
-                            </Text>
-                          </View>
-                        );
-                      })}
+                        })}
                     </View>
                   </TouchableOpacity>
                 </View>

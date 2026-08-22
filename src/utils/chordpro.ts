@@ -41,15 +41,13 @@ interface ChordProDirective {
  */
 function parseDirective(line: string): ChordProDirective | null {
   const trimmed = line.trim();
-  console.log('LINEA ORIGINAL:', JSON.stringify(line));
-  console.log('TRIMMED:', JSON.stringify(trimmed));
+
   //detectamos si la linea es una directiva
   if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null;
   const inside = trimmed.slice(1, -1).trim();
   const colonIdx = inside.indexOf(':');
   //divimos la directiva en key y value
-  console.log('INSIDE:', JSON.stringify(inside));
-  console.log('COLON:', colonIdx);
+
   if (colonIdx === -1) {
     return { key: inside.toLowerCase().trim(), value: null };
   }
@@ -57,7 +55,7 @@ function parseDirective(line: string): ChordProDirective | null {
     key: inside.slice(0, colonIdx).trim().toLowerCase(),
     value: inside.slice(colonIdx + 1).trim() || null,
   };
-  console.log('DIRECTIVA PARSEADA:', result);
+
   return result;
 }
 
@@ -93,7 +91,6 @@ function directiveToSectionLabel(key: string, value: string | null): string {
   // Si el directivo trae el nombre (ej. "VERSO 1" o "Interludio Especial"), lo usamos envuelto en corchetes
   if (value && value.trim()) {
     const trimmedVal = value.trim();
-    console.log("directiva: ", trimmedVal);
     return trimmedVal.startsWith('[') ? trimmedVal : `[${trimmedVal}]`;
   }
 
