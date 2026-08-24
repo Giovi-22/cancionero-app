@@ -10,6 +10,7 @@ export const FolderPickerModal = () => {
   const {
     isFolderPickerOpen,
     setIsFolderPickerOpen,
+    setFolderPickerCallback,
     folders,
     isLoadingFolders,
     navigationStack,
@@ -19,19 +20,24 @@ export const FolderPickerModal = () => {
     selectFolder
   } = useAppContext();
 
+  const handleClose = () => {
+    setIsFolderPickerOpen(false);
+    setFolderPickerCallback(null);
+  };
+
   return (
     <Modal
       visible={isFolderPickerOpen}
       transparent={true}
       animationType="fade"
-      onRequestClose={() => setIsFolderPickerOpen(false)}
+      onRequestClose={handleClose}
       statusBarTranslucent={true}
     >
       <View style={[styles.pickerOverlay, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
         <View style={styles.pickerContent}>
           <View style={styles.pickerHeader}>
             <Text style={styles.pickerTitle}>Seleccionar Carpeta</Text>
-            <TouchableOpacity onPress={() => setIsFolderPickerOpen(false)}>
+            <TouchableOpacity onPress={handleClose}>
               <X size={24} color={COLORS.foreground} />
             </TouchableOpacity>
           </View>

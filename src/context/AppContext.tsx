@@ -24,7 +24,7 @@ export interface AppContextType {
   setDriveFolderId: (id: string) => void;
   loadingSongId: string | null;
   loadingActions: Record<string, boolean>;
-  
+
   // Modals state
   isSettingsOpen: boolean;
   setIsSettingsOpen: (open: boolean) => void;
@@ -36,10 +36,11 @@ export interface AppContextType {
   setIsCreateSetlistOpen: (open: boolean) => void;
   isEditSetlistOpen: boolean;
   setIsEditSetlistOpen: (open: boolean) => void;
-  
+
   // Folder Explorer state
   folders: any[];
   isLoadingFolders: boolean;
+  setFolderPickerCallback: (cb: ((id: string) => void) | null) => void;
   navigationStack: any[];
   showShared: boolean;
   openFolderPicker: (parentId?: string, folderName?: string, shared?: boolean, onSelect?: (id: string) => void) => Promise<void>;
@@ -53,7 +54,7 @@ export interface AppContextType {
   setSongContent: (content: string | null) => void;
   songSettings: any;
   setSongSettings: (settings: any) => void;
-  
+
   // Setlist view state
   activeSetlist: Setlist | null;
   setActiveSetlist: (setlist: Setlist | null) => void;
@@ -92,7 +93,7 @@ export interface AppContextType {
   handleMoveSong: (fromIndex: number, toIndex: number) => Promise<void>;
   handleSaveSetlistSongs: (name: string, date: Date | undefined, songIds: string[]) => Promise<void>;
   handleClearRepertoire: () => Promise<void>;
-  
+
   // Library Actions
   handleCreateLibrary: (name: string, driveFolderId?: string, icon?: string, color?: string) => Promise<void>;
   handleUpdateLibrary: (library: Library) => Promise<void>;
@@ -215,7 +216,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       // Obtener biblioteca activa
       const savedLibId = await StorageService.getSetting<string>('active_library_id');
       const activeLib = allLibraries.find(l => l.id === savedLibId) || allLibraries.find(l => l.id === 'default') || allLibraries[0] || null;
-      
+
       setActiveLibraryState(activeLib);
 
       if (activeLib) {
@@ -258,10 +259,10 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       setActiveLibraryState(library);
       setDriveFolderId(library.driveFolderId || '');
       await StorageService.saveSetting('active_library_id', library.id);
-      
+
       // Cerrar setlists y buscador para limpiar el contexto visual
       setActiveSetlist(null);
-      
+
       await refreshLocalDataForLibrary(library.id);
 
       if (library.driveFolderId && user) {
@@ -319,7 +320,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       // Cargar configuraciones específicas de esta biblioteca
       const libId = activeLibrary?.id || 'default';
       let settings = await StorageService.getSetting(`song_settings_${libId}_${song.id}`);
-      
+
       // Fallback a configuración anterior global si es la de por defecto
       if (!settings && libId === 'default') {
         settings = await StorageService.getSetting(`song_settings_${song.id}`);
@@ -462,7 +463,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       date: date ? date.toISOString() : undefined,
       songIds
     };
-    
+
     await StorageService.saveSetlist(updated, activeLibrary.id);
     setActiveSetlist(updated);
     setSetlists(prev => prev.map(s => s.id === updated.id ? updated : s));
@@ -476,16 +477,16 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       setIsSyncing(true);
       // 1. Obtener todas las canciones locales de esta biblioteca
       const localSongs = await StorageService.getAllSongs(activeLibrary.id);
-      
+
       // 2. Borrar archivos físicos
       for (const song of localSongs) {
         await FileSystemService.deleteSongFile(song.id);
       }
-      
+
       // 3. Borrar registros de la base de datos local
       const db = await StorageService.getDb();
       await db.runAsync('DELETE FROM songs WHERE library_id = ?', [activeLibrary.id]);
-      
+
       // 4. Borrar estadísticas en Firestore si está autenticado
       if (user) {
         try {
@@ -497,10 +498,10 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
           console.error('[Clear Repertoire] Error clearing Firestore stats:', error);
         }
       }
-      
+
       // 5. Recargar datos locales
       await refreshLocalDataForLibrary(activeLibrary.id);
-      
+
       Alert.alert('Éxito', 'Se limpiaron todas las canciones locales y sus estadísticas.');
     } catch (e) {
       console.error('[Clear Repertoire] Error clearing songs:', e);
@@ -527,7 +528,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     await StorageService.saveLibrary(newLib);
     const all = await StorageService.getAllLibraries();
     setLibraries(all);
-    
+
     // Cambiar automáticamente a la nueva biblioteca
     await setActiveLibrary(newLib);
   };
@@ -658,10 +659,10 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   const handleJoinSession = (session: LiveSession) => {
     setFollowingSession(session);
     if (session.setlist_id) {
-       router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: session.setlist_id } } as any);
+      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: session.setlist_id } } as any);
     } else if (session.current_song_id) {
-       const song = songs.find(s => s.id === session.current_song_id);
-       if (song) handleSongPress(song);
+      const song = songs.find(s => s.id === session.current_song_id);
+      if (song) handleSongPress(song);
     }
     Alert.alert('✅ Conectado', `Siguiendo a ${session.director_name}`);
   };
@@ -675,7 +676,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     if (!song) return;
     const content = await FileSystemService.getSongContent(newSongId);
     if (!content) return;
-    
+
     const libId = activeLibrary?.id || 'default';
     let settings = await StorageService.getSetting(`song_settings_${libId}_${newSongId}`);
     if (!settings && libId === 'default') {
@@ -691,8 +692,6 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   const openFolderPicker = async (parentId: string = 'root', folderName: string = 'Mi unidad', shared: boolean = false, onSelect?: (id: string) => void) => {
     if (onSelect) {
       setFolderPickerCallback(() => onSelect);
-    } else if (parentId === 'root') {
-      setFolderPickerCallback(null);
     }
     setIsLoadingFolders(true);
     setIsFolderPickerOpen(true);
@@ -723,12 +722,15 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const selectFolder = (id: string) => {
+    console.log('[AppContext] selectFolder - ID:', id);
+    console.log('[AppContext] selectFolder - folderPickerCallback:', folderPickerCallback);
     if (folderPickerCallback) {
       folderPickerCallback(id);
     } else {
       handleSaveConfig(id);
     }
     setIsFolderPickerOpen(false);
+    setFolderPickerCallback(null);
     Keyboard.dismiss();
   };
 
@@ -765,6 +767,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         openFolderPicker,
         navigateBack,
         selectFolder,
+        setFolderPickerCallback,
         selectedSong,
         setSelectedSong,
         songContent,
