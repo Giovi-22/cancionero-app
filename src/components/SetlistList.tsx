@@ -4,6 +4,7 @@ import {
   ScrollView, Modal, Alert, ActivityIndicator
 } from 'react-native';
 import { ListMusic, ChevronRight, Plus, Trash2, X, ArrowUpDown, Check, FileText } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Setlist } from '../types';
 
 const COLORS = {
@@ -30,6 +31,7 @@ export const SetlistList: React.FC<SetlistListProps> = ({
   onCreatePress,
   onDeleteSetlist
 }) => {
+  const insets = useSafeAreaInsets();
   const [pendingDelete, setPendingDelete] = useState<Setlist | null>(null);
   const [sortBy, setSortBy] = useState<'name' | 'date-newest' | 'date-oldest'>('date-newest');
   const [isSortOpen, setIsSortOpen] = useState(false);
@@ -159,7 +161,7 @@ export const SetlistList: React.FC<SetlistListProps> = ({
         animationType="fade"
         onRequestClose={() => setPendingDelete(null)}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}>
           <View style={styles.modalCard}>
             <View style={styles.modalIconWrap}>
               <Trash2 size={32} color={COLORS.danger} />
@@ -197,7 +199,7 @@ export const SetlistList: React.FC<SetlistListProps> = ({
         onRequestClose={() => setIsSortOpen(false)}
       >
         <TouchableOpacity 
-          style={styles.modalOverlay} 
+          style={[styles.modalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]} 
           activeOpacity={1} 
           onPress={() => setIsSortOpen(false)}
         >

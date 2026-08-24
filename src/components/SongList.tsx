@@ -13,6 +13,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Music, ChevronRight, Trash2, GripVertical, FileText, Check, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SongMetadata } from '../types';
 import { useAppContext } from '../context/AppContext';
 
@@ -279,6 +280,7 @@ export const SongList: React.FC<SongListProps> = ({
   scrollEnabled = true,
 }) => {
   const { activeSetlist, handleUpdateSetlistSongNote } = useAppContext();
+  const insets = useSafeAreaInsets();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollY = useSharedValue(0);
 
@@ -398,7 +400,7 @@ export const SongList: React.FC<SongListProps> = ({
         onRequestClose={() => setEditingSong(null)}
       >
         <TouchableOpacity
-          style={styles.songNoteModalOverlay}
+          style={[styles.songNoteModalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}
           activeOpacity={1}
           onPress={() => setEditingSong(null)}
         >

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Modal } from 'react-native';
 import { Radio, ChevronLeft, ChevronRight, FileText, X } from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SongMetadata } from '../../types';
 import { useAppContext } from '../../context/AppContext';
 
@@ -29,6 +30,7 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
   notes: propNotes
 }) => {
   const { activeSetlist } = useAppContext();
+  const insets = useSafeAreaInsets();
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [showSongNoteModal, setShowSongNoteModal] = useState(false);
 
@@ -122,7 +124,7 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
         onRequestClose={() => setShowNotesModal(false)}
       >
         <TouchableOpacity
-          style={styles.notesModalOverlay}
+          style={[styles.notesModalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}
           activeOpacity={1}
           onPress={() => setShowNotesModal(false)}
         >
@@ -149,7 +151,7 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
         onRequestClose={() => setShowSongNoteModal(false)}
       >
         <TouchableOpacity
-          style={styles.notesModalOverlay}
+          style={[styles.notesModalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}
           activeOpacity={1}
           onPress={() => setShowSongNoteModal(false)}
         >

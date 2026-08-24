@@ -18,6 +18,7 @@ export const CreateSetlistModal = () => {
   const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
+  const insets = useSafeAreaInsets();
 
   useEffect(() => {
     if (isCreateSetlistOpen) {
@@ -51,7 +52,7 @@ export const CreateSetlistModal = () => {
       animationType="fade"
       onRequestClose={() => setIsCreateSetlistOpen(false)}
     >
-      <View style={styles.createModalOverlay}>
+      <View style={[styles.createModalOverlay, { paddingTop: insets.top + 20, paddingBottom: insets.bottom + 20 }]}>
         <View style={styles.createModalCard}>
           <Text style={styles.createModalTitle}>Nueva Lista</Text>
           <TextInput
@@ -213,7 +214,7 @@ export const EditSetlistModal = () => {
       animationType="slide"
       onRequestClose={() => setIsEditSetlistOpen(false)}
     >
-      <View style={[styles.editModalContainer, { paddingTop: insets.top }]}>
+      <View style={[styles.editModalContainer, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
         <View style={styles.editModalHeader}>
           <Text style={styles.editModalTitle}>Editar Lista</Text>
           <TouchableOpacity onPress={() => setIsEditSetlistOpen(false)} style={{ padding: 5 }}>
@@ -283,7 +284,7 @@ export const EditSetlistModal = () => {
           </View>
         </View>
 
-        <ScrollView style={styles.editModalList} contentContainerStyle={{ padding: 20, paddingBottom: 120 }}>
+        <ScrollView style={styles.editModalList} contentContainerStyle={{ padding: 20, paddingBottom: 100 + insets.bottom }}>
           {/* Breadcrumb de navegación */}
           {!isSearching && currentFolder !== null && (
             <View style={styles.breadcrumbContainer}>
@@ -349,7 +350,7 @@ export const EditSetlistModal = () => {
             );
           })}
         </ScrollView>
-        <View style={styles.editModalFooter}>
+        <View style={[styles.editModalFooter, { paddingBottom: Math.max(insets.bottom, 16) }]}>
           <TouchableOpacity
             style={[styles.editModalSaveBtn, isSaving && { opacity: 0.7 }]}
             onPress={handleSave}
