@@ -1,131 +1,379 @@
 import { cleanSongText, isChordLine, isMetadataLine } from './chordUtils';
-import { isSingleChord } from './chordpro';
+import { isSingleChord, extractTitleFromChordPro } from './chordpro';
 
 /**
- * Convierte texto legacy (acordes en línea superior) a ChordPro semántico.
- * Si el texto ya tiene formato ChordPro, lo devuelve sin alteraciones.
+ * Normaliza y convierte canciones legacy a ChordPro.
+ *
+ * Responsabilidades:
+ * - Preservar canciones que ya están en ChordPro.
+ * - Convertir canciones legacy de dos líneas:
+ *      A        F#       B
+ *      Yo te alabo Señor
+ * - Convertir líneas de acordes solas.
+ * - Convertir metadatos legacy (Tono, BPM).
+ * - Agregar {title: ...} cuando sea necesario.
+ *
+ * IMPORTANTE:
+ * La conversión específica de Google Docs se realiza antes,
+ * en el conversor de Google Docs. Esta función no depende
+ * de Google Docs.
  */
-export function legacyToChordPro(legacyText: string): string {
-  // Evitar doble conversión si ya tiene formato ChordPro básico con acordes reales
-  let hasBracketedChords = false;
-  const bracketMatches = legacyText.match(/\[([^\]]+)\]/g);
-  if (bracketMatches) {
-    for (const m of bracketMatches) {
-      const inside = m.slice(1, -1).trim();
-      if (isSingleChord(inside)) {
-        hasBracketedChords = true;
-        break;
-      }
-    }
-  }
-  if (hasBracketedChords) {
-    return legacyText;
+export function legacyToChordPro(
+  rawText: string,
+  fallbackTitle?: string
+): string {
+  if (!rawText) {
+    return fallbackTitle
+      ? `{title: ${cleanTitle(fallbackTitle)}}\n`
+      : '';
   }
 
-  const cleaned = cleanSongText(legacyText);
-  const lines = cleaned.split('\n');
+  const text = normalizeInput(rawText);
+
+  // ---------------------------------------------------------
+  // 1. Ya es ChordPro
+  // ---------------------------------------------------------
+
+  if (isChordPro(text)) {
+    return ensureTitle(text, fallbackTitle);
+  }
+
+  // ---------------------------------------------------------
+  // 2. Convertir formato legacy
+  // ---------------------------------------------------------
+
+  const lines = text.split('\n');
   const result: string[] = [];
+
+  let titleFound = false;
 
   for (let i = 0; i < lines.length; i++) {
     const currentLine = lines[i];
+    const trimmed = currentLine.trim();
 
-    // Si es una línea de metadatos (Intro, Tono, BPM, etc.)
+    // Línea vacía
+    if (!trimmed) {
+      result.push('');
+      continue;
+    }
+
+    // -------------------------------------------------------
+    // Título legacy
+    // -------------------------------------------------------
+
+    if (
+      !titleFound &&
+      i === 0 &&
+      !isChordLine(currentLine) &&
+      !isMetadataLine(currentLine) &&
+      !trimmed.startsWith('[')
+    ) {
+      result.push(`{title: ${trimmed}}`);
+      titleFound = true;
+      continue;
+    }
+
+    // -------------------------------------------------------
+    // Secciones legacy
+    // Ej: [VERSO 1], [CORO], [FINAL] X2
+    // -------------------------------------------------------
+
+    if (isLegacySection(trimmed)) {
+      result.push(trimmed);
+      continue;
+    }
+
+    // -------------------------------------------------------
+    // Metadatos
+    // -------------------------------------------------------
+
     if (isMetadataLine(currentLine)) {
       result.push(convertMetadataLineToChordPro(currentLine));
       continue;
     }
 
+    // -------------------------------------------------------
+    // Línea de acordes
+    // -------------------------------------------------------
+
     if (isChordLine(currentLine)) {
-      // Intentar encontrar la línea de letra siguiente, salteando líneas vacías
-      let lyricLineIndex = i + 1;
-      while (lyricLineIndex < lines.length && lines[lyricLineIndex].trim() === '') {
-        lyricLineIndex++;
-      }
+      const nextLineIndex = findNextContentLine(lines, i + 1);
+      const nextLine = nextLineIndex !== -1
+        ? lines[nextLineIndex]
+        : undefined;
 
-      const potentialLyricLine = lines[lyricLineIndex];
-
+      // Acordes + letra
       if (
-        potentialLyricLine !== undefined &&
-        !isChordLine(potentialLyricLine) &&
-        !isMetadataLine(potentialLyricLine) &&
-        !potentialLyricLine.trim().startsWith('[')
+        nextLine !== undefined &&
+        !isChordLine(nextLine) &&
+        !isMetadataLine(nextLine) &&
+        !nextLine.trim().startsWith('[')
       ) {
-        // Combinamos la línea de acordes y la de letra
-        result.push(mergeLineToChordPro(currentLine, potentialLyricLine));
-        i = lyricLineIndex; // Saltamos hasta la línea de letra
+        result.push(
+          mergeLineToChordPro(currentLine, nextLine)
+        );
+
+        i = nextLineIndex;
         continue;
       }
 
-      // Si no hay línea de letra válida, procesamos solo los acordes
-      result.push(mergeLineToChordPro(currentLine, ''));
+      // Línea formada solamente por acordes
+      result.push(
+        formatChordsOnlyToChordPro(currentLine)
+      );
+
       continue;
     }
 
-    // Si es cabecera de sección, directiva o texto plano, dejar intacto
+    // -------------------------------------------------------
+    // Texto normal
+    // -------------------------------------------------------
+
     result.push(currentLine);
   }
 
-  return result.join('\n');
+  // ---------------------------------------------------------
+  // 3. Asegurar título
+  // ---------------------------------------------------------
+
+  if (!titleFound && fallbackTitle) {
+    const title = cleanTitle(fallbackTitle);
+
+    if (!result.some(line => /^\{\s*title\s*:/i.test(line))) {
+      result.unshift(`{title: ${title}}`);
+    }
+  }
+
+  return cleanSongText(result.join('\n'));
 }
 
 /**
- * Convierte una línea de metadatos (como Intro, Tono, BPM, Compás, Nota) a ChordPro
- * envolviendo únicamente los acordes válidos en corchetes y dejando el resto como texto plano.
+ * Normaliza saltos de línea y espacios exteriores.
  */
-function convertMetadataLineToChordPro(line: string): string {
-  return line.replace(/\S+/g, (token) => {
-    // Si el token contiene símbolos de acorde pero tiene caracteres como ":" (ej. "Intro:"), no es un acorde
-    if (token.includes(':')) {
+function normalizeInput(text: string): string {
+  return text
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+}
+
+/**
+ * Determina si el contenido ya está en formato ChordPro.
+ *
+ * Consideramos ChordPro si contiene:
+ * - Una directiva ChordPro válida.
+ * - O al menos un acorde entre corchetes.
+ */
+function isChordPro(text: string): boolean {
+  const hasDirective =
+    /\{\s*(title|t|subtitle|st|artist|a|key|k|tempo|bpm|time|capo|comment|c|start_of_\w+|end_of_\w+|sov|soc|eov|eoc)\b/i
+      .test(text);
+
+  const hasBracketedChord =
+    /\[[A-G][b#]?(?:m|maj|min|dim|aug|sus|add)?(?:\d+)?(?:\/[A-G][b#]?)?\]/i
+      .test(text);
+
+  return hasDirective || hasBracketedChord;
+}
+
+/**
+ * Agrega un título únicamente cuando no existe.
+ */
+function ensureTitle(
+  text: string,
+  fallbackTitle?: string
+): string {
+  if (!fallbackTitle) {
+    return cleanSongText(text);
+  }
+
+  const existingTitle = extractTitleFromChordPro(text);
+
+  if (existingTitle) {
+    return cleanSongText(text);
+  }
+
+  const title = cleanTitle(fallbackTitle);
+
+  return cleanSongText(
+    `{title: ${title}}\n\n${text}`
+  );
+}
+
+/**
+ * Limpia el nombre utilizado como título.
+ */
+function cleanTitle(title: string): string {
+  return title
+    .replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '')
+    .trim();
+}
+
+/**
+ * Determina si una línea legacy es una sección.
+ *
+ * No considera [A], [F#m], etc. como sección.
+ */
+function isLegacySection(line: string): boolean {
+  if (!line.startsWith('[')) return false;
+
+  const endBracket = line.indexOf(']');
+
+  if (endBracket === -1) return false;
+
+  const inside = line
+    .slice(1, endBracket)
+    .trim();
+
+  return !isSingleChord(inside);
+}
+
+/**
+ * Busca la siguiente línea con contenido.
+ */
+function findNextContentLine(
+  lines: string[],
+  startIndex: number
+): number {
+  for (let i = startIndex; i < lines.length; i++) {
+    if (lines[i].trim()) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Convierte metadatos legacy a ChordPro.
+ *
+ * Ej:
+ *   Tono: C      → {key: C}
+ *   BPM: 120     → {tempo: 120}
+ */
+function convertMetadataLineToChordPro(
+  line: string
+): string {
+  const keyMatch = line.match(
+    /^Tono:\s*([A-G][b#]?[m]?)/i
+  );
+
+  if (keyMatch) {
+    return `{key: ${keyMatch[1]}}`;
+  }
+
+  const bpmMatch = line.match(
+    /^BPM:\s*(\d+)/i
+  );
+
+  if (bpmMatch) {
+    return `{tempo: ${bpmMatch[1]}}`;
+  }
+
+  return line.replace(/\S+/g, token => {
+    if (
+      token.includes(':') ||
+      /^[xX]\d+$/.test(token)
+    ) {
       return token;
     }
-    
-    // Si el token es un acorde válido (como C, F#m, G/B), lo encerramos en corchetes
+
     if (isSingleChord(token)) {
       return `[${token}]`;
     }
-    
-    // De lo contrario lo dejamos como texto plano (como -, 4/4, 100, etc.)
+
     return token;
   });
 }
 
 /**
- * Une una línea de acordes con una línea de letra en formato ChordPro posicionando
- * cada acorde en su índice de columna. Si el índice cae en medio de una palabra,
- * el acorde se desplaza hacia atrás hasta el inicio de esa palabra para no partirla.
+ * Convierte una línea que contiene únicamente acordes
+ * a ChordPro.
+ *
+ * Ej:
+ *   A - F# - B
+ *
+ * → [A] - [F#] - [B]
  */
-function mergeLineToChordPro(chordLine: string, lyricLine: string): string {
+function formatChordsOnlyToChordPro(
+  line: string
+): string {
+  return line.replace(
+    /\S+/g,
+    token => `[${token}]`
+  );
+}
+
+/**
+ * Fusiona una línea de acordes con la línea de letra
+ * respetando la posición horizontal de cada acorde.
+ *
+ * Ej:
+ *
+ *   A       F#      B
+ *   Yo      te      alabo
+ *
+ * →
+ *
+ *   [A]Yo  [F#]te  [B]alabo
+ */
+function mergeLineToChordPro(
+  chordLine: string,
+  lyricLine: string
+): string {
   const chordRegex = /\S+/g;
-  let match;
-  const chords: { chord: string; index: number }[] = [];
+
+  const chords: Array<{
+    chord: string;
+    index: number;
+  }> = [];
+
+  let match: RegExpExecArray | null;
+
   while ((match = chordRegex.exec(chordLine)) !== null) {
-    chords.push({ chord: match[0], index: match.index });
+    chords.push({
+      chord: match[0],
+      index: match.index,
+    });
   }
 
   if (chords.length === 0) {
     return lyricLine;
   }
 
-  // Ordenar acordes de atrás hacia adelante para que las inserciones no alteren los índices previos
+  // Insertamos desde el final para no alterar
+  // las posiciones de los acordes anteriores.
   chords.sort((a, b) => b.index - a.index);
 
   let result = lyricLine;
-  for (const c of chords) {
-    // Si el índice del acorde cae más allá del texto de letra, extender con espacios
-    if (c.index > result.length) {
-      result = result + ' '.repeat(c.index - result.length);
+
+  for (const chord of chords) {
+    if (chord.index > result.length) {
+      result += ' '.repeat(
+        chord.index - result.length
+      );
     }
 
-    // Ajustar el índice de inserción: si cae en medio de una palabra,
-    // retroceder hasta el inicio de esa palabra para no partirla.
-    let insertAt = c.index;
-    if (insertAt < result.length && result[insertAt] !== ' ') {
-      while (insertAt > 0 && result[insertAt - 1] !== ' ') {
+    let insertAt = chord.index;
+
+    // Si el acorde cae dentro de una palabra,
+    // retrocedemos hasta el comienzo de esa palabra.
+    if (
+      insertAt < result.length &&
+      result[insertAt] !== ' '
+    ) {
+      while (
+        insertAt > 0 &&
+        result[insertAt - 1] !== ' '
+      ) {
         insertAt--;
       }
     }
 
-    result = result.substring(0, insertAt) + `[${c.chord}]` + result.substring(insertAt);
+    result =
+      result.substring(0, insertAt) +
+      `[${chord.chord}]` +
+      result.substring(insertAt);
   }
 
   return result;

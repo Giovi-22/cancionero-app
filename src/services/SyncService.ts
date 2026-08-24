@@ -17,24 +17,24 @@ export class SyncService {
   public static async syncFullRepertoire(folderId: string, force: boolean = false, libraryId?: string): Promise<boolean> {
     if (this.isSyncing) return false;
     if (!folderId) throw new Error('No se ha configurado un ID de carpeta');
-    
+
     this.isSyncing = true;
 
     try {
       console.log(`[Sync] Starting full repertoire sync for folder: ${folderId} (Force: ${force})`);
 
-      // 1. Verificar autenticación y traer datos de Supabase
+      // 1. Verificar autenticación y traer datos de Firestore
       const token = await authService.getGoogleAccessToken();
       if (!token) throw new Error('Usuario no autenticado en Google');
 
       // Traer listas, estadísticas y ajustes de la nube antes de empezar con Drive
-      await StorageService.pullFromSupabase();
+      await StorageService.pullFromFirestore();
 
       // 2. Obtener lista de canciones remotas (incluyendo subcarpetas recursivamente)
       console.log('[Sync] Scanning Drive folder recursively (including subfolders)...');
       const remoteFiles = await DriveService.getSongsFromFolderRecursive(folderId);
       console.log(`[Sync] Found ${remoteFiles.length} total files across all subfolders.`);
-      
+
       // 3. Obtener lista local para comparar
       const localSongs = await StorageService.getAllSongs(libraryId);
       const localSongsMap = new Map(localSongs.map(s => [s.id, s]));
@@ -45,7 +45,7 @@ export class SyncService {
       // 4. Identificar qué descargar y qué borrar
       for (const remoteFile of remoteFiles) {
         const localSong = localSongsMap.get(remoteFile.id);
-        
+
         // Verificamos si el archivo local realmente existe físicamente
         const fileContent = await FileSystemService.getSongContent(remoteFile.id);
         const fileExists = fileContent !== null;
@@ -110,7 +110,8 @@ export class SyncService {
         .filter((rf: any) => !failedSongIds.has(rf.id))
         .map((rf: any) => ({
           id: rf.id,
-          name: rf.name,
+          // Quitar extensiones ChordPro del nombre para mostrar títulos limpios
+          name: rf.name.replace(/\.(chordpro|pro|cho|chopro|crd)$/i, ''),
           mimeType: rf.mimeType,
           modifiedTime: rf.modifiedTime,
           localPath: FileSystemService.getLocalPath(rf.id),
@@ -118,7 +119,7 @@ export class SyncService {
           lastSyncedAt: new Date().toISOString(),
           folderName: rf.folderName,
         }));
-      
+
       await StorageService.saveSongs(finalMetadata, libraryId);
 
       console.log('[Sync] Sync completed successfully.');
@@ -150,12 +151,27 @@ export class SyncService {
     }
   }
 
+  /**
+   * Devuelve true si el archivo ya está en formato ChordPro nativo
+   * (.chordpro, .pro, .cho, .chopro) y no necesita conversión.
+   */
+  private static isNativeChordPro(song: Song): boolean {
+    const name = (song.name || '').toLowerCase();
+    return (
+      name.endsWith('.chordpro') ||
+      name.endsWith('.pro') ||
+      name.endsWith('.cho') ||
+      name.endsWith('.chopro') ||
+      name.endsWith('.crd')
+    );
+  }
+
   private static async downloadAndStoreSong(song: Song): Promise<boolean> {
     try {
-      const content = await driveService.getSongContent(song.id, song.mimeType);
+      const cleanTitle = (song.name || '').replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '');
+      const content = await driveService.getSongContent(song.id, song.mimeType, cleanTitle);
       if (content) {
-        const chordProContent = legacyToChordPro(content);
-        await FileSystemService.saveSongContent(song.id, chordProContent);
+        await FileSystemService.saveSongContent(song.id, content);
         return true;
       }
       return false;

@@ -1,7 +1,10 @@
 import { authService } from './AuthService';
+import { legacyToChordPro } from '../utils/legacyToChordPro';
+import { convertGoogleDocToChordPro } from '../utils/chordpro/chordProConverter';
 
 export class DriveService {
   private static DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
+  private static DOCS_API_URL = 'https://docs.googleapis.com/v1/documents';
 
   /**
    * Lista carpetas de Google Drive (propias o compartidas)
@@ -11,7 +14,7 @@ export class DriveService {
     if (!token) throw new Error('No hay token de acceso a Google');
 
     let query = `mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-    
+
     if (showShared && parentId === 'root') {
       // Raíz de compartidos: muestra todas las carpetas compartidas conmigo
       query += ` and sharedWithMe = true`;
@@ -47,7 +50,10 @@ export class DriveService {
       `${this.DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name)&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Error al listar subcarpetas: ${err.error?.message || response.status}`);
+    }
     const data = await response.json();
     return data.files || [];
   }
@@ -61,7 +67,10 @@ export class DriveService {
       `${this.DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, modifiedTime)&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`,
       { headers: { Authorization: `Bearer ${token}` } }
     );
-    if (!response.ok) return [];
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(`Error al obtener canciones de la carpeta: ${err.error?.message || response.status}`);
+    }
     const data = await response.json();
     return data.files || [];
   }
@@ -111,7 +120,7 @@ export class DriveService {
 
     // Buscamos archivos de texto o Google Docs
     const query = `'${folderId}' in parents and trashed = false and (mimeType = 'text/plain' or mimeType = 'application/vnd.google-apps.document' or name contains '.txt' or name contains '.pro' or name contains '.chordpro' or name contains '.cho')`;
-    
+
     const response = await fetch(
       `${DriveService.DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, modifiedTime)&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`,
       {
@@ -132,13 +141,13 @@ export class DriveService {
   /**
    * Obtiene el contenido de un archivo con reintentos para Google Docs
    */
-  async getSongContent(fileId: string, mimeType?: string): Promise<string> {
+  async getSongContent(fileId: string, mimeType?: string, songName?: string): Promise<string> {
     const token = await authService.getGoogleAccessToken();
     if (!token) throw new Error('No hay token de acceso a Google');
 
-    // Si es un Google Doc, vamos directo a exportar
+    // Si es un Google Doc, vamos directo a procesar con Docs API / export
     if (mimeType === 'application/vnd.google-apps.document') {
-      return this.exportGoogleDoc(fileId, token);
+      return this.exportGoogleDoc(fileId, token, songName);
     }
 
     try {
@@ -153,32 +162,52 @@ export class DriveService {
 
       if (!response.ok) {
         // Si falla el media, intentamos exportar por si acaso es un formato de Google
-        return this.exportGoogleDoc(fileId, token);
+        return this.exportGoogleDoc(fileId, token, songName);
       }
 
-      return await response.text();
+      const textContent = await response.text();
+      return legacyToChordPro(textContent, songName);
     } catch (e) {
-      return this.exportGoogleDoc(fileId, token);
+      return this.exportGoogleDoc(fileId, token, songName);
     }
   }
 
-  private async exportGoogleDoc(fileId: string, token: string): Promise<string> {
+  /**
+   * Obtiene y convierte un Google Doc. Intenta primero usar Google Docs API v1
+   * para obtener la estructura interna; si falla (ej. sin scope), usa fallback a export text/plain.
+   */
+  private async exportGoogleDoc(fileId: string, token: string, songName?: string): Promise<string> {
+    // 1. Intentar obtener el documento a través de Google Docs API v1 (detección por color)
+    try {
+      const response = await fetch(
+        `${DriveService.DOCS_API_URL}/${fileId}`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+
+      if (response.ok) {
+        const docJson = await response.json();
+        const chordPro = convertGoogleDocToChordPro(docJson.body.content || []);
+        if (chordPro && chordPro.trim().length > 0) {
+          console.log('[DriveService] Google Doc convertido a ChordPro mediante ChordProConverter');
+          return chordPro;
+        }
+      } else {
+        console.warn('[DriveService] Google Docs API devolvió status:', response.status, '- Usando fallback a export plain text');
+      }
+    } catch (e) {
+      console.warn('[DriveService] Error llamando a Google Docs API, usando fallback:', e);
+    }
+
+    // 2. Fallback: exportar como text/plain desde Drive API
     const exportResponse = await fetch(
       `${DriveService.DRIVE_API_URL}/${fileId}/export?mimeType=text/plain`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
-    
-    if (!exportResponse.ok) {
-      throw new Error('No se pudo exportar el Google Doc');
-    }
-    
-    return await exportResponse.text();
+
+    if (!exportResponse.ok) throw new Error('No se pudo exportar el Google Doc');
+    const plainText = await exportResponse.text();
+    return legacyToChordPro(plainText, songName);
   }
+
 }
-
 export const driveService = new DriveService();
-

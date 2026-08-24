@@ -1,4 +1,4 @@
-import { supabase } from '../lib/supabase';
+import { firestore } from '../lib/firebase';
 import { StorageService } from './StorageService';
 
 export interface Setlist {
@@ -10,6 +10,7 @@ export interface Setlist {
 
 export class SetlistService {
   private static instance: SetlistService;
+  private static COLLECTION = 'setlists';
 
   private constructor() {}
 
@@ -21,33 +22,33 @@ export class SetlistService {
   }
 
   public async getSetlists(userEmail?: string): Promise<Setlist[]> {
-    // 1. Try local first
     let localSetlists = await StorageService.getAllSetlists();
 
-    // 2. If logged in, sync with cloud
     if (userEmail) {
       try {
-        const { data, error } = await supabase
-          .from('setlists')
-          .select('*')
-          .eq('user_email', userEmail);
+        const snapshot = await firestore()
+          .collection(SetlistService.COLLECTION)
+          .where('user_email', '==', userEmail)
+          .get();
 
-        if (!error && data) {
-          const cloudSetlists: Setlist[] = data.map(s => ({
-            id: s.id,
-            name: s.name,
-            songIds: s.song_ids,
-            isPublic: s.is_public
-          }));
+        if (!snapshot.empty) {
+          const cloudSetlists: Setlist[] = snapshot.docs.map((doc: any) => {
+            const data = doc.data();
+            return {
+              id: doc.id,
+              name: data.name,
+              songIds: data.song_ids || [],
+              isPublic: data.is_public ?? false
+            };
+          });
 
-          // Simple sync: overwrite local with cloud for now
           for (const s of cloudSetlists) {
             await StorageService.saveSetlist(s);
           }
           return cloudSetlists;
         }
       } catch (e) {
-        console.error('Failed to sync setlists:', e);
+        console.error('Failed to sync setlists with Firestore:', e);
       }
     }
 
@@ -62,26 +63,26 @@ export class SetlistService {
     };
 
     if (userEmail) {
-      const { data, error } = await supabase
-        .from('setlists')
-        .insert({
+      try {
+        const docRef = await firestore().collection(SetlistService.COLLECTION).add({
           user_email: userEmail,
           name: newSetlist.name,
           song_ids: newSetlist.songIds,
-          is_public: false
-        })
-        .select()
-        .single();
+          is_public: false,
+          created_at: new Date().toISOString()
+        });
 
-      if (!error && data) {
-        const created = {
-          id: data.id,
-          name: data.name,
-          songIds: data.song_ids,
-          isPublic: data.is_public
+        const created: Setlist = {
+          id: docRef.id,
+          name: newSetlist.name,
+          songIds: newSetlist.songIds,
+          isPublic: false
         };
+
         await StorageService.saveSetlist(created);
         return created;
+      } catch (e) {
+        console.error('Failed to create setlist in Firestore:', e);
       }
     }
 
@@ -92,24 +93,33 @@ export class SetlistService {
   public async updateSetlist(setlist: Setlist, userEmail?: string) {
     await StorageService.saveSetlist(setlist);
 
-    if (userEmail && setlist.id.includes('-')) {
-      await supabase
-        .from('setlists')
-        .update({
-          name: setlist.name,
-          song_ids: setlist.songIds,
-          is_public: !!setlist.isPublic,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', setlist.id);
+    if (userEmail && setlist.id) {
+      try {
+        await firestore()
+          .collection(SetlistService.COLLECTION)
+          .doc(setlist.id)
+          .set({
+            user_email: userEmail,
+            name: setlist.name,
+            song_ids: setlist.songIds,
+            is_public: !!setlist.isPublic,
+            updated_at: new Date().toISOString()
+          }, { merge: true });
+      } catch (e) {
+        console.error('Failed to update setlist in Firestore:', e);
+      }
     }
   }
 
   public async deleteSetlist(id: string, userEmail?: string) {
     await StorageService.deleteSetlistLocal(id);
 
-    if (userEmail && id.includes('-')) {
-      await supabase.from('setlists').delete().eq('id', id);
+    if (userEmail && id) {
+      try {
+        await firestore().collection(SetlistService.COLLECTION).doc(id).delete();
+      } catch (e) {
+        console.error('Failed to delete setlist in Firestore:', e);
+      }
     }
   }
 }

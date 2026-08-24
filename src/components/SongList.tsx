@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo } from 'react';
-import { Dimensions, StyleSheet, Text, View, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { Dimensions, StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Modal, TextInput } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useSharedValue,
@@ -11,8 +11,9 @@ import Animated, {
   scrollTo,
   SharedValue,
 } from 'react-native-reanimated';
-import { Music, ChevronRight, Trash2, GripVertical } from 'lucide-react-native';
+import { Music, ChevronRight, Trash2, GripVertical, FileText, Check, X } from 'lucide-react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SongMetadata } from '../types';
 import { useAppContext } from '../context/AppContext';
 
@@ -82,6 +83,7 @@ interface SortableItemProps {
   onSongPress: (song: SongMetadata) => void;
   onRemoveFromSetlist?: (songId: string) => void;
   onReorder?: (fromIndex: number, toIndex: number) => void;
+  onEditSongNote?: (song: SongMetadata) => void;
 }
 
 function SortableItem({
@@ -95,9 +97,11 @@ function SortableItem({
   onSongPress,
   onRemoveFromSetlist,
   onReorder,
+  onEditSongNote,
 }: SortableItemProps) {
-  const { loadingSongId } = useAppContext();
+  const { loadingSongId, activeSetlist } = useAppContext();
   const isLoading = loadingSongId === song.id;
+  const songNote = isSetlistMode ? activeSetlist?.songNotes?.[song.id] : undefined;
   const isDragging = useSharedValue(false);
   const startPosition = useSharedValue(-1);
   const startTop = useSharedValue(0);
@@ -206,10 +210,41 @@ function SortableItem({
                   {song.name}
                 </Text>
               </View>
-              <Text style={styles.songMeta}>
-                {song.syncStatus === 'synced' ? '✓ Sincronizado' : '⌛ Pendiente'}
-              </Text>
+              {songNote ? (
+                <TouchableOpacity
+                  style={styles.songNoteBadge}
+                  onPress={(e) => {
+                    onEditSongNote?.(song);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <FileText size={10} color={COLORS.accent} />
+                  <Text style={styles.songNoteBadgeText} numberOfLines={1}>{songNote}</Text>
+                </TouchableOpacity>
+              ) : (
+                <Text style={styles.songMeta}>
+                  {song.syncStatus === 'synced' ? '✓ Sincronizado' : '⌛ Pendiente'}
+                </Text>
+              )}
             </View>
+
+            {/* Compact note badge button inside the card */}
+            {isSetlistMode && (
+              <TouchableOpacity
+                style={[styles.compactNoteBadgeBtn, !!songNote && styles.compactNoteBadgeBtnActive]}
+                onPress={(e) => {
+                  onEditSongNote?.(song);
+                }}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <FileText size={13} color={songNote ? COLORS.accent : COLORS.mutedForeground} />
+                {songNote ? (
+                  <Text style={styles.compactNoteBadgeText}>Nota</Text>
+                ) : null}
+              </TouchableOpacity>
+            )}
+
             {isLoading ? (
               <ActivityIndicator size="small" color={COLORS.accent} />
             ) : (
@@ -244,8 +279,42 @@ export const SongList: React.FC<SongListProps> = ({
   onReorder,
   scrollEnabled = true,
 }) => {
+  const { activeSetlist, handleUpdateSetlistSongNote } = useAppContext();
+  const insets = useSafeAreaInsets();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollY = useSharedValue(0);
+
+  const [editingSong, setEditingSong] = React.useState<SongMetadata | null>(null);
+  const [songNoteText, setSongNoteText] = React.useState('');
+  const [isSavingNote, setIsSavingNote] = React.useState(false);
+
+  const handleOpenSongNote = (song: SongMetadata) => {
+    setEditingSong(song);
+    const existing = activeSetlist?.songNotes?.[song.id] || '';
+    setSongNoteText(existing);
+  };
+
+  const handleSaveSongNote = async () => {
+    if (!editingSong || !activeSetlist) return;
+    setIsSavingNote(true);
+    try {
+      await handleUpdateSetlistSongNote(activeSetlist.id, editingSong.id, songNoteText);
+      setEditingSong(null);
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
+
+  const handleDeleteSongNote = async () => {
+    if (!editingSong || !activeSetlist) return;
+    setIsSavingNote(true);
+    try {
+      await handleUpdateSetlistSongNote(activeSetlist.id, editingSong.id, '');
+      setEditingSong(null);
+    } finally {
+      setIsSavingNote(false);
+    }
+  };
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (e) => {
@@ -293,33 +362,104 @@ export const SongList: React.FC<SongListProps> = ({
   const listHeight = songs.length * ITEM_HEIGHT + 100; // +100 bottom padding
 
   return (
-    <Animated.ScrollView
-      key={songs.map(s => s.id).join(',')}
-      ref={scrollRef}
-      style={styles.container}
-      onScroll={scrollHandler}
-      scrollEventThrottle={16}
-      scrollEnabled={scrollEnabled}
-      contentContainerStyle={{ height: listHeight, paddingHorizontal: 16 }}
-    >
-      <View style={{ height: listHeight, position: 'relative' }}>
-        {songs.map((song, i) => (
-          <SortableItem
-            key={song.id}
-            song={song}
-            initialIndex={i}
-            positions={positions}
-            scrollY={scrollY}
-            scrollRef={scrollRef}
-            total={songs.length}
-            isSetlistMode={isSetlistMode}
-            onSongPress={onSongPress}
-            onRemoveFromSetlist={onRemoveFromSetlist}
-            onReorder={handleReorder}
-          />
-        ))}
-      </View>
-    </Animated.ScrollView>
+    <>
+      <Animated.ScrollView
+        key={songs.map(s => s.id).join(',')}
+        ref={scrollRef}
+        style={styles.container}
+        onScroll={scrollHandler}
+        scrollEventThrottle={16}
+        scrollEnabled={scrollEnabled}
+        contentContainerStyle={{ height: listHeight, paddingHorizontal: 16 }}
+      >
+        <View style={{ height: listHeight, position: 'relative' }}>
+          {songs.map((song, i) => (
+            <SortableItem
+              key={song.id}
+              song={song}
+              initialIndex={i}
+              positions={positions}
+              scrollY={scrollY}
+              scrollRef={scrollRef}
+              total={songs.length}
+              isSetlistMode={isSetlistMode}
+              onSongPress={onSongPress}
+              onRemoveFromSetlist={onRemoveFromSetlist}
+              onReorder={handleReorder}
+              onEditSongNote={handleOpenSongNote}
+            />
+          ))}
+        </View>
+      </Animated.ScrollView>
+
+      {/* Modal para Editar Nota de Canción Específica */}
+      <Modal
+        visible={!!editingSong}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditingSong(null)}
+      >
+        <TouchableOpacity
+          style={[styles.songNoteModalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}
+          activeOpacity={1}
+          onPress={() => setEditingSong(null)}
+        >
+          <View style={styles.songNoteModalCard} onStartShouldSetResponder={() => true}>
+            <View style={styles.songNoteModalHeader}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                <FileText size={18} color={COLORS.accent} />
+                <Text style={styles.songNoteModalTitle} numberOfLines={1}>
+                  Nota: {editingSong?.name}
+                </Text>
+              </View>
+              <TouchableOpacity onPress={() => setEditingSong(null)} style={{ padding: 4 }}>
+                <X size={20} color={COLORS.foreground} />
+              </TouchableOpacity>
+            </View>
+
+            <TextInput
+              style={styles.songNoteInput}
+              value={songNoteText}
+              onChangeText={setSongNoteText}
+              placeholder="Ej: Entrar directo al coro, tono F#, sin intro..."
+              placeholderTextColor={COLORS.mutedForeground}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              autoFocus
+            />
+
+            <View style={styles.songNoteModalActions}>
+              {activeSetlist?.songNotes?.[editingSong?.id || ''] ? (
+                <TouchableOpacity
+                  style={styles.deleteSongNoteBtn}
+                  onPress={handleDeleteSongNote}
+                  disabled={isSavingNote}
+                >
+                  <Trash2 size={16} color="#ef4444" />
+                  <Text style={styles.deleteSongNoteBtnText}>Eliminar</Text>
+                </TouchableOpacity>
+              ) : <View style={{ flex: 1 }} />}
+
+              <TouchableOpacity
+                style={styles.saveSongNoteBtn}
+                onPress={handleSaveSongNote}
+                disabled={isSavingNote}
+              >
+                {isSavingNote ? (
+                  <ActivityIndicator size="small" color="#fff" />
+                ) : (
+                  <>
+                    <Check size={16} color="#fff" />
+                    <Text style={styles.saveSongNoteBtnText}>Guardar</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </>
   );
 };
 
@@ -428,5 +568,117 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: '#ef444420',
+  },
+  compactNoteBadgeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.1)',
+    marginRight: 6,
+  },
+  compactNoteBadgeBtnActive: {
+    backgroundColor: 'rgba(59, 130, 246, 0.18)',
+    borderColor: 'rgba(59, 130, 246, 0.4)',
+  },
+  compactNoteBadgeText: {
+    color: COLORS.accent,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  songNoteBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    alignSelf: 'flex-start',
+  },
+  songNoteBadgeText: {
+    color: COLORS.accent,
+    fontSize: 11,
+    fontWeight: '500',
+    maxWidth: 200,
+  },
+  // Modal de notas de canción
+  songNoteModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  songNoteModalCard: {
+    width: '100%',
+    backgroundColor: COLORS.surface,
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+  songNoteModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 14,
+  },
+  songNoteModalTitle: {
+    color: COLORS.foreground,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  songNoteInput: {
+    backgroundColor: COLORS.background,
+    color: COLORS.foreground,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    minHeight: 100,
+    marginBottom: 16,
+  },
+  songNoteModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 10,
+  },
+  deleteSongNoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    backgroundColor: '#ef444415',
+    borderWidth: 1,
+    borderColor: '#ef444430',
+  },
+  deleteSongNoteBtnText: {
+    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  saveSongNoteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 10,
+    backgroundColor: COLORS.accent,
+  },
+  saveSongNoteBtnText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });

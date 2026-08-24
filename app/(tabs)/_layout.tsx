@@ -12,15 +12,27 @@ import {
 
 import { COLORS } from "../../src/constants/theme";
 
-function AnimatedTabButton({ children, onPress, accessibilityState }: any) {
+function AnimatedTabButton({ children, onPress, onPressIn, onPressOut, accessibilityState }: any) {
     const selected = accessibilityState?.selected;
-    const scale = useSharedValue(1);
-    const opacity = useSharedValue(0.7);
+    const scale = useSharedValue(selected ? 1.1 : 1);
+    const opacity = useSharedValue(selected ? 1 : 0.6);
 
     useEffect(() => {
-        scale.value = withSpring(selected ? 1.1 : 1, { damping: 12, stiffness: 120 });
+        scale.value = withSpring(selected ? 1.1 : 1, { damping: 12, stiffness: 150 });
         opacity.value = withSpring(selected ? 1 : 0.6, { damping: 12 });
     }, [selected]);
+
+    const handlePressIn = (e: any) => {
+        scale.value = withSpring(0.85, { damping: 15, stiffness: 300 });
+        opacity.value = withSpring(0.9, { damping: 15 });
+        onPressIn?.(e);
+    };
+
+    const handlePressOut = (e: any) => {
+        scale.value = withSpring(selected ? 1.1 : 1, { damping: 12, stiffness: 150 });
+        opacity.value = withSpring(selected ? 1 : 0.6, { damping: 12 });
+        onPressOut?.(e);
+    };
 
     const animatedStyle = useAnimatedStyle(() => {
         return {
@@ -32,7 +44,13 @@ function AnimatedTabButton({ children, onPress, accessibilityState }: any) {
     return (
         <Pressable
             onPress={onPress}
-            style={styles.tabButton}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            android_ripple={{ color: 'rgba(59, 130, 246, 0.25)', borderless: true, radius: 28 }}
+            style={({ pressed }) => [
+                styles.tabButton,
+                pressed && styles.tabButtonPressed
+            ]}
         >
             <Animated.View style={[styles.innerButton, animatedStyle]}>
                 {children}
@@ -111,6 +129,10 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        borderRadius: 16,
+    },
+    tabButtonPressed: {
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
     },
     innerButton: {
         alignItems: 'center',

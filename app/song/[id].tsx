@@ -7,9 +7,9 @@ import { COLORS } from '../../src/constants/theme';
 
 export default function SongScreen() {
     const { id } = useLocalSearchParams();
-    const { 
-        selectedSong, 
-        songContent, 
+    const {
+        selectedSong,
+        songContent,
         songSettings,
         handleSaveSongSettings,
         myDirectorSession,

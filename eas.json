@@ -5,7 +5,14 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "APP_VARIANT": "development",
+        "EXPO_PUBLIC_DRIVE_FOLDER_ID": "1PYFMlc10NcEScXcF6KzbbhtTLKZ3pB5L"
+      }
     },
     "preview": {
       "channel": "preview",
@@ -13,13 +20,16 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "https://olylobxxlntvlfejvaog.supabase.co",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "sb_publishable_C8HJEEf3hx2e_oh4wHyVVg_oTkrJYKM",
+        "APP_VARIANT": "preview",
         "EXPO_PUBLIC_DRIVE_FOLDER_ID": "1PYFMlc10NcEScXcF6KzbbhtTLKZ3pB5L"
       }
     },
     "production": {
-      "channel": "production"
+      "channel": "production",
+      "env": {
+        "APP_VARIANT": "production",
+        "EXPO_PUBLIC_DRIVE_FOLDER_ID": "1PYFMlc10NcEScXcF6KzbbhtTLKZ3pB5L"
+      }
     }
   },
   "submit": {

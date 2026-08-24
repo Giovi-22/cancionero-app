@@ -1,26 +1,34 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
   StyleSheet, Text, View, ScrollView, TouchableOpacity,
-  Dimensions, TextInput, Keyboard, Platform, AppState,
-  PanResponder, Animated, Alert, ActivityIndicator, KeyboardAvoidingView, Modal
+  Platform, Alert
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Audio } from 'expo-av';
+
 import {
-  ChevronLeft, ChevronRight, Settings, Play, Pause, Maximize2,
-  Plus, Minus, X, StickyNote, Clock, Radio, Edit2, List, Share2,
-  Music, Hash, FastForward, Activity, AlertTriangle
-} from 'lucide-react-native';
-import {
-  parseChordPro, transposeChordPro
+  parseChordPro, transposeChordPro, extractTitleFromChordPro, rebuildChordProFromParsedLines
 } from '../utils/chordpro';
+import { legacyToChordPro } from '../utils/legacyToChordPro';
 import { transposeChord } from '../utils/chordUtils';
 import { LiveSessionService } from '../services/LiveSessionService';
 import { SongMetadata } from '../types';
 import { PdfService } from '../services/PdfService';
+import { FileSystemService } from '../services/FileSystemService';
 import { PedalHandler } from './PedalHandler';
-import { Audio } from 'expo-av';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+// Sub-componentes modularizados
+import { DraggableNote } from './songViewer/DraggableNote';
+import { EditToolBanner } from './songViewer/EditToolBanner';
+import { FloatingControlsBar } from './songViewer/FloatingControlsBar';
+import { NoteEditOverlay } from './songViewer/NoteEditOverlay';
+import { ColorPickerModal } from './songViewer/ColorPickerModal';
+import { ChordProModal } from './songViewer/ChordProModal';
+import { LineEditModal } from './songViewer/LineEditModal';
+import { SettingsModal } from './songViewer/SettingsModal';
+import { SongViewerInfoBar } from './songViewer/SongViewerInfoBar';
+import { SongViewerHeader } from './songViewer/SongViewerHeader';
+import { SetlistNavSubHeader } from './songViewer/SetlistNavSubHeader';
 
 const COLORS = {
   background: '#0a0a0a', surface: '#1a1a1a', foreground: '#ffffff',
@@ -29,16 +37,13 @@ const COLORS = {
 
 const LEGACY_FOOTER_TEXT = "Ministerio de Alabanza ICBS";
 const DISPLAY_FOOTER_TEXT = "CANCIONERO APP";
-// ── Calculadora de Capo ─────────────────────────────────────────────────
+
 const NOTE_SEMITONES: Record<string, number> = {
   'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
   'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8,
   'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
 };
 const NOTES_DISPLAY = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-const NOTE_LABELS: Record<string, string> = {
-  'C#': 'C#/D♭', 'D#': 'D#/E♭', 'F#': 'F#/G♭', 'G#': 'G#/A♭', 'A#': 'A#/B♭'
-};
 
 interface SongViewerProps {
   content: string;
@@ -59,86 +64,8 @@ interface SongViewerProps {
   // Global theme
   globalTheme?: any;
   onSaveGlobalTheme?: (theme: any) => void;
+  onContentUpdated?: (newContent: string) => void;
 }
-
-/**
- * DraggableNote simplificado: solo muestra el badge de la nota y permite
- * arrastrarla. La edición se delega al overlay del SongViewer para evitar
- * que el teclado tape el input.
- */
-const DraggableNote = ({ id, initialText, initialX, initialY, isStageMode, onRequestEdit, onUpdate, onDelete, setScrollEnabled }: any) => {
-  const pan = useRef(new Animated.ValueXY({ x: initialX || 0, y: initialY || 0 })).current;
-  const offset = useRef({ x: initialX || 0, y: initialY || 0 });
-
-  // Ref con valores dinámicos para evitar stale closures en PanResponder
-  const stateRef = useRef({ id, initialText, onUpdate, setScrollEnabled, isStageMode });
-  stateRef.current = { id, initialText, onUpdate, setScrollEnabled, isStageMode };
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => !stateRef.current.isStageMode,
-      onMoveShouldSetPanResponder: (_, g) => !stateRef.current.isStageMode && (Math.abs(g.dx) > 5 || Math.abs(g.dy) > 5),
-      onPanResponderGrant: () => {
-        stateRef.current.setScrollEnabled(false);
-        pan.setOffset(offset.current);
-        pan.setValue({ x: 0, y: 0 });
-      },
-      onPanResponderMove: Animated.event(
-        [null, { dx: pan.x, dy: pan.y }],
-        { useNativeDriver: false }
-      ),
-      onPanResponderRelease: () => {
-        pan.flattenOffset();
-        offset.current = { x: (pan.x as any)._value, y: (pan.y as any)._value };
-        stateRef.current.onUpdate(
-          stateRef.current.id,
-          stateRef.current.initialText,
-          offset.current.x,
-          offset.current.y
-        );
-        stateRef.current.setScrollEnabled(true);
-      }
-    })
-  ).current;
-
-  useEffect(() => {
-    pan.setValue({ x: initialX || 0, y: initialY || 0 });
-    offset.current = { x: initialX || 0, y: initialY || 0 };
-  }, [initialX, initialY]);
-
-  // No mostrar notas sin texto (aún no guardadas)
-  if (!initialText) return null;
-
-  return (
-    <Animated.View
-      style={{ position: 'absolute', transform: pan.getTranslateTransform(), zIndex: 100 }}
-      {...(isStageMode ? {} : panResponder.panHandlers)}
-    >
-      <View style={[styles.noteBadge, !isStageMode && { borderColor: '#dc2626', borderWidth: 1 }]}>
-        <StickyNote size={12} color="#000" />
-        <Text style={styles.noteBadgeText}>{initialText}</Text>
-        {!isStageMode && (
-          <TouchableOpacity
-            onPress={() => onRequestEdit(id, initialText)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={{ marginLeft: 5 }}
-          >
-            <Edit2 size={12} color="#000" />
-          </TouchableOpacity>
-        )}
-        {!isStageMode && (
-          <TouchableOpacity
-            onPress={() => onDelete(id)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-            style={{ marginLeft: 5 }}
-          >
-            <X size={14} color="#dc2626" />
-          </TouchableOpacity>
-        )}
-      </View>
-    </Animated.View>
-  );
-};
 
 export const SongViewer: React.FC<SongViewerProps> = ({
   content, title, songId, onClose,
@@ -146,8 +73,16 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   isDirector = false, directorSessionId,
   setlistSongs = [], onDirectorNext, onDirectorPrev,
   followSessionId, onFollowSongChange,
-  globalTheme, onSaveGlobalTheme
+  globalTheme, onSaveGlobalTheme,
+  onContentUpdated
 }) => {
+  // Título a mostrar: prioriza {title:} del contenido ChordPro sobre el nombre del archivo
+  const displayTitle = useMemo(() => {
+    const titleFromContent = extractTitleFromChordPro(content || '');
+    if (titleFromContent) return titleFromContent;
+    return (title || '').replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, '');
+  }, [content, title]);
+
   const [transpose, setTranspose] = useState<number>(initialSettings?.transpose || 0);
   const [capo, setCapo] = useState(initialSettings?.capo || 0);
   const [fontSize, setFontSize] = useState(initialSettings?.fontSize || 16);
@@ -161,9 +96,9 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   const [bpm, setBpm] = useState(initialSettings?.bpm || 120);
   const [isMetronomeActive, setIsMetronomeActive] = useState(false);
   const [beat, setBeat] = useState(false);
-  const [beatCount, setBeatCount] = useState(0);       // 0 = downbeat, >0 = other beats
+  const [beatCount, setBeatCount] = useState(0);
   const [metronomeMuted, setMetronomeMuted] = useState(false);
-  const [timeSignature, setTimeSignature] = useState(4); // beats per measure
+  const [timeSignature, setTimeSignature] = useState(4);
   const beatCountRef = useRef(0);
   const soundAccentRef = useRef<Audio.Sound | null>(null);
   const soundNormalRef = useRef<Audio.Sound | null>(null);
@@ -176,57 +111,123 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     chords: COLORS.accent
   });
   const [colorPickerOpen, setColorPickerOpen] = useState(false);
-  const [pickerTab, setPickerTab] = useState<'background'|'lyrics'|'chords'>('background');
-  // helper: true si el color es oscuro
+
   const isDark = (hex: string) => {
-    const r = parseInt(hex.slice(1,3)||'0',16);
-    const g = parseInt(hex.slice(3,5)||'0',16);
-    const b = parseInt(hex.slice(5,7)||'0',16);
-    return (r*299 + g*587 + b*114) / 1000 < 128;
+    const r = parseInt(hex.slice(1, 3) || '0', 16);
+    const g = parseInt(hex.slice(3, 5) || '0', 16);
+    const b = parseInt(hex.slice(5, 7) || '0', 16);
+    return (r * 299 + g * 587 + b * 114) / 1000 < 128;
   };
   const headerFg = isDark(theme.background) ? '#ffffff' : '#111111';
+
   // Estado del overlay de edición de notas
   const [editingNote, setEditingNote] = useState<{ id: string; text: string } | null>(null);
+
+  // Estado del modal de código ChordPro
+  const [showChordPro, setShowChordPro] = useState(false);
+
+  // Estado de la herramienta de edición visual de canciones
+  const [isEditToolActive, setIsEditToolActive] = useState(false);
+  const [editingLineIndex, setEditingLineIndex] = useState<number | null>(null);
+  const [editingLineText, setEditingLineText] = useState('');
+  const [inputSelection, setInputSelection] = useState({ start: 0, end: 0 });
+
+  // Estado local sincronizado de la canción
+  const [currentContent, setCurrentContent] = useState(content);
+
+  useEffect(() => {
+    setCurrentContent(content);
+  }, [content]);
+
+  // Insertar acorde en la posición actual del cursor dentro del modal de edición
+  const insertAtCursor = (textToInsert: string) => {
+    const start = inputSelection.start;
+    const end = inputSelection.end;
+    const newText = editingLineText.slice(0, start) + textToInsert + editingLineText.slice(end);
+    setEditingLineText(newText);
+    const newPos = start + textToInsert.length;
+    setInputSelection({ start: newPos, end: newPos });
+  };
+
+  const openLineEditModal = (lineIndex: number) => {
+    const line = parsedLines[lineIndex];
+    if (!line) return;
+
+    let lineText = '';
+    if (line.type === 'section') {
+      lineText = line.blocks.map(b => b.text).join('');
+    } else {
+      lineText = line.blocks.map(b => (b.chord ? `[${b.chord}]` : '') + (b.text || '')).join('');
+    }
+
+    setEditingLineText(lineText);
+    setInputSelection({ start: lineText.length, end: lineText.length });
+    setEditingLineIndex(lineIndex);
+  };
+
+  const handleSaveEditedLine = async () => {
+    if (editingLineIndex === null) return;
+
+    const newParsedLines = [...parsedLines];
+    const rawLine = editingLineText.trim();
+
+    if (rawLine.startsWith('[') && rawLine.endsWith(']') && !rawLine.slice(1, -1).includes(']')) {
+      newParsedLines[editingLineIndex] = {
+        type: 'section',
+        blocks: [{ text: rawLine }]
+      };
+    } else {
+      const parsedSingleLine = parseChordPro(editingLineText);
+      const firstLine = Array.isArray(parsedSingleLine) && parsedSingleLine.length > 0 ? parsedSingleLine[0] : null;
+      if (firstLine) {
+        newParsedLines[editingLineIndex] = firstLine;
+      } else {
+        newParsedLines[editingLineIndex] = {
+          type: 'chords-lyrics',
+          isMetadata: false,
+          blocks: [{ text: editingLineText }]
+        };
+      }
+    }
+
+    const updatedChordPro = rebuildChordProFromParsedLines(newParsedLines);
+    setCurrentContent(updatedChordPro);
+
+    try {
+      await FileSystemService.saveSongContent(songId, updatedChordPro);
+      onContentUpdated?.(updatedChordPro);
+    } catch (e) {
+      console.error('Error guardando línea editada:', e);
+    }
+
+    setEditingLineIndex(null);
+  };
 
   // Aislar estado por canción
   const prevSongId = useRef(songId);
   useEffect(() => {
     if (prevSongId.current !== songId) {
-      prevSongId.current = songId;
       setTranspose(initialSettings?.transpose || 0);
       setCapo(initialSettings?.capo || 0);
       setFontSize(initialSettings?.fontSize || 16);
       setViewMode(initialSettings?.viewMode || 'all');
-      setScrollSpeed(initialSettings?.scrollSpeed || 1);
-      setPedalSpeed(initialSettings?.pedalSpeed || 0.5);
       setMusicianNotes(initialSettings?.musicianNotes || {});
       setBpm(initialSettings?.bpm || 120);
-      setTheme(globalTheme || initialSettings?.theme || {
-        background: COLORS.background,
-        lyrics: COLORS.foreground,
-        chords: COLORS.accent
-      });
-      setIsScrolling(false);
+      prevSongId.current = songId;
     }
   }, [songId, initialSettings]);
 
   const insets = useSafeAreaInsets();
-
   const scrollRef = useRef<ScrollView>(null);
   const scrollPosRef = useRef(0);
   const scrollIntervalRef = useRef<any>(null);
   const pedalRafRef = useRef<number | null>(null);
   const pedalLastTickRef = useRef<number>(0);
-  // Ref espejo de pedalSpeed para leer el valor actual dentro del rAF
-  // sin necesidad de recrear el callback (evita stale closure).
   const pedalSpeedRef = useRef(0.2);
-  // Ref para medir la posición en pantalla del área de scroll
-  // (necesario para convertir coordenadas de toque a coordenadas del contenido)
   const scrollAreaRef = useRef<View>(null);
   const scrollAreaPageY = useRef(0);
   const scrollAreaPageX = useRef(0);
 
-  // Mantener ref sincronizado con el estado de velocidad del pedal
   useEffect(() => {
     pedalSpeedRef.current = pedalSpeed;
   }, [pedalSpeed]);
@@ -237,7 +238,6 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       scrollAreaPageY.current = pageY;
     });
   };
-
 
   // ── Metrónomo ──────────────────────────────────
   useEffect(() => {
@@ -262,33 +262,29 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       }
     }
     loadSounds();
-
     return () => {
       isMounted = false;
-      if (soundAccentRef.current) soundAccentRef.current.unloadAsync();
-      if (soundNormalRef.current) soundNormalRef.current.unloadAsync();
+      soundAccentRef.current?.unloadAsync();
+      soundNormalRef.current?.unloadAsync();
     };
   }, []);
 
-  const playMetronomeClick = async (isAccent: boolean) => {
+  const playMetronomeClick = async (isDownbeat: boolean) => {
     try {
-      const sound = isAccent ? soundAccentRef.current : soundNormalRef.current;
-      if (sound) {
-        await sound.setPositionAsync(0);
-        await sound.playAsync();
+      const soundObj = isDownbeat ? soundAccentRef.current : soundNormalRef.current;
+      if (soundObj) {
+        await soundObj.replayAsync();
       }
     } catch (err) {
-      console.log('Error playing metronome click', err);
+      console.log('Error playing metronome sound', err);
     }
   };
 
   useEffect(() => {
-    let interval: any;
+    let interval: any = null;
     if (isMetronomeActive) {
-      // Reiniciar contador al activar
       beatCountRef.current = 0;
       setBeatCount(0);
-
       interval = setInterval(() => {
         const isDownbeat = beatCountRef.current === 0;
         setBeat(true);
@@ -306,16 +302,19 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   }, [isMetronomeActive, bpm, metronomeMuted, timeSignature]);
 
   // ── Procesar canción ───────────────────────────
-  const parsedLines = useMemo(() => {
-    // 1er intento: eliminar el footer si está suelto
-    const contentWithoutFooter = content.replace(new RegExp(LEGACY_FOOTER_TEXT, 'gi'), '');
-    const transposed = transposeChordPro(contentWithoutFooter, transpose - capo);
-    const result = parseChordPro(transposed);
+  const normalizedContent = useMemo(() => {
+    return legacyToChordPro(currentContent);
+  }, [currentContent]);
 
-    // 2do intento: si el footer fue fusionado con acordes (ej. Outro), 
-    // vaciamos el texto pero conservamos los acordes para no perder las notas.
+  const transposedContent = useMemo(() => {
+    const contentWithoutFooter = normalizedContent.replace(new RegExp(LEGACY_FOOTER_TEXT, 'gi'), '');
+    return transposeChordPro(contentWithoutFooter, transpose - capo);
+  }, [normalizedContent, transpose, capo]);
+
+  const parsedLines = useMemo(() => {
+    const result = parseChordPro(transposedContent);
     const footerNormalized = LEGACY_FOOTER_TEXT.toLowerCase().replace(/\s+/g, ' ').trim();
-    
+
     return result.map((line) => {
       const lineText = line.blocks
         .map((b) => b.text || '')
@@ -323,7 +322,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         .toLowerCase()
         .replace(/\s+/g, ' ')
         .trim();
-        
+
       if (lineText.includes(footerNormalized)) {
         return {
           ...line,
@@ -332,14 +331,12 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       }
       return line;
     });
-  }, [content, transpose, capo]);
+  }, [transposedContent]);
 
   const { originalTone, transposedTone } = useMemo(() => {
-    // 1. Intentar buscar directiva de ChordPro {key: C} o {tono: C} o {t: C} (con/sin corchetes)
-    let match = content.match(/\{\s*(?:key|tono|t)\s*:\s*\[?([A-G][b#]?[m]?)\]?\s*\}/i);
+    let match = currentContent.match(/\{\s*(?:key|tono|t)\s*:\s*\[?([A-G][b#]?[m]?)\]?\s*\}/i);
     if (!match) {
-      // 2. Si no, buscar línea estándar Tono: C o Key: C (con/sin espacios iniciales y con/sin corchetes)
-      match = content.match(/^\s*(?:TONO|KEY):\s*\[?([A-G][b#]?[m]?)\]?/mi);
+      match = currentContent.match(/^\s*(?:TONO|KEY):\s*\[?([A-G][b#]?[m]?)\]?/mi);
     }
     const orig = match ? match[1] : null;
     let trans = orig;
@@ -347,15 +344,14 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       trans = transposeChord(orig, transpose - capo);
     }
     return { originalTone: orig, transposedTone: trans };
-  }, [content, transpose, capo]);
+  }, [currentContent, transpose, capo]);
 
-  // ── Calculadora de Capo: tono que suena (independiente del capo físico) ──
   const soundingKeySemitone = useMemo(() => {
     if (!originalTone) return null;
-    const baseNote = originalTone.replace('m', '').trim();
+    const baseNote = originalTone.replace(/m$/i, '');
     const baseSemitone = NOTE_SEMITONES[baseNote];
     if (baseSemitone === undefined) return null;
-    return (baseSemitone + transpose + 120) % 12; // +120 cubre transposes negativos
+    return (baseSemitone + transpose + 120) % 12;
   }, [originalTone, transpose]);
 
   const soundingKeyName = useMemo(() => {
@@ -363,8 +359,6 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     const isMinor = originalTone.toLowerCase().endsWith('m');
     return NOTES_DISPLAY[soundingKeySemitone] + (isMinor ? 'm' : '');
   }, [soundingKeySemitone, originalTone]);
-
-
 
   // ── Auto-scroll ────────────────────────────────
   useEffect(() => {
@@ -379,33 +373,19 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     return () => clearInterval(scrollIntervalRef.current);
   }, [isScrolling, scrollSpeed]);
 
-  // ── Pedal BT: Scroll Fluido con momentum ────────────────────────────────────
-  // En lugar de detener/reiniciar el rAF loop, mantenemos UNA SOLA instancia
-  // del loop corriendo siempre mientras la velocidad sea > 0. Esto elimina
-  // completamente el micro-salto que se produce al reiniciar el loop.
-  //
-  // Modelo:
-  //   pedalVelocityRef  → velocidad actual en px/ms (rampa suave arriba/abajo)
-  //   pedalTargetVelRef → velocidad objetivo: >0 scrolling, 0 detenido
-  //   pedalScrollDirRef → 'up' | 'down' | null
-  //
-  // Al presionar pedal:  pedalTargetVelRef = speed, pedalScrollDirRef = dir
-  // Al soltar pedal:     pedalTargetVelRef = 0  (el loop desacelera solo)
-
-  const pedalScrollDirRef    = useRef<'up' | 'down' | null>(null);
-  const pedalVelocityRef     = useRef<number>(0);   // velocidad actual px/ms
-  const pedalTargetVelRef    = useRef<number>(0);   // velocidad objetivo px/ms
-  const ACCEL_RATE           = 0.008;               // aceleración px/ms²
-  const DECEL_RATE           = 0.012;               // desaceleración px/ms²
-  const MIN_VELOCITY         = 0.005;               // umbral para considerar detenido
+  // ── Pedal BT: Scroll Fluido ────────────────────
+  const pedalScrollDirRef = useRef<'up' | 'down' | null>(null);
+  const pedalVelocityRef = useRef<number>(0);
+  const pedalTargetVelRef = useRef<number>(0);
+  const ACCEL_RATE = 0.008;
+  const DECEL_RATE = 0.012;
+  const MIN_VELOCITY = 0.005;
 
   const startPedalScroll = useCallback((direction: 'up' | 'down') => {
     pedalScrollDirRef.current = direction;
-    pedalTargetVelRef.current = pedalSpeedRef.current * 0.3; // px/ms objetivo
+    pedalTargetVelRef.current = pedalSpeedRef.current * 0.3;
 
-    // Arrancar el loop solo si no estaba corriendo
     if (pedalRafRef.current !== null) return;
-
     pedalLastTickRef.current = 0;
 
     const tick = (timestamp: number) => {
@@ -415,37 +395,26 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         return;
       }
 
-      const delta = Math.min(timestamp - pedalLastTickRef.current, 50);
+      const dt = Math.min(timestamp - pedalLastTickRef.current, 50);
       pedalLastTickRef.current = timestamp;
 
       const target = pedalTargetVelRef.current;
-      const current = pedalVelocityRef.current;
+      let vel = pedalVelocityRef.current;
 
-      // Interpolar suavemente hacia la velocidad objetivo
-      if (current < target) {
-        pedalVelocityRef.current = Math.min(current + ACCEL_RATE * delta, target);
-      } else if (current > target) {
-        pedalVelocityRef.current = Math.max(current - DECEL_RATE * delta, 0);
+      if (target > 0) {
+        vel = Math.min(target, vel + ACCEL_RATE * dt);
+      } else {
+        vel = Math.max(0, vel - DECEL_RATE * dt);
       }
 
-      const vel = pedalVelocityRef.current;
+      pedalVelocityRef.current = vel;
 
-      if (vel > MIN_VELOCITY) {
-        const step = vel * delta;
-        const dir = pedalScrollDirRef.current;
-        const nextY = dir === 'down'
-          ? scrollPosRef.current + step
-          : Math.max(0, scrollPosRef.current - step);
-
-        scrollRef.current?.scrollTo({ y: nextY, animated: false });
-        scrollPosRef.current = nextY;
-      }
-
-      // Continuar el loop solo si hay velocidad residual
-      if (pedalVelocityRef.current > MIN_VELOCITY || target > 0) {
+      if (vel > MIN_VELOCITY && pedalScrollDirRef.current !== null) {
+        const delta = vel * dt * (pedalScrollDirRef.current === 'down' ? 1 : -1);
+        scrollPosRef.current = Math.max(0, scrollPosRef.current + delta);
+        scrollRef.current?.scrollTo({ y: scrollPosRef.current, animated: false });
         pedalRafRef.current = requestAnimationFrame(tick);
       } else {
-        // Loop completamente detenido
         pedalRafRef.current = null;
         pedalVelocityRef.current = 0;
         pedalScrollDirRef.current = null;
@@ -457,21 +426,19 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   }, []);
 
   const stopPedalScroll = useCallback(() => {
-    // Solo bajamos el objetivo a 0; el loop desacelera suavemente por sí solo
     pedalTargetVelRef.current = 0;
   }, []);
 
   const handlePedalScrollUp = useCallback(() => startPedalScroll('up'), [startPedalScroll]);
   const handlePedalScrollDown = useCallback(() => startPedalScroll('down'), [startPedalScroll]);
 
-  // ── Director: emitir canción cuando se abre ────
+  // ── Director / Follower ────────────────────────
   useEffect(() => {
     if (isDirector && directorSessionId && songId) {
       LiveSessionService.updateCurrentSong(directorSessionId, songId);
     }
   }, [isDirector, directorSessionId, songId]);
 
-  // ── Seguidor: escuchar cambios de canción ──────
   useEffect(() => {
     if (!followSessionId || !onFollowSongChange) return;
     const unsub = LiveSessionService.subscribeToSession(followSessionId, (newSongId) => {
@@ -482,107 +449,104 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     return unsub;
   }, [followSessionId, songId, onFollowSongChange]);
 
-  // ── Sincronizar GlobalTheme ───────────────────
   useEffect(() => {
     if (globalTheme) {
       setTheme(globalTheme);
     }
   }, [globalTheme]);
 
-  // ── Guardar ajustes ────────────────────────────
   useEffect(() => {
     onSaveSettings?.({
       songId,
       settings: { transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm }
     });
-  }, [transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm, songId]);
+  }, [transpose, capo, fontSize, viewMode, scrollSpeed, pedalSpeed, musicianNotes, bpm]);
 
-  const addFloatingNoteAtLine = (tapPageX: number, tapPageY: number) => {
-    // Solo permitir agregar notas cuando NO está en modo escenario
-    if (isStageMode) return;
-    const newId = `note_${Date.now()}`;
-    // Convertir coordenadas de pantalla a coordenadas del contenido del ScrollView
-    const noteX = Math.max(0, tapPageX - scrollAreaPageX.current);
-    const noteY = Math.max(0, tapPageY - scrollAreaPageY.current + scrollPosRef.current);
-    // Crear la nota y abrir el overlay de edición inmediatamente
-    setMusicianNotes((p: any) => ({
-      ...p,
-      [newId]: { text: '', x: noteX, y: noteY }
-    }));
-    setEditingNote({ id: newId, text: '' });
+  // ── Generar PDF ────────────────────────────────
+  const handleSharePdf = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      await PdfService.generateAndShareSongPdf(displayTitle, transposedContent, {
+        transpose,
+        capo,
+        fontSize,
+        viewMode,
+        bpm,
+        theme
+      });
+    } catch (error) {
+      console.error('Error generando PDF:', error);
+      Alert.alert('Error', 'No se pudo generar el archivo PDF.');
+    } finally {
+      setIsGeneratingPdf(false);
+    }
   };
 
-  const handleRequestEdit = useCallback((id: string, currentText: string) => {
-    setEditingNote({ id, text: currentText });
-  }, []);
+  // ── Notas flotantes de músicos ─────────────────
+  const addFloatingNoteAtLine = (_pageX: number, pageY: number) => {
+    if (isStageMode) return;
+    const contentY = pageY - scrollAreaPageY.current + scrollPosRef.current;
+    const noteId = `note_${Date.now()}`;
+    const newY = Math.max(10, Math.round(contentY - 20));
+    setEditingNote({ id: noteId, text: '' });
+    setMusicianNotes((prev: any) => ({
+      ...prev,
+      [noteId]: { text: '', x: 20, y: newY }
+    }));
+  };
 
-  const handleSaveNote = useCallback(() => {
+  const handleSaveNote = () => {
     if (!editingNote) return;
-    const { id, text } = editingNote;
-    setEditingNote(null);
-    if (!text.trim()) {
-      // Nota vacía → eliminar
-      setMusicianNotes((p: any) => { const n = { ...p }; delete n[id]; return n; });
+    const trimmed = editingNote.text.trim();
+    if (!trimmed) {
+      setMusicianNotes((prev: any) => {
+        const next = { ...prev };
+        delete next[editingNote.id];
+        return next;
+      });
     } else {
-      setMusicianNotes((p: any) => ({ ...p, [id]: { ...p[id], text } }));
-    }
-  }, [editingNote]);
-
-  const handleCancelNote = useCallback(() => {
-    if (!editingNote) return;
-    const { id } = editingNote;
-    setEditingNote(null);
-    // Si la nota no tenía texto previo (nueva), eliminarla al cancelar
-    setMusicianNotes((p: any) => {
-      if (p[id] && !p[id].text) {
-        const n = { ...p }; delete n[id]; return n;
-      }
-      return p;
-    });
-  }, [editingNote]);
-
-  const handleSharePdf = () => {
-    Alert.alert(
-      'Exportar a PDF',
-      'Elige el formato del PDF para compartir',
-      [
-        {
-          text: 'Con Acordes (Tono Actual)',
-          onPress: async () => {
-            setIsGeneratingPdf(true);
-            try {
-              await PdfService.generateAndShare(title, parsedLines, 'all', transpose, capo, bpm);
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'No se pudo generar el PDF');
-            } finally {
-              setIsGeneratingPdf(false);
-            }
-          }
-        },
-        {
-          text: 'Solo Letra',
-          onPress: async () => {
-            setIsGeneratingPdf(true);
-            try {
-              await PdfService.generateAndShare(title, parsedLines, 'lyrics', transpose, capo, bpm);
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'No se pudo generar el PDF');
-            } finally {
-              setIsGeneratingPdf(false);
-            }
-          }
-        },
-        {
-          text: 'Cancelar',
-          style: 'cancel'
+      setMusicianNotes((prev: any) => ({
+        ...prev,
+        [editingNote.id]: {
+          ...(prev[editingNote.id] || { x: 20, y: 100 }),
+          text: trimmed
         }
-      ]
-    );
+      }));
+    }
+    setEditingNote(null);
+  };
+
+  const handleCancelNote = () => {
+    if (!editingNote) return;
+    const existing = musicianNotes[editingNote.id];
+    if (!existing || !existing.text) {
+      setMusicianNotes((prev: any) => {
+        const next = { ...prev };
+        delete next[editingNote.id];
+        return next;
+      });
+    }
+    setEditingNote(null);
+  };
+
+  const handleDeleteNote = (noteId: string) => {
+    setMusicianNotes((prev: any) => {
+      const next = { ...prev };
+      delete next[noteId];
+      return next;
+    });
+  };
+
+  const handleUpdateNote = (noteId: string, text: string, x: number, y: number) => {
+    setMusicianNotes((prev: any) => ({
+      ...prev,
+      [noteId]: { text, x, y }
+    }));
   };
 
   const getRenderItems = useCallback((blocks: any[], isTitle: boolean) => {
     if (isTitle) {
-      return blocks.map(b => ({ text: b.text.replace(/\[TITULO\]/i, '').trim() }));
+      return blocks.map(b => ({ chord: undefined as string | undefined, text: b.text.replace(/\[TITULO\]/i, '').trim() }));
     }
 
     const items: { chord?: string; text: string }[] = [];
@@ -590,526 +554,352 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     for (let i = 0; i < blocks.length; i++) {
       const block = blocks[i];
       const rawText = block.text || '';
+      const words = rawText.match(/^\s+|\S+\s*/g) || [];
 
-      // Si el bloque no tiene texto o solo tiene espacios, mantenemos el acorde
-      // y creamos un ítem separado para los espacios para que no se colapsen.
-      if (!rawText.trim()) {
-        if (block.chord) {
-          items.push({
-            chord: block.chord,
-            text: ''
-          });
-        }
-        if (rawText) {
-          items.push({
-            text: rawText
-          });
-        }
+      if (words.length === 0) {
+        if (block.chord) items.push({ chord: block.chord, text: '' });
         continue;
       }
 
-      const match = rawText.match(/^(\s*)(.*?)(\s*)$/);
-      const leading = match ? match[1] : '';
-      const body = match ? match[2] : '';
-      const trailing = match ? match[3] : '';
-
-      if (leading) {
-        items.push({ text: leading });
-      }
-
-      if (body) {
-        const words = body.match(/\S+\s*/g) || [];
-        if (block.chord) {
-          items.push({
-            chord: block.chord,
-            text: words[0] || ''
-          });
-          for (let w = 1; w < words.length; w++) {
-            items.push({
-              text: words[w]
-            });
-          }
-        } else {
-          for (let w = 0; w < words.length; w++) {
-            items.push({
-              text: words[w]
-            });
-          }
+      if (block.chord) {
+        items.push({
+          chord: block.chord,
+          text: words[0]
+        });
+        for (let w = 1; w < words.length; w++) {
+          items.push({ text: words[w] });
         }
-      }
-
-      if (trailing) {
-        items.push({ text: trailing });
+      } else {
+        for (let w = 0; w < words.length; w++) {
+          items.push({ text: words[w] });
+        }
       }
     }
 
     return items;
   }, []);
 
+  /**
+ * Renderiza una línea que contiene únicamente acordes y separadores.
+ *
+ * Ejemplo:
+ *   [A] - [F#] - [B]
+ *
+ * Se muestra como:
+ *   A - F# - B
+ *
+ * manteniendo los acordes con el color configurado.
+ */
+  const renderChordOnlyLine = useCallback(
+    (blocks: any[]) => {
+      return (
+        <Text
+          style={[
+            styles.lyricText,
+            {
+              fontSize,
+              color: theme.lyrics,
+              lineHeight: fontSize * 1.4,
+            },
+          ]}
+        >
+          {blocks.map((block, index) => (
+            <React.Fragment key={`chord-only-${index}`}>
+              {block.chord && (
+                <Text
+                  style={[
+                    styles.chordText,
+                    {
+                      fontSize,
+                      color: theme.chords,
+                    },
+                  ]}
+                >
+                  {block.chord}
+                </Text>
+              )}
+
+              {block.text && (
+                <Text
+                  style={[
+                    styles.lyricText,
+                    {
+                      fontSize,
+                      color: theme.lyrics,
+                    },
+                  ]}
+                >
+                  {block.text.replace(/ /g, '\u00A0')}
+                </Text>
+              )}
+            </React.Fragment>
+          ))}
+        </Text>
+      );
+    },
+    [fontSize, theme.chords, theme.lyrics]
+  );
+
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       {/* Header principal */}
-      <View style={[styles.header, { paddingTop: Math.max(insets.top, 20) + 5 }]}>
-        <TouchableOpacity onPress={onClose} style={styles.headerBtn}>
-          <ChevronLeft size={28} color={headerFg} />
-        </TouchableOpacity>
-        <View style={{ flex: 1, alignItems: 'center', marginHorizontal: 10 }}>
-          <Text style={[styles.title, { marginHorizontal: 0, flex: 0, color: headerFg }]} numberOfLines={1}>{title}</Text>
-        </View>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <TouchableOpacity
-            onPress={handleSharePdf}
-            style={[styles.headerBtn, { marginRight: 8 }]}
-            disabled={isGeneratingPdf}
-          >
-            {isGeneratingPdf ? (
-              <ActivityIndicator size="small" color={COLORS.accent} />
-            ) : (
-              <Share2 size={22} color={headerFg} />
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => setIsStageMode(!isStageMode)} style={styles.headerBtn}>
-            <Maximize2 size={24} color={isStageMode ? COLORS.accent : headerFg} />
-          </TouchableOpacity>
-        </View>
-      </View>
+      <SongViewerHeader
+        topInset={insets.top}
+        headerFg={headerFg}
+        displayTitle={displayTitle}
+        onClose={onClose}
+        isEditToolActive={isEditToolActive}
+        onToggleEditTool={() => setIsEditToolActive(!isEditToolActive)}
+        isGeneratingPdf={isGeneratingPdf}
+        onSharePdf={handleSharePdf}
+        onOpenChordPro={() => setShowChordPro(true)}
+        isStageMode={isStageMode}
+        onToggleStageMode={() => setIsStageMode(!isStageMode)}
+      />
 
       {/* Barra de Información de Estado */}
-      <View style={styles.infoBar}>
-        <View style={[
-          styles.infoBadge,
-          (!originalTone && transpose === 0) && styles.infoBadgeInactive,
-          transpose !== 0 && { borderColor: COLORS.accent, borderWidth: 1, backgroundColor: 'transparent' }
-        ]}>
-          <Music size={12} color={transpose !== 0 ? COLORS.accent : (originalTone ? COLORS.foreground : COLORS.mutedForeground)} />
-          <Text style={[
-            styles.infoBadgeText,
-            (!originalTone && transpose === 0) && styles.infoBadgeTextInactive,
-            transpose !== 0 && { color: COLORS.accent }
-          ]}>
-            {originalTone ? `${originalTone}${transposedTone && transposedTone !== originalTone ? ` → ${transposedTone}` : ''}` : 'Tono'}
-            {transpose !== 0 ? ` (${transpose > 0 ? `+${transpose}` : transpose})` : ''}
-          </Text>
-        </View>
-        <View style={[styles.infoBadge, capo === 0 && styles.infoBadgeInactive]}>
-          <Hash size={12} color={capo > 0 ? COLORS.foreground : COLORS.mutedForeground} />
-          <Text style={[styles.infoBadgeText, capo === 0 && styles.infoBadgeTextInactive]}>
-            {capo > 0 ? `Capo ${capo}` : 'Capo'}
-          </Text>
-        </View>
-        <View style={[styles.infoBadge, !isScrolling && styles.infoBadgeInactive]}>
-          <FastForward size={12} color={isScrolling ? COLORS.foreground : COLORS.mutedForeground} />
-          <Text style={[styles.infoBadgeText, !isScrolling && styles.infoBadgeTextInactive]}>
-            {isScrolling ? `${scrollSpeed}x` : 'Scroll'}
-          </Text>
-        </View>
-        <TouchableOpacity 
-          activeOpacity={0.7}
-          onPress={() => setIsMetronomeActive(!isMetronomeActive)}
-          style={[
-          styles.infoBadge,
-          !isMetronomeActive && styles.infoBadgeInactive,
-          isMetronomeActive && beat && beatCount === 0 && { borderColor: '#f59e0b', borderWidth: 1, backgroundColor: 'rgba(245,158,11,0.1)' },
-        ]}>
-          <Activity size={12} color={
-            !isMetronomeActive ? COLORS.mutedForeground
-            : beat && beatCount === 0 ? '#f59e0b'  // downbeat: amarillo
-            : beat ? COLORS.accent                  // otros beats: azul
-            : COLORS.foreground
-          } />
-          <Text style={[styles.infoBadgeText, !isMetronomeActive && styles.infoBadgeTextInactive]}>
-            {isMetronomeActive ? `${bpm} BPM` : 'BPM'}
-          </Text>
-        </TouchableOpacity>
+      <SongViewerInfoBar
+        originalTone={originalTone}
+        transposedTone={transposedTone}
+        transpose={transpose}
+        onTransposeChange={setTranspose}
+        capo={capo}
+        isScrolling={isScrolling}
+        scrollSpeed={scrollSpeed}
+        isMetronomeActive={isMetronomeActive}
+        setIsMetronomeActive={setIsMetronomeActive}
+        beat={beat}
+        beatCount={beatCount}
+        bpm={bpm}
+      />
+
+      {/* Banner de Herramienta de Edición Visual */}
+      {isEditToolActive && (
+        <EditToolBanner onClose={() => setIsEditToolActive(false)} />
+      )}
+
+      {/* Sub-header de navegación de lista */}
+      <SetlistNavSubHeader
+        isDirector={isDirector}
+        followSessionId={followSessionId}
+        setlistSongs={setlistSongs}
+        songId={songId}
+        onDirectorPrev={onDirectorPrev}
+        onDirectorNext={onDirectorNext}
+      />
+
+      {/* Área del Contenido de Canción */}
+      <View ref={scrollAreaRef} style={{ flex: 1 }} onLayout={measureScrollArea}>
+        <ScrollView
+          ref={scrollRef}
+          style={styles.scroll}
+          contentContainerStyle={styles.scrollContent}
+          onScroll={e => {
+            if (!isScrolling && pedalScrollDirRef.current === null) {
+              scrollPosRef.current = e.nativeEvent.contentOffset.y;
+            }
+          }}
+          scrollEventThrottle={1}
+          scrollEnabled={isScrollEnabled}
+        >
+          <View style={styles.songContainer}>
+            {parsedLines.map((line, lIndex) => {
+              const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
+              const sectionColor = isStageMode ? '#fbbf24' : theme.chords;
+              const fullLineText = line.blocks.map(b => b.text).join('');
+              const isNonPlayableMetadata = line.isMetadata && /^(NOTA|TONO|KEY|BPM|TEMPO|CAPO|COMP[ÁA]S):/i.test(fullLineText);
+              // Línea de "solo acordes" (interludios, instrumentales, etc.): tiene acordes
+              // pero ningún texto de letra real debajo (sólo espacios, guiones separadores
+              // como "-", marcas de repetición, etc. entre corchetes).
+              // Sin esto, dos acordes separados por un único espacio en el ChordPro fuente
+              // (ej. "[A] [D] [F#m]") quedan pegados visualmente, porque el ancho del
+              // nombre del acorde suele ser mayor que el de un simple espacio.
+              const isChordOnlyLine =
+                line.type !== 'section' &&
+                !line.isMetadata &&
+                line.blocks.some(b => !!b.chord) &&
+                !/\p{L}{2,}/u.test(fullLineText);
+
+              return (
+                <View key={lIndex}>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    onPress={(e) => {
+                      if (isEditToolActive) {
+                        openLineEditModal(lIndex);
+                      } else {
+                        addFloatingNoteAtLine(e.nativeEvent.pageX, e.nativeEvent.pageY);
+                      }
+                    }}
+                    style={[
+                      styles.lineWrapper,
+                      line.type === 'section' && (isTitle ? styles.titleLine : styles.sectionLine),
+                      isEditToolActive && { borderWidth: 1, borderColor: 'rgba(59, 130, 246, 0.5)', borderRadius: 4, marginVertical: 2, padding: 3 }
+                    ]}
+                  >
+                    <View style={[
+                      styles.blocksContainer,
+                      isTitle && { justifyContent: 'center', width: '100%' },
+                      isDebugMode && { borderWidth: 1, borderColor: '#3b82f6', borderStyle: 'dashed' }
+                    ]}>
+                      {isChordOnlyLine ?
+                        renderChordOnlyLine(line.blocks) :
+                        getRenderItems(line.blocks, isTitle).map((item, bIndex) => {
+                          if (isTitle) {
+                            return (
+                              <View key={bIndex} style={[styles.block, { width: '100%', alignItems: 'center' }]}>
+                                <Text style={[
+                                  styles.lyricText,
+                                  { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold', lineHeight: fontSize * 1.5 * 1.25, color: theme.lyrics },
+                                  isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
+                                ]}>
+                                  {item.text}
+                                </Text>
+                              </View>
+                            );
+                          }
+
+                          const hasChord = !!item.chord;
+
+                          if (!hasChord && (!item.text || /^\s+$/.test(item.text))) {
+                            return (
+                              <Text
+                                key={`item-${bIndex}`}
+                                style={[
+                                  styles.lyricText,
+                                  { fontSize, color: theme.lyrics },
+                                  line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
+                                ]}
+                              >
+                                {(item.text || ' ').replace(/ /g, '\u00A0')}
+                              </Text>
+                            );
+                          }
+
+                          const displayText = (item.text || '').replace(/ /g, '\u00A0');
+                          const isSpaceOnly = /^\s+$/.test(item.text || '');
+
+                          return (
+                            <View
+                              key={`item-${bIndex}`}
+                              style={[
+                                styles.block,
+                                line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
+                                isSpaceOnly && item.text.length > 1 && { minWidth: Math.max(fontSize, item.text.length * (fontSize * 0.45)) },
+                                isChordOnlyLine && hasChord && { marginRight: Math.max(6, fontSize * 0.4) },
+                                isDebugMode && {
+                                  borderWidth: 1,
+                                  borderColor: hasChord ? '#ef4444' : '#3b82f6',
+                                  borderStyle: hasChord ? 'solid' : 'dotted',
+                                  padding: 1
+                                }
+                              ]}
+                            >
+                              {viewMode !== 'lyrics' && (
+                                hasChord ? (
+                                  <Text style={[
+                                    styles.chordText,
+                                    { fontSize: fontSize, color: theme.chords },
+                                    line.isMetadata && { marginRight: 4 },
+                                    isNonPlayableMetadata && { color: theme.lyrics, fontWeight: 'normal' },
+                                    isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
+                                  ]}>{item.chord}</Text>
+                                ) : (
+                                  <Text style={[styles.chordText, { fontSize, opacity: 0 }]} numberOfLines={1}>
+                                    X
+                                  </Text>
+                                )
+                              )}
+                              <Text style={[
+                                styles.lyricText,
+                                { fontSize, color: theme.lyrics },
+                                line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
+                                isDebugMode && { backgroundColor: hasChord ? 'rgba(239, 68, 68, 0.05)' : 'rgba(59, 130, 246, 0.15)' }
+                              ]}>
+                                {displayText || '\u00A0'}
+                              </Text>
+                            </View>
+                          );
+                        })}
+                    </View>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+
+            {/* Capa de notas flotantes de músicos */}
+            {Object.entries(musicianNotes).map(([id, note]: [string, any]) => (
+              <DraggableNote
+                key={id}
+                id={id}
+                initialText={note.text}
+                initialX={note.x || 20}
+                initialY={note.y || 100}
+                isStageMode={isStageMode}
+                onRequestEdit={(noteId: string, text: string) => setEditingNote({ id: noteId, text })}
+                onUpdate={handleUpdateNote}
+                onDelete={handleDeleteNote}
+                setScrollEnabled={setIsScrollEnabled}
+              />
+            ))}
+
+            {/* Footer Informativo Fijo */}
+            <View style={styles.footerContainer}>
+              <View style={styles.footerLine} />
+              <Text style={styles.footerText}>{DISPLAY_FOOTER_TEXT}</Text>
+            </View>
+          </View>
+        </ScrollView>
       </View>
 
-      {/* Sub-header de navegación de lista (reemplaza el widget flotante) */}
-      {(isDirector || followSessionId || setlistSongs.length > 0) && (() => {
-        const idx = setlistSongs.findIndex(s => s.id === songId);
-        const isFollower = !!followSessionId && !isDirector;
-        return (
-          <View style={styles.subHeader}>
-            {/* Badge de modo */}
-            <View style={[styles.subHeaderBadge, isFollower ? styles.followerBadge : isDirector ? styles.directorBadge : styles.localBadge]}>
-              <Radio size={10} color="#fff" />
-              <Text style={styles.subHeaderBadgeText}>
-                {isFollower ? 'EN VIVO' : isDirector ? 'DIRECTOR' : 'LISTA'}
-              </Text>
-            </View>
-
-            {/* Controles de navegación */}
-            <TouchableOpacity
-              onPress={onDirectorPrev}
-              style={[styles.subNavBtn, idx <= 0 && styles.subNavBtnDisabled]}
-              disabled={idx <= 0 || isFollower}
-            >
-              <ChevronLeft size={20} color="#fff" />
-            </TouchableOpacity>
-
-            <Text style={styles.subHeaderCounter}>{idx + 1} / {setlistSongs.length}</Text>
-
-            <TouchableOpacity
-              onPress={onDirectorNext}
-              style={[styles.subNavBtn, idx >= setlistSongs.length - 1 && styles.subNavBtnDisabled]}
-              disabled={idx >= setlistSongs.length - 1 || isFollower}
-            >
-              <ChevronRight size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-        );
-      })()}
-
-      {/* Contenido */}
-      <View ref={scrollAreaRef} style={{ flex: 1 }} onLayout={measureScrollArea}>
-      <ScrollView
-        ref={scrollRef}
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        onScroll={e => {
-          if (!isScrolling && pedalScrollDirRef.current === null) {
-            scrollPosRef.current = e.nativeEvent.contentOffset.y;
-          }
-        }}
-        scrollEventThrottle={1}
-        scrollEnabled={isScrollEnabled}
-      >
-        <View style={styles.songContainer}>
-          {parsedLines.map((line, lIndex) => {
-            const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
-            const sectionColor = isStageMode ? '#fbbf24' : theme.chords;
-            const fullLineText = line.blocks.map(b => b.text).join('');
-            const isNonPlayableMetadata = line.isMetadata && /^(NOTA|TONO|KEY|BPM|TEMPO|CAPO|COMP[ÁA]S):/i.test(fullLineText);
-
-            return (
-              <View key={lIndex}>
-                <TouchableOpacity
-                  activeOpacity={0.7}
-                  onPress={(e) => addFloatingNoteAtLine(e.nativeEvent.pageX, e.nativeEvent.pageY)}
-                  style={[styles.lineWrapper, line.type === 'section' && (isTitle ? styles.titleLine : styles.sectionLine)]}
-                >
-                  <View style={[
-                    styles.blocksContainer,
-                    isTitle && { justifyContent: 'center', width: '100%' },
-                    isDebugMode && { borderWidth: 1, borderColor: '#3b82f6', borderStyle: 'dashed' }
-                  ]}>
-                    {getRenderItems(line.blocks, isTitle).map((item, bIndex) => {
-                      if (isTitle) {
-                        return (
-                          <View key={bIndex} style={[styles.block, { width: '100%', alignItems: 'center' }]}>
-                            <Text style={[
-                              styles.lyricText,
-                              { fontSize: fontSize * 1.5, textAlign: 'center', fontWeight: 'bold', lineHeight: fontSize * 1.5 * 1.25, color: theme.lyrics },
-                              isDebugMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' }
-                            ]}>
-                              {item.text}
-                            </Text>
-                          </View>
-                        );
-                      }
-
-                      const hasChord = !!item.chord;
-
-                      // Si no tiene acorde y es vacío o solo espacios, lo renderizamos plano (sin caja/altura del acorde)
-                      if (!hasChord && (!item.text || /^\s+$/.test(item.text))) {
-                        return (
-                          <Text
-                            key={`item-${bIndex}`}
-                            style={[
-                              styles.lyricText,
-                              { fontSize, color: theme.lyrics },
-                              line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
-                            ]}
-                          >
-                            {item.text || ' '}
-                          </Text>
-                        );
-                      }
-
-                      // Si tiene texto o acorde, lo normalizamos dentro del View con altura de acorde
-                      return (
-                        <View
-                          key={`item-${bIndex}`}
-                          style={[
-                            styles.block,
-                            line.isMetadata && { flexDirection: 'row', alignItems: 'baseline' },
-                            isDebugMode && {
-                              borderWidth: 1,
-                              borderColor: hasChord ? '#ef4444' : '#3b82f6',
-                              borderStyle: hasChord ? 'solid' : 'dotted',
-                              padding: 1
-                            }
-                          ]}
-                        >
-                          {viewMode !== 'lyrics' && (
-                            hasChord ? (
-                              <Text style={[
-                                styles.chordText,
-                                { fontSize: fontSize, color: theme.chords },
-                                line.isMetadata && { marginRight: 4 },
-                                isNonPlayableMetadata && { color: theme.lyrics, fontWeight: 'normal' },
-                                isDebugMode && { backgroundColor: 'rgba(239, 68, 68, 0.15)' }
-                              ]}>{item.chord}</Text>
-                            ) : (
-                              <Text style={[styles.chordText, { fontSize, opacity: 0 }]} numberOfLines={1}>
-                                X
-                              </Text>
-                            )
-                          )}
-                          <Text style={[
-                            styles.lyricText,
-                            { fontSize, color: theme.lyrics },
-                            line.type === 'section' && { color: sectionColor, fontWeight: 'bold' },
-                            isDebugMode && { backgroundColor: hasChord ? 'rgba(239, 68, 68, 0.05)' : 'rgba(59, 130, 246, 0.15)' }
-                          ]}>
-                            {item.text}
-                          </Text>
-                        </View>
-                      );
-                    })}
-                  </View>
-                </TouchableOpacity>
-              </View>
-            );
-          })}
-        </View>
-
-        {Object.entries(musicianNotes).map(([noteId, noteData]: [string, any]) => {
-          if (typeof noteData === 'string') return null;
-          return (
-            <DraggableNote
-              key={noteId}
-              id={noteId}
-              initialText={noteData.text}
-              initialX={noteData.x}
-              initialY={noteData.y}
-              isStageMode={isStageMode}
-              onRequestEdit={handleRequestEdit}
-              onUpdate={(i: string, t: string, x: number, y: number) => setMusicianNotes((p: any) => ({ ...p, [i]: { text: t, x, y } }))}
-              onDelete={(i: string) => {
-                const n = { ...musicianNotes };
-                delete n[i];
-                setMusicianNotes(n);
-              }}
-              setScrollEnabled={setIsScrollEnabled}
-            />
-          );
-        })}
-
-        <View style={styles.footerContainer}>
-          <View style={styles.footerLine} />
-          <Text style={styles.footerText}>{DISPLAY_FOOTER_TEXT}</Text>
-        </View>
-      </ScrollView>
-      </View>{/* scrollAreaRef */}
-
       {/* Barra flotante de controles */}
-      {!isSettingsOpen ? (
-        <View style={[styles.floatingBar, { bottom: Math.max(insets.bottom, 20) + 10 }]}>
-          <View style={styles.controlGroup}>
-            <TouchableOpacity onPress={() => setTranspose(p => p - 1)} style={styles.smallBtn}>
-              <Minus size={18} color="#fff" />
-            </TouchableOpacity>
-            <View style={{ alignItems: 'center' }}>
-              <Text style={{ color: COLORS.mutedForeground, fontSize: 9, fontWeight: 'bold', marginBottom: 1 }}>TONO</Text>
-              <Text style={[styles.ctrlText, { minWidth: 30, fontSize: 14 }]}>{transpose > 0 ? `+${transpose}` : transpose}</Text>
-            </View>
-            <TouchableOpacity onPress={() => setTranspose(p => p + 1)} style={styles.smallBtn}>
-              <Plus size={18} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <View style={styles.divider} />
-          <TouchableOpacity
-            style={[styles.playBtn, isScrolling && styles.playBtnActive]}
-            onPress={() => setIsScrolling(!isScrolling)}
-          >
-            {isScrolling ? <Pause size={20} color="#fff" /> : <Play size={20} color="#fff" />}
-            <Text style={styles.playText}>{isScrolling ? `${scrollSpeed}x` : 'Scroll'}</Text>
-          </TouchableOpacity>
-          <View style={styles.divider} />
-          <TouchableOpacity onPress={() => setIsSettingsOpen(true)} style={styles.headerBtn}>
-            <Settings size={24} color={COLORS.foreground} />
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <View style={styles.settingsSheet}>
-          <View style={styles.settingsHeader}>
-            <Text style={styles.settingsTitle}>Ajustes de Canción</Text>
-            <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
-              <X size={24} color={COLORS.foreground} />
-            </TouchableOpacity>
-          </View>
-          <ScrollView showsVerticalScrollIndicator={false}>
-            {/* Capo */}
-            <Text style={styles.settingLabel}>Capodastro</Text>
-            <View style={styles.capoGrid}>
-              {[0, 1, 2, 3, 4, 5].map(val => (
-                <TouchableOpacity key={val} style={[styles.capoBtn, capo === val && styles.capoBtnActive]} onPress={() => setCapo(val)}>
-                  <Text style={[styles.capoText, capo === val && styles.capoTextActive]}>{val === 0 ? 'Off' : val}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {/* Calculadora de Capo */}
-            {soundingKeySemitone !== null ? (
-              <>
-                <View style={styles.capoCalcHeader}>
-                  <Text style={[styles.settingLabel, { marginTop: 20, marginBottom: 0, flex: 1 }]}>Calculadora de Capo</Text>
-                  <View style={styles.capoCalcKeyBadge}>
-                    <Text style={styles.capoCalcKeyBadgeText}>
-                      Suena en {soundingKeyName}
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.capoCalcSubtitle}>
-                  Tocá en la tonalidad que quieras — el capo se ajusta solo.
-                </Text>
-                <View style={styles.capoCalcGrid}>
-                  {NOTES_DISPLAY.map(note => {
-                    const targetSemitone = NOTE_SEMITONES[note];
-                    const fret = (soundingKeySemitone - targetSemitone + 12) % 12;
-                    const isPractical = fret >= 1 && fret <= 7;
-                    const isCurrent = fret === 0;
-                    const isActive = capo === fret && !isCurrent;
-                    return (
-                      <TouchableOpacity
-                        key={note}
-                        style={[
-                          styles.capoCalcBtn,
-                          isCurrent && styles.capoCalcBtnCurrent,
-                          isActive && styles.capoCalcBtnActive,
-                          !isPractical && !isCurrent && styles.capoCalcBtnDim,
-                        ]}
-                        onPress={() => setCapo(fret)}
-                      >
-                        <Text style={[
-                          styles.capoCalcNote,
-                          isCurrent && { color: COLORS.accent },
-                          isActive && { color: '#fff' },
-                          !isPractical && !isCurrent && { color: COLORS.mutedForeground },
-                        ]}>
-                          {NOTE_LABELS[note] || note}
-                        </Text>
-                        <Text style={[
-                          styles.capoCalcFret,
-                          isPractical && !isCurrent && { color: '#4ade80' },
-                          isCurrent && { color: COLORS.accent },
-                          isActive && { color: '#fff' },
-                          !isPractical && !isCurrent && { color: COLORS.mutedForeground },
-                        ]}>
-                          {isCurrent ? 'sin capo' : `traste ${fret}`}
-                        </Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </View>
-              </>
-            ) : (
-              <View style={styles.capoCalcWarning}>
-                <AlertTriangle size={16} color="#fbbf24" style={{ marginRight: 8 }} />
-                <Text style={styles.capoCalcWarningText}>
-                  La calculadora de capo no está disponible porque esta canción no tiene especificado su tono original (Tono:).
-                </Text>
-              </View>
-            )}
-
-            {/* Metrónomo */}
-            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Metrónomo</Text>
-            <View style={styles.controlGroup}>
-              <TouchableOpacity onPress={() => setIsMetronomeActive(!isMetronomeActive)} style={[styles.smallBtn, isMetronomeActive && { backgroundColor: COLORS.accent }]}>
-                <Clock size={18} color="#fff" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 5))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.max(40, p - 1))} style={[styles.smallBtn, { width: 28 }]}><Text style={{ color: '#fff', fontSize: 12 }}>-1</Text></TouchableOpacity>
-              <Text style={styles.ctrlText}>{bpm} BPM</Text>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 1))} style={[styles.smallBtn, { width: 28 }]}><Text style={{ color: '#fff', fontSize: 12 }}>+1</Text></TouchableOpacity>
-              <TouchableOpacity onPress={() => setBpm((p: number) => Math.min(250, p + 5))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
-            </View>
-            {/* Compás y silencio */}
-            <View style={[styles.controlGroup, { marginTop: 10 }]}>
-              <Text style={[styles.ctrlText, { fontSize: 13, marginRight: 8 }]}>Compás:</Text>
-              {[2, 3, 4, 6].map(ts => (
-                <TouchableOpacity
-                  key={ts}
-                  onPress={() => { setTimeSignature(ts); beatCountRef.current = 0; }}
-                  style={[styles.smallBtn, timeSignature === ts && { backgroundColor: '#f59e0b' }]}
-                >
-                  <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>{ts}/4</Text>
-                </TouchableOpacity>
-              ))}
-              <TouchableOpacity
-                onPress={() => setMetronomeMuted(m => !m)}
-                style={[styles.smallBtn, { marginLeft: 8 }, metronomeMuted && { backgroundColor: '#ef4444' }]}
-              >
-                <Text style={{ color: '#fff', fontSize: 11 }}>{metronomeMuted ? '🔇' : '🔊'}</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Tamaño letra */}
-            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Tamaño Letra</Text>
-            <View style={styles.controlGroup}>
-              <TouchableOpacity onPress={() => setFontSize((p: number) => Math.max(10, p - 2))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
-              <Text style={styles.ctrlText}>{fontSize}px</Text>
-              <TouchableOpacity onPress={() => setFontSize((p: number) => Math.min(40, p + 2))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
-            </View>
-
-            {/* Auto-scroll speed */}
-            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Velocidad Auto-scroll</Text>
-            <View style={styles.controlGroup}>
-              <TouchableOpacity onPress={() => setScrollSpeed((p: number) => Math.max(0.1, +(p - 0.1).toFixed(1)))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
-              <Text style={styles.ctrlText}>{scrollSpeed}x</Text>
-              <TouchableOpacity onPress={() => setScrollSpeed((p: number) => Math.min(10, +(p + 0.1).toFixed(1)))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
-            </View>
-
-            {/* Pedal speed */}
-            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Velocidad Pedal</Text>
-            <View style={styles.controlGroup}>
-              <TouchableOpacity onPress={() => setPedalSpeed((p: number) => Math.max(0.1, +(p - 0.1).toFixed(1)))} style={styles.smallBtn}><Minus size={18} color="#fff" /></TouchableOpacity>
-              <Text style={styles.ctrlText}>{pedalSpeed}x</Text>
-              <TouchableOpacity onPress={() => setPedalSpeed((p: number) => Math.min(10, +(p + 0.1).toFixed(1)))} style={styles.smallBtn}><Plus size={18} color="#fff" /></TouchableOpacity>
-            </View>
-
-            {/* Colores */}
-            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Colores (Globales)</Text>
-            <View style={{ flexDirection: 'row', gap: 12, marginTop: 8, marginBottom: 10, alignItems: 'center' }}>
-              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.background, borderWidth: 1, borderColor: COLORS.border }} />
-              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.lyrics, borderWidth: 1, borderColor: COLORS.border }} />
-              <View style={{ width: 30, height: 30, borderRadius: 15, backgroundColor: theme.chords, borderWidth: 1, borderColor: COLORS.border }} />
-              <TouchableOpacity
-                onPress={() => { setPickerTab('background'); setColorPickerOpen(true); }}
-                style={{ marginLeft: 'auto', backgroundColor: COLORS.accent, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20 }}
-              >
-                <Text style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>Personalizar</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Vista */}
-            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Vista</Text>
-            <View style={styles.toggleGroup}>
-              <TouchableOpacity style={[styles.toggleBtn, viewMode === 'all' && styles.toggleBtnActive]} onPress={() => setViewMode('all')}>
-                <Text style={[styles.toggleText, viewMode === 'all' && styles.toggleTextActive]}>Todo</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.toggleBtn, viewMode === 'lyrics' && styles.toggleBtnActive]} onPress={() => setViewMode('lyrics')}>
-                <Text style={[styles.toggleText, viewMode === 'lyrics' && styles.toggleTextActive]}>Solo Letra</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Modo Depuración */}
-            <Text style={[styles.settingLabel, { marginTop: 20 }]}>Modo Depuración (Alineación)</Text>
-            <View style={styles.toggleGroup}>
-              <TouchableOpacity style={[styles.toggleBtn, !isDebugMode && styles.toggleBtnActive]} onPress={() => setIsDebugMode(false)}>
-                <Text style={[styles.toggleText, !isDebugMode && styles.toggleTextActive]}>Apagado</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.toggleBtn, isDebugMode && styles.toggleBtnActive]} onPress={() => setIsDebugMode(true)}>
-                <Text style={[styles.toggleText, isDebugMode && styles.toggleTextActive]}>Encendido</Text>
-              </TouchableOpacity>
-            </View>
-
-            <TouchableOpacity style={styles.doneBtn} onPress={() => setIsSettingsOpen(false)}>
-              <Text style={styles.doneBtnText}>Listo</Text>
-            </TouchableOpacity>
-          </ScrollView>
-        </View>
+      {!isSettingsOpen && (
+        <FloatingControlsBar
+          transpose={transpose}
+          onTransposeDecrease={() => setTranspose(p => p - 1)}
+          onTransposeIncrease={() => setTranspose(p => p + 1)}
+          isScrolling={isScrolling}
+          scrollSpeed={scrollSpeed}
+          onToggleScroll={() => setIsScrolling(!isScrolling)}
+          onOpenSettings={() => setIsSettingsOpen(true)}
+          bottomInset={insets.bottom}
+        />
       )}
+
+      {/* Ajustes de Canción Sheet */}
+      <SettingsModal
+        visible={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        capo={capo}
+        setCapo={setCapo}
+        soundingKeySemitone={soundingKeySemitone}
+        soundingKeyName={soundingKeyName}
+        isMetronomeActive={isMetronomeActive}
+        setIsMetronomeActive={setIsMetronomeActive}
+        bpm={bpm}
+        setBpm={setBpm}
+        timeSignature={timeSignature}
+        setTimeSignature={setTimeSignature}
+        metronomeMuted={metronomeMuted}
+        setMetronomeMuted={setMetronomeMuted}
+        beatCountRef={beatCountRef}
+        fontSize={fontSize}
+        setFontSize={setFontSize}
+        scrollSpeed={scrollSpeed}
+        setScrollSpeed={setScrollSpeed}
+        pedalSpeed={pedalSpeed}
+        setPedalSpeed={setPedalSpeed}
+        theme={theme}
+        onOpenColorPicker={() => setColorPickerOpen(true)}
+        viewMode={viewMode}
+        setViewMode={setViewMode}
+        isDebugMode={isDebugMode}
+        setIsDebugMode={setIsDebugMode}
+        isEditToolActive={isEditToolActive}
+        setIsEditToolActive={setIsEditToolActive}
+      />
+
+      {/* Handler para pedal Bluetooth */}
       <PedalHandler
         onScrollUp={handlePedalScrollUp}
         onScrollDown={handlePedalScrollDown}
@@ -1117,297 +907,47 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         enabled={isStageMode && !isSettingsOpen}
       />
 
-      {/* ── Overlay de edición de notas ─────────────────────────────────────
-           Posicionado FUERA del ScrollView para que el KeyboardAvoidingView
-           funcione correctamente y el teclado no tape el input.
-      */}
-      {editingNote && (
-        <KeyboardAvoidingView
-          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-          style={StyleSheet.absoluteFillObject}
-          pointerEvents="box-none"
-        >
-          {/* Fondo semi-transparente: toca para cancelar */}
-          <TouchableOpacity
-            style={styles.noteOverlayBackdrop}
-            activeOpacity={1}
-            onPress={handleCancelNote}
-          />
-          <View style={styles.noteEditSheet}>
-            <View style={styles.noteEditHeader}>
-              <StickyNote size={16} color={COLORS.accent} />
-              <Text style={styles.noteEditTitle}>Nota de músico</Text>
-              <TouchableOpacity onPress={handleCancelNote} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <X size={20} color={COLORS.mutedForeground} />
-              </TouchableOpacity>
-            </View>
-            <TextInput
-              autoFocus
-              style={styles.noteEditInput}
-              value={editingNote.text}
-              onChangeText={(t) => setEditingNote(prev => prev ? { ...prev, text: t } : null)}
-              placeholder="Escribe tu nota aquí..."
-              placeholderTextColor={COLORS.mutedForeground}
-              multiline
-              maxLength={300}
-              textAlignVertical="top"
-            />
-            <TouchableOpacity style={styles.noteEditSaveBtn} onPress={handleSaveNote}>
-              <Text style={styles.noteEditSaveBtnText}>Guardar nota</Text>
-            </TouchableOpacity>
-          </View>
-        </KeyboardAvoidingView>
-      )}
+      {/* Overlay de edición de notas de músicos */}
+      <NoteEditOverlay
+        editingNote={editingNote}
+        setEditingNote={setEditingNote}
+        onSaveNote={handleSaveNote}
+        onCancelNote={handleCancelNote}
+      />
 
-      {/* ── Modal Color Picker Unificado ─────────────────────── */}
-      <Modal visible={colorPickerOpen} transparent animationType="slide" onRequestClose={() => setColorPickerOpen(false)}>
-        <TouchableOpacity style={styles.colorPickerBackdrop} activeOpacity={1} onPress={() => setColorPickerOpen(false)}>
-          <TouchableOpacity activeOpacity={1} style={styles.colorPickerContainer} onPress={(e) => e.stopPropagation()}>
-            {/* Titulo + Reset */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', width: '100%', marginBottom: 16 }}>
-              <Text style={[styles.colorPickerTitle, { flex: 1, marginBottom: 0 }]}>Colores del Visor</Text>
-              <TouchableOpacity
-                onPress={() => {
-                  const def = { background: COLORS.background, lyrics: COLORS.foreground, chords: COLORS.accent };
-                  setTheme(def);
-                  onSaveGlobalTheme?.(def);
-                }}
-                style={{ backgroundColor: '#ef4444', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 }}
-              >
-                <Text style={{ color: '#fff', fontSize: 12, fontWeight: 'bold' }}>Restablecer</Text>
-              </TouchableOpacity>
-            </View>
+      {/* Modal Color Picker Unificado */}
+      <ColorPickerModal
+        visible={colorPickerOpen}
+        onClose={() => setColorPickerOpen(false)}
+        theme={theme}
+        setTheme={setTheme}
+        onSaveGlobalTheme={onSaveGlobalTheme}
+      />
 
-            {/* Tabs: Fondo / Letra / Acordes */}
-            <View style={{ flexDirection: 'row', width: '100%', marginBottom: 20, backgroundColor: COLORS.background, borderRadius: 12, padding: 3 }}>
-              {(['background','lyrics','chords'] as const).map(tab => (
-                <TouchableOpacity
-                  key={tab}
-                  onPress={() => setPickerTab(tab)}
-                  style={[
-                    { flex: 1, paddingVertical: 8, borderRadius: 10, alignItems: 'center', flexDirection: 'row', justifyContent: 'center', gap: 6 },
-                    pickerTab === tab && { backgroundColor: COLORS.surface }
-                  ]}
-                >
-                  <View style={{ width: 14, height: 14, borderRadius: 7, backgroundColor: theme[tab], borderWidth: 1, borderColor: COLORS.border }} />
-                  <Text style={{ color: pickerTab === tab ? COLORS.foreground : COLORS.mutedForeground, fontSize: 13, fontWeight: pickerTab === tab ? 'bold' : 'normal' }}>
-                    {tab === 'background' ? 'Fondo' : tab === 'lyrics' ? 'Letra' : 'Acordes'}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+      {/* Modal de Código ChordPro */}
+      <ChordProModal
+        visible={showChordPro}
+        onClose={() => setShowChordPro(false)}
+        content={transposedContent}
+      />
 
-            {/* Preview en vivo */}
-            <View style={{ width: '100%', borderRadius: 14, backgroundColor: theme.background, padding: 16, marginBottom: 20, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' }}>
-              <Text style={{ color: COLORS.mutedForeground, fontSize: 10, fontWeight: 'bold', letterSpacing: 1, marginBottom: 10, textTransform: 'uppercase' }}>Vista previa</Text>
-              {/* Línea con acorde + letra */}
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end', marginBottom: 4 }}>
-                <View style={{ marginRight: 4 }}>
-                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>Am</Text>
-                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Santo, </Text>
-                </View>
-                <View style={{ marginRight: 4 }}>
-                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>F</Text>
-                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Santo, </Text>
-                </View>
-                <View>
-                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>G</Text>
-                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Santo</Text>
-                </View>
-              </View>
-              <View style={{ flexDirection: 'row', alignItems: 'flex-end' }}>
-                <View style={{ marginRight: 4 }}>
-                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>C</Text>
-                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>es el </Text>
-                </View>
-                <View>
-                  <Text style={{ color: theme.chords, fontSize: 15, fontWeight: 'bold' }}>Em</Text>
-                  <Text style={{ color: theme.lyrics, fontSize: 16 }}>Señor</Text>
-                </View>
-              </View>
-            </View>
-
-            {/* Paleta expandida */}
-            {((): React.ReactNode => {
-              const SWATCH_SETS: Record<string, string[]> = {
-                background: [
-                  '#0a0a0a','#111827','#1e1e1e','#0d1117',
-                  '#1a0a2e','#0d1b2a','#0f2027','#1c1c2e',
-                  '#fdf6e3','#fffff8','#f8f9fa','#ffffff',
-                  '#f0e6d3','#e8f4f8','#f0f4ff','#fff9e6',
-                ],
-                lyrics: [
-                  '#ffffff','#f8f8f8','#e5e7eb','#d1d5db',
-                  '#9ca3af','#6b7280','#4b5563','#374151',
-                  '#1f2937','#111827','#657b83','#93a1a1',
-                  '#ffd700','#ffa500','#98fb98','#87ceeb',
-                ],
-                chords: [
-                  '#3b82f6','#2563eb','#1d4ed8','#60a5fa',
-                  '#ef4444','#dc2626','#f87171','#fca5a5',
-                  '#10b981','#059669','#34d399','#6ee7b7',
-                  '#f59e0b','#d97706','#fbbf24','#fde68a',
-                  '#8b5cf6','#7c3aed','#a78bfa','#c4b5fd',
-                  '#ec4899','#db2777','#f472b6','#fbcfe8',
-                  '#06b6d4','#0891b2','#22d3ee','#67e8f9',
-                  '#f97316','#ea580c','#fb923c','#fed7aa',
-                ],
-              };
-              const swatches = SWATCH_SETS[pickerTab] || [];
-              const [hexInput, setHexInput] = React.useState(theme[pickerTab]);
-              // sync hex input when tab changes
-              React.useEffect(() => { setHexInput(theme[pickerTab]); }, [pickerTab, theme]);
-              return (
-                <View style={{ width: '100%' }}>
-                  <Text style={{ color: COLORS.mutedForeground, fontSize: 12, marginBottom: 10 }}>Paleta de colores</Text>
-                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginBottom: 20 }}>
-                    {swatches.map(c => (
-                      <TouchableOpacity
-                        key={c}
-                        onPress={() => {
-                          const newTheme = { ...theme, [pickerTab]: c };
-                          setTheme(newTheme);
-                          onSaveGlobalTheme?.(newTheme);
-                          setHexInput(c);
-                        }}
-                        style={[
-                          { width: 40, height: 40, borderRadius: 20, backgroundColor: c },
-                          theme[pickerTab] === c
-                            ? { borderWidth: 3, borderColor: COLORS.accent }
-                            : { borderWidth: 1, borderColor: 'rgba(255,255,255,0.15)' }
-                        ]}
-                      />
-                    ))}
-                  </View>
-                  <Text style={{ color: COLORS.mutedForeground, fontSize: 12, marginBottom: 8 }}>O ingresá un color hex</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: theme[pickerTab], borderWidth: 1, borderColor: COLORS.border }} />
-                    <TextInput
-                      style={[styles.noteEditInput, { flex: 1, height: 44, marginBottom: 0 }]}
-                      value={hexInput}
-                      onChangeText={(val) => {
-                        setHexInput(val);
-                        const cleaned = val.startsWith('#') ? val : '#' + val;
-                        if (/^#[0-9A-Fa-f]{6}$/.test(cleaned)) {
-                          const newTheme = { ...theme, [pickerTab]: cleaned };
-                          setTheme(newTheme);
-                          onSaveGlobalTheme?.(newTheme);
-                        }
-                      }}
-                      maxLength={7}
-                      autoCapitalize="none"
-                      placeholder="#3b82f6"
-                      placeholderTextColor={COLORS.mutedForeground}
-                    />
-                  </View>
-                </View>
-              );
-            })()}
-
-            <TouchableOpacity style={[styles.doneBtn, { width: '100%', marginTop: 20 }]} onPress={() => setColorPickerOpen(false)}>
-              <Text style={styles.doneBtnText}>Cerrar</Text>
-            </TouchableOpacity>
-          </TouchableOpacity>
-        </TouchableOpacity>
-      </Modal>
-
+      {/* Modal de Edición Visual de Línea */}
+      <LineEditModal
+        visible={editingLineIndex !== null}
+        lineIndex={editingLineIndex}
+        editingLineText={editingLineText}
+        setEditingLineText={setEditingLineText}
+        setInputSelection={setInputSelection}
+        insertAtCursor={insertAtCursor}
+        onCancel={() => setEditingLineIndex(null)}
+        onSave={handleSaveEditedLine}
+      />
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: COLORS.background },
-  // Barra de información de estado
-  infoBar: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    paddingHorizontal: 15,
-    paddingTop: 8,
-    paddingBottom: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    justifyContent: 'center',
-    alignItems: 'center'
-  },
-  infoBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  infoBadgeInactive: {
-    backgroundColor: 'transparent',
-    opacity: 0.4,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  infoBadgeText: {
-    color: COLORS.foreground,
-    fontSize: 11,
-    fontWeight: 'bold',
-  },
-  infoBadgeTextInactive: {
-    color: COLORS.mutedForeground,
-  },
-  // sub-header de navegación de lista
-  subHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 15,
-    paddingVertical: 8,
-    backgroundColor: 'rgba(26,26,26,0.97)',
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-    gap: 10,
-  },
-  subHeaderBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    minWidth: 80,
-  },
-  directorBadge: { backgroundColor: '#dc2626' },
-  followerBadge: { backgroundColor: '#7c3aed' },
-  localBadge: { backgroundColor: '#059669' },
-  subHeaderBadgeText: {
-    color: '#fff',
-    fontSize: 10,
-    fontWeight: 'bold',
-    letterSpacing: 1,
-    textTransform: 'uppercase',
-  },
-  subHeaderCounter: {
-    color: COLORS.foreground,
-    fontSize: 14,
-    fontWeight: 'bold',
-    flex: 1,
-    textAlign: 'center',
-  },
-  subNavBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  subNavBtnDisabled: { opacity: 0.25 },
-  // Estilos de indicadores legados (follower)
-  liveIndicator: { flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'center', paddingHorizontal: 12, paddingVertical: 4, borderRadius: 20, marginTop: 8 },
-  directorIndicator: { backgroundColor: '#dc2626' },
-  followerIndicator: { backgroundColor: '#7c3aed' },
-  liveIndicatorText: { color: '#fff', fontSize: 11, fontWeight: 'bold', letterSpacing: 1 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  headerBtn: { padding: 8 },
-  title: { flex: 1, textAlign: 'center', fontSize: 18, fontWeight: 'bold', color: COLORS.foreground, marginHorizontal: 10 },
   scroll: { flex: 1 },
   scrollContent: { paddingBottom: 200 },
   songContainer: { padding: 20 },
@@ -1418,166 +958,6 @@ const styles = StyleSheet.create({
   block: { minWidth: 10 },
   chordText: { color: COLORS.accent, fontWeight: 'bold', fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace' },
   lyricText: { color: COLORS.foreground, fontFamily: Platform.OS === 'ios' ? 'Courier' : 'monospace', lineHeight: 22 },
-  noteRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 4 },
-  noteBadge: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#fbbf24', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4, gap: 4 },
-  noteBadgeText: { fontSize: 10, fontWeight: 'bold', color: '#000' },
-  deleteNoteBtn: { padding: 4, backgroundColor: 'rgba(255,68,68,0.1)', borderRadius: 4 },
-  // Overlay de edición de notas
-  noteOverlayBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.55)',
-  },
-  noteEditSheet: {
-    backgroundColor: COLORS.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 24,
-    paddingBottom: 32,
-    gap: 16,
-  },
-  noteEditHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  noteEditTitle: {
-    flex: 1,
-    color: COLORS.foreground,
-    fontSize: 16,
-    fontWeight: 'bold',
-  },
-  noteEditInput: {
-    backgroundColor: COLORS.background,
-    color: COLORS.foreground,
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 16,
-    minHeight: 100,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'sans-serif',
-  },
-  noteEditSaveBtn: {
-    backgroundColor: COLORS.accent,
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-  },
-  noteEditSaveBtnText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 15,
-  },
-  colorPickerBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  colorPickerContainer: {
-    backgroundColor: COLORS.surface,
-    padding: 24,
-    borderRadius: 24,
-    width: '100%',
-    maxWidth: 400,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
-    elevation: 10,
-  },
-  colorPickerTitle: {
-    color: COLORS.foreground,
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 20,
-  },
-  floatingBar: { position: 'absolute', bottom: 30, left: 20, right: 20, height: 60, backgroundColor: 'rgba(26,26,26,0.95)', borderRadius: 30, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, justifyContent: 'space-between', borderWidth: 1, borderColor: COLORS.border, elevation: 5 },
-  controlGroup: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  smallBtn: { width: 30, height: 30, backgroundColor: COLORS.border, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
-  ctrlText: { color: '#fff', fontSize: 15, fontWeight: 'bold', minWidth: 40, textAlign: 'center' },
-  divider: { width: 1, height: 30, backgroundColor: COLORS.border },
-  playBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 20 },
-  playBtnActive: { backgroundColor: COLORS.accent },
-  playText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
-  settingsSheet: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: COLORS.surface, borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 25, paddingBottom: 40, maxHeight: '80%' },
-  settingsHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  settingsTitle: { fontSize: 20, fontWeight: 'bold', color: COLORS.foreground },
-  settingLabel: { color: COLORS.mutedForeground, fontSize: 12, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 10 },
-  capoGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
-  capoBtn: { width: 45, height: 45, borderRadius: 12, backgroundColor: COLORS.background, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: COLORS.border },
-  capoBtnActive: { backgroundColor: COLORS.accent, borderColor: COLORS.accent },
-  capoText: { color: COLORS.mutedForeground, fontWeight: 'bold' },
-  capoTextActive: { color: '#fff' },
-  // Calculadora de Capo
-  capoCalcHeader: { flexDirection: 'row', alignItems: 'center', marginTop: 20, gap: 10 },
-  capoCalcKeyBadge: {
-    backgroundColor: COLORS.accent + '22',
-    borderWidth: 1,
-    borderColor: COLORS.accent,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  capoCalcKeyBadgeText: { color: COLORS.accent, fontSize: 11, fontWeight: 'bold' },
-  capoCalcSubtitle: {
-    color: COLORS.mutedForeground,
-    fontSize: 12,
-    marginTop: 6,
-    marginBottom: 12,
-  },
-  capoCalcGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  capoCalcBtn: {
-    width: '22%',
-    backgroundColor: COLORS.background,
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-    gap: 3,
-  },
-  capoCalcBtnCurrent: {
-    borderColor: COLORS.accent,
-    backgroundColor: COLORS.accent + '15',
-  },
-  capoCalcBtnActive: {
-    backgroundColor: COLORS.accent,
-    borderColor: COLORS.accent,
-  },
-  capoCalcBtnDim: { opacity: 0.4 },
-  capoCalcNote: { color: COLORS.foreground, fontSize: 13, fontWeight: 'bold' },
-  capoCalcFret: { color: COLORS.mutedForeground, fontSize: 10 },
-  capoCalcWarning: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fbbf2415',
-    borderWidth: 1,
-    borderColor: '#fbbf2430',
-    borderRadius: 12,
-    padding: 12,
-    marginTop: 20,
-  },
-  capoCalcWarningText: {
-    color: '#fbbf24',
-    fontSize: 12,
-    flex: 1,
-    fontWeight: '500',
-    lineHeight: 16,
-  },
-  toggleGroup: { flexDirection: 'row', backgroundColor: COLORS.background, borderRadius: 10, padding: 4 },
-  toggleBtn: { flex: 1, paddingVertical: 8, borderRadius: 8, alignItems: 'center' },
-  toggleBtnActive: { backgroundColor: COLORS.surface },
-  toggleText: { color: COLORS.mutedForeground, fontWeight: '500' },
-  toggleTextActive: { color: '#fff', fontWeight: 'bold' },
-  doneBtn: { backgroundColor: COLORS.accent, padding: 15, borderRadius: 15, alignItems: 'center', marginTop: 25 },
-  doneBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 16 },
   footerContainer: {
     paddingBottom: 60,
     paddingHorizontal: 20,

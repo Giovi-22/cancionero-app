@@ -32,7 +32,8 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
     handleCreateLibrary,
     handleUpdateLibrary,
     handleDeleteLibrary,
-    loadingActions
+    loadingActions,
+    openFolderPicker
   } = useAppContext();
 
   // Estados del modal
@@ -219,13 +220,21 @@ export const LibrarySelectorModal = ({ isOpen, onClose }: LibrarySelectorModalPr
 
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>Google Drive Folder ID (Opcional)</Text>
-                <TextInput
-                  style={styles.formInput}
-                  placeholder="Identificador de la carpeta de Drive..."
-                  placeholderTextColor={COLORS.mutedForeground}
-                  value={driveFolderId}
-                  onChangeText={setDriveFolderId}
-                />
+                <View style={{ flexDirection: 'row', gap: 10 }}>
+                  <TextInput
+                    style={[styles.formInput, { flex: 1 }]}
+                    placeholder="Identificador de la carpeta de Drive..."
+                    placeholderTextColor={COLORS.mutedForeground}
+                    value={driveFolderId}
+                    onChangeText={setDriveFolderId}
+                  />
+                  <TouchableOpacity 
+                    style={{ backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 15, justifyContent: 'center', alignItems: 'center' }}
+                    onPress={() => openFolderPicker('root', 'Mi unidad', false, (id) => setDriveFolderId(id))}
+                  >
+                    <Folder size={20} color={COLORS.accent} />
+                  </TouchableOpacity>
+                </View>
                 <Text style={styles.formHelp}>
                   Si la dejas vacía, podrás configurarla después en la sección de Ajustes.
                 </Text>

@@ -39,6 +39,8 @@ export interface Setlist {
   date?: string;
   songIds: string[];
   isPublic: boolean;
+  notes?: string;
+  songNotes?: Record<string, string>;
   lastUpdated?: string;
   libraryId?: string;
 }
