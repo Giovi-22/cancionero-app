@@ -7,6 +7,7 @@ import {
     Home,
     Music,
     List,
+    Users,
     User,
 } from "lucide-react-native";
 
@@ -105,6 +106,17 @@ export default function TabsLayout() {
                     title: "Listas",
                     tabBarIcon: ({ color, size }) => (
                         <List color={color} size={size} />
+                    ),
+                    tabBarButton: (props) => <AnimatedTabButton {...props} />
+                }}
+            />
+
+            <Tabs.Screen
+                name="band"
+                options={{
+                    title: "Banda",
+                    tabBarIcon: ({ color, size }) => (
+                        <Users color={color} size={size} />
                     ),
                     tabBarButton: (props) => <AnimatedTabButton {...props} />
                 }}

@@ -45,3 +45,6 @@ export interface Setlist {
   libraryId?: string;
 }
 
+export * from './band';
+
+

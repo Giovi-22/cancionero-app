@@ -1,5 +1,6 @@
 import { auth } from '../lib/firebase';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { UserService } from './UserService';
 
 const GOOGLE_WEB_CLIENT_ID = '947725534425-2po3cmv389vgo9uo9saabotu9rltqseq.apps.googleusercontent.com';
 
@@ -46,6 +47,11 @@ export class AuthService {
       const userCredential = await auth().signInWithCredential(googleCredential);
 
       console.log('[AuthService] Autenticación Firebase exitosa para:', userCredential.user.email);
+      // Sincronizar perfil en Firestore (users/{uid})
+      UserService.syncUserProfile(userCredential.user).catch(err => {
+        console.warn('[AuthService] Error secundario al sincronizar perfil:', err);
+      });
+
       return userCredential.user;
     } catch (error) {
       console.error('[AuthService] Error durante signInWithGoogle:', error);
@@ -104,6 +110,9 @@ export class AuthService {
     const user = auth().currentUser;
     if (!user) return null;
 
+    // Sincronizar perfil en background si no se hizo
+    UserService.syncUserProfile(user).catch(() => {});
+
     // Retornamos una estructura compatible con el resto de la app
     return {
       id: user.uid,
@@ -123,6 +132,11 @@ export class AuthService {
   public onAuthStateChanged(callback: (user: any) => void) {
     return auth().onAuthStateChanged((user: any) => {
       if (user) {
+        // Sincronizar perfil en Firestore (users/{uid})
+        UserService.syncUserProfile(user).catch(err => {
+          console.warn('[AuthService] Error al sincronizar usuario en onAuthStateChanged:', err);
+        });
+
         callback({
           id: user.uid,
           uid: user.uid,
@@ -141,3 +155,4 @@ export class AuthService {
 }
 
 export const authService = AuthService.getInstance();
+

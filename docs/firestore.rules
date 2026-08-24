@@ -1,0 +1,216 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // =========================================================================
+    // FUNCIONES AUXILIARES DE SEGURIDAD
+    // =========================================================================
+    
+    // 1. Comprobar si el usuario está autenticado
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // 2. Comprobar si el usuario es miembro activo de una banda
+    function isBandMember(bandId) {
+      return isSignedIn() && 
+        exists(/databases/$(database)/documents/bands/$(bandId)/members/$(request.auth.uid));
+    }
+
+    // 3. Obtener los datos del miembro en la banda (Firestore usa caché interna)
+    function getMemberData(bandId) {
+      return get(/databases/$(database)/documents/bands/$(bandId)/members/$(request.auth.uid)).data;
+    }
+    
+    // 4. Comprobar si el usuario es OWNER de la banda
+    function isBandOwner(bandId) {
+      return isBandMember(bandId) && getMemberData(bandId).role == 'owner';
+    }
+
+    // 5. Comprobar si el usuario es DIRECTOR u OWNER de la banda
+    function isBandDirectorOrOwner(bandId) {
+      return isBandMember(bandId) && (
+        getMemberData(bandId).role == 'owner' || 
+        getMemberData(bandId).role == 'director'
+      );
+    }
+
+    // 6. Verificar si existe una invitación válida y aceptada para incorporar un miembro
+    function isValidInvitationJoin(bandId, memberUserId) {
+      let invRef = /databases/$(database)/documents/invitations/$(request.resource.data.invitationId);
+      return exists(invRef) 
+        && get(invRef).data.bandId == bandId
+        && (get(invRef).data.invitedEmail == request.auth.token.email || get(invRef).data.invitedUserId == memberUserId)
+        && get(invRef).data.role == request.resource.data.role
+        && get(invRef).data.status == 'accepted';
+    }
+
+    // =========================================================================
+    // PERFILES DE USUARIO (users/{userId})
+    // =========================================================================
+    match /users/{userId} {
+      // Lectura: Cualquier usuario autenticado puede leer perfiles (necesario para ver miembros de banda e invitaciones)
+      allow read: if isSignedIn();
+      
+      // Creación/Edición: El propio usuario puede guardar su perfil.
+      // Validación: El ID de documento y el campo 'uid' deben coincidir con request.auth.uid.
+      // Se restringen los campos a los permitidos sin permitir manipular roles o atributos no autorizados.
+      allow create, update: if isSignedIn() 
+        && request.auth.uid == userId 
+        && request.resource.data.uid == userId
+        && request.resource.data.keys().hasOnly(['uid', 'email', 'displayName', 'photoURL', 'createdAt', 'updatedAt']);
+        
+      allow delete: if false; // Los perfiles no se eliminan directamente desde el cliente
+    }
+
+    // =========================================================================
+    // BANDAS (bands/{bandId})
+    // =========================================================================
+    match /bands/{bandId} {
+      // Lectura: Solamente miembros de la banda
+      allow read: if isBandMember(bandId);
+      
+      // Creación: Cualquier usuario autenticado puede crear una banda si se asigna a sí mismo como ownerId
+      allow create: if isSignedIn() 
+        && request.resource.data.ownerId == request.auth.uid;
+        
+      // Edición/Eliminación: Solamente el OWNER de la banda (los directores/miembros no pueden alterar la banda)
+      allow update, delete: if isBandOwner(bandId);
+
+      // -----------------------------------------------------------------------
+      // MIEMBROS DE LA BANDA (bands/{bandId}/members/{memberUserId})
+      // -----------------------------------------------------------------------
+      match /members/{memberUserId} {
+        // Lectura: Miembros de la banda o el propio usuario autenticado (para consultas collectionGroup)
+        allow read: if isBandMember(bandId) || (isSignedIn() && request.auth.uid == memberUserId);
+        
+        // Creación:
+        // Caso A: El creador de la banda se agrega como 'owner' inicial (inspecciona el batch con existsAfter/getAfter)
+        // Caso B: El OWNER de la banda agrega o asigna directamente un miembro
+        // Caso C: Un usuario invitado se incorpora validando que existe una invitación válida en Firestore
+        allow create: if isSignedIn() && (
+          (request.auth.uid == memberUserId && request.resource.data.role == 'owner' && 
+           existsAfter(/databases/$(database)/documents/bands/$(bandId)) &&
+           getAfter(/databases/$(database)/documents/bands/$(bandId)).data.ownerId == request.auth.uid) ||
+          isBandOwner(bandId) ||
+          (request.auth.uid == memberUserId && ('invitationId' in request.resource.data) && 
+           isValidInvitationJoin(bandId, memberUserId))
+        );
+                         
+        // Edición de miembros: Solamente el OWNER de la banda. 
+        // PROTECCIÓN: El Owner no puede degradar su propio rol a 'director' o 'member'.
+        allow update: if isBandOwner(bandId) && (
+          memberUserId != request.auth.uid || request.resource.data.role == 'owner'
+        );
+        
+        // Eliminación de miembros: 
+        // El OWNER puede eliminar otros miembros (pero no a sí mismo).
+        // Un miembro (que no sea OWNER) puede eliminarse a sí mismo para abandonar la banda.
+        // PROTECCIÓN: El OWNER no puede eliminarse a sí mismo dejando la banda huérfana.
+        allow delete: if (isBandOwner(bandId) && memberUserId != request.auth.uid) ||
+                         (isSignedIn() && request.auth.uid == memberUserId && resource.data.role != 'owner');
+      }
+
+      // -----------------------------------------------------------------------
+      // SESIONES DE DIRECTOR (bands/{bandId}/sessions/{sessionId})
+      // -----------------------------------------------------------------------
+      match /sessions/{sessionId} {
+        // Lectura: Todos los miembros de la banda pueden ver la sesión activa
+        allow read: if isBandMember(bandId);
+        
+        // Creación: Solamente Owner o Director de la banda
+        allow create: if isBandDirectorOrOwner(bandId) 
+          && request.resource.data.directorId == request.auth.uid 
+          && request.resource.data.status == 'active';
+          
+        // Actualización: Solamente el Director asignado a la sesión o el Owner de la banda
+        allow update: if isBandDirectorOrOwner(bandId) 
+          && (resource.data.directorId == request.auth.uid || isBandOwner(bandId));
+          
+        // Eliminación: Solamente el Owner o el Director que la inició
+        allow delete: if isBandDirectorOrOwner(bandId) 
+          && (resource.data.directorId == request.auth.uid || isBandOwner(bandId));
+      }
+    }
+
+    // =========================================================================
+    // INVITACIONES A BANDAS (invitations/{invitationId})
+    // =========================================================================
+    match /invitations/{invitationId} {
+      // Lectura: El usuario invitado (por email) o el Líder (Owner/Director) de la banda
+      allow read: if isSignedIn() && (
+        resource.data.invitedEmail == request.auth.token.email ||
+        isBandDirectorOrOwner(resource.data.bandId)
+      );
+      
+      // Creación: Solamente Owner o Director de la banda invitante
+      allow create: if isSignedIn() 
+        && isBandDirectorOrOwner(request.resource.data.bandId)
+        && request.resource.data.invitedByUserId == request.auth.uid
+        && request.resource.data.status == 'pending';
+        
+      // Actualización:
+      // Caso 1: El usuario invitado ACEPTA o RECHAZA la invitación.
+      // RESTRICCIÓN DE SEGURIDAD: Únicamente se permite modificar los campos 'status' e 'invitedUserId'.
+      // No se pueden alterar 'bandId', 'invitedEmail', 'role' ni 'invitedByUserId'.
+      // Caso 2: El Owner o Director CANCELA la invitación.
+      // RESTRICCIÓN DE SEGURIDAD: Únicamente se permite modificar el campo 'status' (a 'cancelled').
+      allow update: if isSignedIn() && (
+        (
+          resource.data.invitedEmail == request.auth.token.email &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'invitedUserId']) &&
+          (request.resource.data.status == 'accepted' || request.resource.data.status == 'rejected')
+        ) ||
+        (
+          isBandDirectorOrOwner(resource.data.bandId) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status']) &&
+          request.resource.data.status == 'cancelled'
+        )
+      );
+        
+      // Eliminación: Solamente Owner o Director de la banda
+      allow delete: if isSignedIn() && isBandDirectorOrOwner(resource.data.bandId);
+    }
+
+    // =========================================================================
+    // REGLAS LEGACY Y COMPATIBILIDAD CON FUNCIONALIDADES EXISTENTES
+    // =========================================================================
+    
+    // 1. Configuraciones de Usuario (user_settings/{userId})
+    match /user_settings/{userId} {
+      allow read, write: if isSignedIn() && request.auth.uid == userId;
+    }
+    
+    // 2. Estadísticas de reproducción (song_stats/{statId})
+    match /song_stats/{statId} {
+      allow read, delete: if isSignedIn() && resource.data.user_id == request.auth.uid;
+      allow create, update: if isSignedIn() && request.resource.data.user_id == request.auth.uid;
+    }
+
+    // 3. Listas personales compartidas en la nube (setlists/{setlistId})
+    match /setlists/{setlistId} {
+      allow read: if isSignedIn() && (
+        resource.data.isPublic == true || 
+        resource.data.user_id == request.auth.uid || 
+        resource.data.createdBy == request.auth.uid ||
+        !('user_id' in resource.data)
+      );
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (
+        resource.data.user_id == request.auth.uid || 
+        resource.data.createdBy == request.auth.uid ||
+        !('user_id' in resource.data)
+      );
+    }
+
+    // 4. Prototipo inicial de sesiones en vivo (live_sessions/{sessionId})
+    match /live_sessions/{sessionId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.resource.data.director_email == request.auth.token.email;
+      allow update, delete: if isSignedIn() && (
+        resource.data.director_email == request.auth.token.email || 
+        !('director_email' in resource.data)
+      );
+    }
+  }
+}
