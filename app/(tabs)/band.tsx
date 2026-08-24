@@ -30,6 +30,7 @@ export default function BandScreen() {
     bands,
     selectedBand,
     userRole,
+    permissions,
     members,
     loading,
     selectBand,
@@ -37,8 +38,6 @@ export default function BandScreen() {
   } = useBands();
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-
-  const isLeader = userRole === 'owner' || userRole === 'director';
 
   const handleCreateBand = async (name: string, description: string) => {
     await createBand(name, description);
@@ -52,7 +51,7 @@ export default function BandScreen() {
   };
 
   const handleDirectorClick = () => {
-    if (!isLeader) {
+    if (!permissions.canCreateDirectorSession) {
       Alert.alert('Acceso restringido', 'Únicamente el Director u Owner de la banda puede iniciar Director Mode.');
       return;
     }
@@ -64,11 +63,11 @@ export default function BandScreen() {
   };
 
   const handleInviteClick = () => {
-    if (!isLeader) {
-      Alert.alert('Acceso restringido', 'Únicamente los administradores pueden enviar invitaciones.');
+    if (!permissions.canInviteMembers) {
+      Alert.alert('Acceso restringido', 'Únicamente el propietario (Owner) de la banda puede enviar invitaciones.');
       return;
     }
-    Alert.alert('Invitar miembro', 'El módulo de invitaciones se activará en la Fase 3.');
+    Alert.alert('Invitar miembro', 'El módulo de invitaciones se activará en las siguientes fases.');
   };
 
   if (loading && bands.length === 0) {
@@ -184,17 +183,17 @@ export default function BandScreen() {
                   <TouchableOpacity
                     style={[
                       styles.actionCard,
-                      isLeader ? styles.actionCardActive : styles.actionCardDisabled,
+                      permissions.canCreateDirectorSession ? styles.actionCardActive : styles.actionCardDisabled,
                     ]}
                     onPress={handleDirectorClick}
                   >
                     <View style={styles.actionIconCircle}>
-                      <Radio size={20} color={isLeader ? COLORS.accent : COLORS.mutedForeground} />
+                      <Radio size={20} color={permissions.canCreateDirectorSession ? COLORS.accent : COLORS.mutedForeground} />
                     </View>
                     <View style={styles.actionInfo}>
                       <Text style={styles.actionTitle}>Director Mode</Text>
                       <Text style={styles.actionSubtitle}>
-                        {isLeader ? 'Iniciar o controlar sesión' : 'Solo administradores'}
+                        {permissions.canCreateDirectorSession ? 'Iniciar o controlar sesión' : 'Solo Director u Owner'}
                       </Text>
                     </View>
                     <ChevronRight size={18} color={COLORS.mutedForeground} />
@@ -215,8 +214,8 @@ export default function BandScreen() {
                     <ChevronRight size={18} color={COLORS.mutedForeground} />
                   </TouchableOpacity>
 
-                  {/* Invitar Miembros (Solamente para líderes) */}
-                  {isLeader && (
+                  {/* Invitar Miembros (Solamente si tiene permiso canInviteMembers) */}
+                  {permissions.canInviteMembers && (
                     <TouchableOpacity
                       style={styles.actionCard}
                       onPress={handleInviteClick}

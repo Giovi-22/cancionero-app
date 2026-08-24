@@ -1,8 +1,9 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { Band, BandMember, BandRole, UserProfile } from '../types/band';
 import { BandService, UserBandInfo } from '../services/BandService';
 import { UserService } from '../services/UserService';
+import { getBandPermissions, BandPermissions } from '../utils/permissions';
 
 export function useBands() {
   const { user } = useAppContext();
@@ -12,6 +13,10 @@ export function useBands() {
   const [members, setMembers] = useState<BandMember[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const permissions: BandPermissions = useMemo(() => {
+    return getBandPermissions(userRole);
+  }, [userRole]);
 
   // Cargar bandas del usuario
   const loadBands = useCallback(async () => {
@@ -129,6 +134,7 @@ export function useBands() {
     userBandsInfo,
     selectedBand,
     userRole,
+    permissions,
     members,
     loading,
     error,
