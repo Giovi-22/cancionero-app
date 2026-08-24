@@ -15,6 +15,7 @@ export const CreateSetlistModal = () => {
 
   const [name, setName] = useState('');
   const [date, setDate] = useState<Date | undefined>(undefined);
+  const [notes, setNotes] = useState('');
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
 
@@ -22,6 +23,7 @@ export const CreateSetlistModal = () => {
     if (isCreateSetlistOpen) {
       setName('');
       setDate(undefined);
+      setNotes('');
     }
   }, [isCreateSetlistOpen]);
 
@@ -38,7 +40,7 @@ export const CreateSetlistModal = () => {
   const handleConfirm = async () => {
     if (isCreating) return;
     setIsCreating(true);
-    await handleCreateSetlist(name, date);
+    await handleCreateSetlist(name, date, notes);
     setIsCreating(false);
   };
 
@@ -59,8 +61,16 @@ export const CreateSetlistModal = () => {
             value={name}
             onChangeText={setName}
             autoFocus
-            returnKeyType="done"
-            onSubmitEditing={handleConfirm}
+            returnKeyType="next"
+          />
+          <TextInput
+            style={[styles.createModalInput, { height: 70, textAlignVertical: 'top', marginTop: 10 }]}
+            placeholder="Notas / Observaciones (Opcional)..."
+            placeholderTextColor={COLORS.mutedForeground}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            numberOfLines={3}
           />
           <TouchableOpacity
             style={styles.datePickerBtn}
@@ -120,6 +130,7 @@ export const EditSetlistModal = () => {
 
   const [name, setName] = useState('');
   const [date, setDate] = useState<Date | undefined>(undefined);
+  const [notes, setNotes] = useState('');
   const [selectedSongIds, setSelectedSongIds] = useState<string[]>([]);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -132,6 +143,7 @@ export const EditSetlistModal = () => {
       const cleanName = activeSetlist.name.split(' - ')[0];
       setName(cleanName);
       setDate(activeSetlist.date ? new Date(activeSetlist.date) : undefined);
+      setNotes(activeSetlist.notes || '');
       setSelectedSongIds([...activeSetlist.songIds]);
       setCurrentFolder(null);
       setSearchQuery('');
@@ -187,7 +199,7 @@ export const EditSetlistModal = () => {
   const handleSave = async () => {
     setIsSaving(true);
     try {
-      await handleSaveSetlistSongs(name, date, selectedSongIds);
+      await handleSaveSetlistSongs(name, date, selectedSongIds, notes);
     } finally {
       setIsSaving(false);
     }
@@ -216,6 +228,15 @@ export const EditSetlistModal = () => {
             placeholderTextColor={COLORS.mutedForeground}
             value={name}
             onChangeText={setName}
+          />
+          <TextInput
+            style={[styles.createModalInput, { height: 60, textAlignVertical: 'top', marginTop: 10 }]}
+            placeholder="Notas / Observaciones de la lista..."
+            placeholderTextColor={COLORS.mutedForeground}
+            value={notes}
+            onChangeText={setNotes}
+            multiline
+            numberOfLines={2}
           />
           <TouchableOpacity
             style={styles.datePickerBtn}

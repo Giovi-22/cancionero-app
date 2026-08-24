@@ -82,6 +82,14 @@ export class StorageService {
       await db.execAsync('ALTER TABLE songs ADD COLUMN folder_name TEXT;');
     } catch (e) {}
 
+    try {
+      await db.execAsync('ALTER TABLE setlists ADD COLUMN notes TEXT;');
+    } catch (e) {}
+
+    try {
+      await db.execAsync('ALTER TABLE setlists ADD COLUMN song_notes TEXT;');
+    } catch (e) {}
+
     // Migración inicial de bibliotecas
     try {
       const libCount = await db.getFirstAsync<any>('SELECT COUNT(*) as count FROM libraries');
@@ -342,9 +350,10 @@ export class StorageService {
   static async saveSetlist(setlist: any, libraryId?: string) {
     const db = await this.getDb();
     const libId = libraryId || setlist.libraryId || 'default';
+    const songNotesJson = setlist.songNotes ? JSON.stringify(setlist.songNotes) : null;
     await db.runAsync(
-      'INSERT OR REPLACE INTO setlists (id, name, date, songIds, isPublic, lastUpdated, library_id) VALUES (?, ?, ?, ?, ?, ?, ?)',
-      [setlist.id, setlist.name, setlist.date || null, JSON.stringify(setlist.songIds), setlist.isPublic ? 1 : 0, new Date().toISOString(), libId]
+      'INSERT OR REPLACE INTO setlists (id, name, date, songIds, isPublic, lastUpdated, library_id, notes, song_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [setlist.id, setlist.name, setlist.date || null, JSON.stringify(setlist.songIds), setlist.isPublic ? 1 : 0, new Date().toISOString(), libId, setlist.notes || null, songNotesJson]
     );
     
     this.syncSetlistToFirestore({ ...setlist, libraryId: libId });
@@ -362,6 +371,8 @@ export class StorageService {
         date: setlist.date || null,
         song_ids: setlist.songIds,
         is_public: !!setlist.isPublic,
+        notes: setlist.notes || null,
+        song_notes: setlist.songNotes || {},
         last_updated: new Date().toISOString(),
         library_id: setlist.libraryId || 'default'
       }, { merge: true });
@@ -378,11 +389,18 @@ export class StorageService {
     } else {
       rows = await db.getAllAsync<any>('SELECT * FROM setlists ORDER BY COALESCE(date, lastUpdated, id) DESC');
     }
-    return rows.map(row => ({
-      ...row,
-      songIds: JSON.parse(row.songIds),
-      isPublic: !!row.isPublic,
-    }));
+    return rows.map(row => {
+      let songNotes = {};
+      if (row.song_notes) {
+        try { songNotes = JSON.parse(row.song_notes); } catch (e) {}
+      }
+      return {
+        ...row,
+        songIds: JSON.parse(row.songIds),
+        isPublic: !!row.isPublic,
+        songNotes
+      };
+    });
   }
 
   static async deleteSong(id: string) {
@@ -432,9 +450,10 @@ export class StorageService {
         const db = await this.getDb();
         for (const doc of setlistsSnapshot.docs) {
           const rs = doc.data();
+          const songNotesJson = rs.song_notes ? JSON.stringify(rs.song_notes) : null;
           await db.runAsync(
-            'INSERT OR REPLACE INTO setlists (id, name, songIds, isPublic, lastUpdated, library_id) VALUES (?, ?, ?, ?, ?, ?)',
-            [doc.id, rs.name, JSON.stringify(rs.song_ids), rs.is_public ? 1 : 0, rs.last_updated, rs.library_id || 'default']
+            'INSERT OR REPLACE INTO setlists (id, name, songIds, isPublic, lastUpdated, library_id, notes, song_notes) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+            [doc.id, rs.name, JSON.stringify(rs.song_ids), rs.is_public ? 1 : 0, rs.last_updated, rs.library_id || 'default', rs.notes || null, songNotesJson]
           );
         }
       }

@@ -1,6 +1,6 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, TextInput, StyleSheet, ActivityIndicator } from 'react-native';
-import { ArrowLeft, Plus, Edit2, Play, Radio, Search, X, Square } from 'lucide-react-native';
+import { ArrowLeft, Plus, Edit2, Play, Radio, Search, X, Square, FileText, Check, ChevronDown, ChevronUp } from 'lucide-react-native';
 import { useAppContext } from '../../../src/context/AppContext';
 import { SongList } from '../../../src/components/SongList';
 import { COLORS } from '../../../src/constants/theme';
@@ -23,6 +23,7 @@ export default function SetlistDetailScreen() {
     handleStartSetlistLocally,
     handleStartShowFromSetlist,
     handleEndShow,
+    handleUpdateSetlistNotes,
     myDirectorSession,
     user,
     setIsEditSetlistOpen,
@@ -31,6 +32,10 @@ export default function SetlistDetailScreen() {
   } = useAppContext();
 
   const insets = useSafeAreaInsets();
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesText, setNotesText] = useState('');
+  const [isNotesExpanded, setIsNotesExpanded] = useState(false);
+  const [isSavingNotes, setIsSavingNotes] = useState(false);
 
   useEffect(() => {
     if (!activeSetlist || activeSetlist.id !== id) {
@@ -40,6 +45,16 @@ export default function SetlistDetailScreen() {
       }
     }
   }, [id, setlists]);
+
+  useEffect(() => {
+    if (activeSetlist) {
+      setNotesText(activeSetlist.notes || '');
+      // Expand automatically if there are notes
+      if (activeSetlist.notes && activeSetlist.notes.trim().length > 0) {
+        setIsNotesExpanded(true);
+      }
+    }
+  }, [activeSetlist?.id, activeSetlist?.notes]);
 
   if (!activeSetlist) {
     return <View style={styles.container} />;
@@ -62,6 +77,17 @@ export default function SetlistDetailScreen() {
 
   const handleOpenEditSetlist = () => {
     setIsEditSetlistOpen(true);
+  };
+
+  const handleSaveNotes = async () => {
+    if (!activeSetlist) return;
+    setIsSavingNotes(true);
+    try {
+      await handleUpdateSetlistNotes(activeSetlist.id, notesText);
+      setIsEditingNotes(false);
+    } finally {
+      setIsSavingNotes(false);
+    }
   };
 
   const isStartingShow = loadingActions['startShow'];
@@ -136,6 +162,89 @@ export default function SetlistDetailScreen() {
         )}
       </View>
 
+      {/* Sección de Notas de la Lista */}
+      <View style={styles.notesContainer}>
+        <TouchableOpacity
+          style={styles.notesHeader}
+          onPress={() => setIsNotesExpanded(!isNotesExpanded)}
+          activeOpacity={0.7}
+        >
+          <View style={styles.notesTitleRow}>
+            <FileText size={16} color={COLORS.accent} />
+            <Text style={styles.notesTitle}>Notas de la Lista</Text>
+            {activeSetlist.notes && activeSetlist.notes.trim().length > 0 && (
+              <View style={styles.notesBadge}>
+                <Text style={styles.notesBadgeText}>1</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.notesHeaderActions}>
+            <TouchableOpacity
+              style={styles.editNotesBtn}
+              onPress={() => {
+                if (!isNotesExpanded) setIsNotesExpanded(true);
+                setIsEditingNotes(!isEditingNotes);
+              }}
+            >
+              <Text style={styles.editNotesBtnText}>
+                {isEditingNotes ? 'Cancelar' : activeSetlist.notes ? 'Editar' : '+ Añadir'}
+              </Text>
+            </TouchableOpacity>
+            {isNotesExpanded ? (
+              <ChevronUp size={18} color={COLORS.mutedForeground} />
+            ) : (
+              <ChevronDown size={18} color={COLORS.mutedForeground} />
+            )}
+          </View>
+        </TouchableOpacity>
+
+        {isNotesExpanded && (
+          <View style={styles.notesBody}>
+            {isEditingNotes ? (
+              <View style={styles.notesEditWrapper}>
+                <TextInput
+                  style={styles.notesInput}
+                  value={notesText}
+                  onChangeText={setNotesText}
+                  placeholder="Escribe notas, recordatorios u observaciones..."
+                  placeholderTextColor={COLORS.mutedForeground}
+                  multiline
+                  numberOfLines={4}
+                  textAlignVertical="top"
+                />
+                <TouchableOpacity
+                  style={styles.saveNotesBtn}
+                  onPress={handleSaveNotes}
+                  disabled={isSavingNotes}
+                >
+                  {isSavingNotes ? (
+                    <ActivityIndicator size="small" color="#fff" />
+                  ) : (
+                    <>
+                      <Check size={16} color="#fff" />
+                      <Text style={styles.saveNotesBtnText}>Guardar Notas</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity
+                onPress={() => setIsEditingNotes(true)}
+                activeOpacity={0.8}
+              >
+                {activeSetlist.notes && activeSetlist.notes.trim().length > 0 ? (
+                  <Text style={styles.notesText}>{activeSetlist.notes}</Text>
+                ) : (
+                  <Text style={styles.notesPlaceholder}>
+                    Sin notas para esta lista. Toca para añadir observaciones, orden del servicio, etc.
+                  </Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        )}
+      </View>
+
       <View style={styles.searchContainer}>
         <Search size={18} color={COLORS.mutedForeground} style={styles.searchIcon} />
         <TextInput
@@ -193,9 +302,109 @@ const styles = StyleSheet.create({
   startShowHeaderText: { color: '#fff', fontSize: 14, fontWeight: 'bold' },
   searchContainer: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: COLORS.surface,
-    borderRadius: 10, margin: 15, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border,
+    borderRadius: 10, margin: 15, marginTop: 10, paddingHorizontal: 12, borderWidth: 1, borderColor: COLORS.border,
   },
   searchIcon: { marginRight: 8 },
   searchInput: { flex: 1, color: COLORS.foreground, paddingVertical: 12, fontSize: 15 },
   clearSearchBtn: { padding: 5 },
+
+  // Notes styles
+  notesContainer: {
+    marginHorizontal: 15,
+    marginTop: 12,
+    backgroundColor: COLORS.surface,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    overflow: 'hidden',
+  },
+  notesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: 'rgba(255,255,255,0.03)',
+  },
+  notesTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  notesTitle: {
+    color: COLORS.foreground,
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  notesBadge: {
+    backgroundColor: COLORS.accent,
+    borderRadius: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+  },
+  notesBadgeText: {
+    color: '#fff',
+    fontSize: 10,
+    fontWeight: 'bold',
+  },
+  notesHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  editNotesBtn: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    backgroundColor: 'rgba(255,255,255,0.08)',
+  },
+  editNotesBtnText: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  notesBody: {
+    padding: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.border,
+  },
+  notesEditWrapper: {
+    gap: 10,
+  },
+  notesInput: {
+    backgroundColor: COLORS.background,
+    color: COLORS.foreground,
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    minHeight: 90,
+  },
+  saveNotesBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: COLORS.accent,
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignSelf: 'flex-end',
+  },
+  saveNotesBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+  notesText: {
+    color: COLORS.foreground,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  notesPlaceholder: {
+    color: COLORS.mutedForeground,
+    fontSize: 13,
+    fontStyle: 'italic',
+  },
 });

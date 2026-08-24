@@ -88,10 +88,12 @@ export interface AppContextType {
   handleSaveSongSettings: (data: any) => Promise<void>;
   handleSaveConfig: (folderId: string) => Promise<void>;
   handleDeleteSetlist: (setlist: Setlist) => Promise<void>;
-  handleCreateSetlist: (name: string, date?: Date) => Promise<void>;
+  handleCreateSetlist: (name: string, date?: Date, notes?: string) => Promise<void>;
   handleRemoveSongFromSetlist: (songId: string) => Promise<void>;
   handleMoveSong: (fromIndex: number, toIndex: number) => Promise<void>;
-  handleSaveSetlistSongs: (name: string, date: Date | undefined, songIds: string[]) => Promise<void>;
+  handleSaveSetlistSongs: (name: string, date: Date | undefined, songIds: string[], notes?: string) => Promise<void>;
+  handleUpdateSetlistNotes: (setlistId: string, notes: string) => Promise<void>;
+  handleUpdateSetlistSongNote: (setlistId: string, songId: string, note: string) => Promise<void>;
   handleClearRepertoire: () => Promise<void>;
 
   // Library Actions
@@ -408,9 +410,10 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     return `${day}/${month}/${year}`;
   };
 
-  const handleCreateSetlist = async (name: string, date?: Date) => {
+  const handleCreateSetlist = async (name: string, date?: Date, notes?: string) => {
+    if (!activeLibrary) return;
     const trimmed = name.trim();
-    if (!trimmed || !activeLibrary) return;
+    if (!trimmed) return;
 
     const dateStr = date ? formatDate(date.toISOString()) : null;
     const finalName = dateStr ? `${trimmed} - ${dateStr}` : trimmed;
@@ -421,6 +424,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       date: date ? date.toISOString() : undefined,
       songIds: [],
       isPublic: false,
+      notes: notes?.trim() || undefined,
       libraryId: activeLibrary.id
     };
     await StorageService.saveSetlist(newSetlist, activeLibrary.id);
@@ -450,7 +454,7 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     await refreshLocalData();
   };
 
-  const handleSaveSetlistSongs = async (name: string, date: Date | undefined, songIds: string[]) => {
+  const handleSaveSetlistSongs = async (name: string, date: Date | undefined, songIds: string[], notes?: string) => {
     if (!activeSetlist || !activeLibrary) return;
 
     let cleanName = name.trim().split(' - ')[0];
@@ -461,7 +465,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       ...activeSetlist,
       name: finalName,
       date: date ? date.toISOString() : undefined,
-      songIds
+      songIds,
+      notes: notes !== undefined ? notes : activeSetlist.notes
     };
 
     await StorageService.saveSetlist(updated, activeLibrary.id);
@@ -469,6 +474,46 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     setSetlists(prev => prev.map(s => s.id === updated.id ? updated : s));
     setIsEditSetlistOpen(false);
     await refreshLocalData();
+  };
+
+  const handleUpdateSetlistNotes = async (setlistId: string, notes: string) => {
+    const targetSetlist = setlists.find(s => s.id === setlistId) || (activeSetlist?.id === setlistId ? activeSetlist : null);
+    if (!targetSetlist || !activeLibrary) return;
+
+    const updated: Setlist = {
+      ...targetSetlist,
+      notes
+    };
+
+    await StorageService.saveSetlist(updated, activeLibrary.id);
+    if (activeSetlist?.id === setlistId) {
+      setActiveSetlist(updated);
+    }
+    setSetlists(prev => prev.map(s => s.id === setlistId ? updated : s));
+  };
+
+  const handleUpdateSetlistSongNote = async (setlistId: string, songId: string, note: string) => {
+    const targetSetlist = setlists.find(s => s.id === setlistId) || (activeSetlist?.id === setlistId ? activeSetlist : null);
+    if (!targetSetlist || !activeLibrary) return;
+
+    const currentNotes = { ...(targetSetlist.songNotes || {}) };
+    const trimmed = note.trim();
+    if (trimmed) {
+      currentNotes[songId] = trimmed;
+    } else {
+      delete currentNotes[songId];
+    }
+
+    const updated: Setlist = {
+      ...targetSetlist,
+      songNotes: currentNotes
+    };
+
+    await StorageService.saveSetlist(updated, activeLibrary.id);
+    if (activeSetlist?.id === setlistId) {
+      setActiveSetlist(updated);
+    }
+    setSetlists(prev => prev.map(s => s.id === setlistId ? updated : s));
   };
 
   const handleClearRepertoire = async () => {
@@ -804,6 +849,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         handleRemoveSongFromSetlist,
         handleMoveSong,
         handleSaveSetlistSongs,
+        handleUpdateSetlistNotes,
+        handleUpdateSetlistSongNote,
         handleCreateLibrary,
         handleUpdateLibrary,
         handleDeleteLibrary,

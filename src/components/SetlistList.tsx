@@ -3,7 +3,7 @@ import {
   StyleSheet, Text, View, TouchableOpacity,
   ScrollView, Modal, Alert, ActivityIndicator
 } from 'react-native';
-import { ListMusic, ChevronRight, Plus, Trash2, X, ArrowUpDown, Check } from 'lucide-react-native';
+import { ListMusic, ChevronRight, Plus, Trash2, X, ArrowUpDown, Check, FileText } from 'lucide-react-native';
 import { Setlist } from '../types';
 
 const COLORS = {
@@ -123,10 +123,18 @@ export const SetlistList: React.FC<SetlistListProps> = ({
                 </View>
                 <View style={styles.setlistInfo}>
                   <Text style={styles.setlistName} numberOfLines={1}>{setlist.name}</Text>
-                  <Text style={styles.setlistMeta}>
-                    {setlist.songIds.length} canciones
-                    {setlist.date ? ` • ${formatDate(setlist.date)}` : ''}
-                  </Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 3 }}>
+                    <Text style={styles.setlistMeta}>
+                      {setlist.songIds.length} canciones
+                      {setlist.date ? ` • ${formatDate(setlist.date)}` : ''}
+                    </Text>
+                    {setlist.notes && setlist.notes.trim().length > 0 && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: 'rgba(59, 130, 246, 0.15)', paddingHorizontal: 6, paddingVertical: 1, borderRadius: 6 }}>
+                        <FileText size={11} color={COLORS.accent} />
+                        <Text style={{ color: COLORS.accent, fontSize: 10, fontWeight: '600' }}>Nota</Text>
+                      </View>
+                    )}
+                  </View>
                 </View>
                 <ChevronRight size={20} color={COLORS.mutedForeground} />
               </TouchableOpacity>

@@ -43,6 +43,22 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
     }
   }
 
+
+  // ============================================================
+  // ELIMINAR LÍNEAS VACÍAS AL PRINCIPIO
+  //
+  // Regla:
+  // La primera línea con contenido SIEMPRE es el título.
+  // ============================================================
+
+  while (
+    lines.length > 0 &&
+    lines[0].trim() === ""
+  ) {
+    lines.shift();
+  }
+
+
   // ============================================================
   // VARIABLES
   // ============================================================
@@ -53,6 +69,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
   let i = 0;
 
   let currentBlock: string | null = null;
+
 
   // ============================================================
   // BLOQUES
@@ -67,6 +84,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
 
     currentBlock = null;
   }
+
 
   function openBlock(
     blockName: string,
@@ -90,6 +108,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
     currentBlock = blockName;
   }
 
+
   // ============================================================
   // PROCESAR LÍNEAS
   // ============================================================
@@ -99,18 +118,17 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
     const currentLine = lines[i];
     const trimmed = currentLine.trim();
 
+
     // ==========================================================
     // TÍTULO
+    //
+    // Como ya eliminamos todas las líneas vacías iniciales,
+    // la primera línea con contenido siempre es el título.
     // ==========================================================
 
     if (
-      i === 0 ||
-      (
-        i === 1 &&
-        lines[0].trim() === "" &&
-        trimmed !== "" &&
-        !trimmed.includes(":")
-      )
+      i === 0 &&
+      trimmed !== ""
     ) {
 
       metadataHeaders.push(
@@ -120,6 +138,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       i++;
       continue;
     }
+
 
     // ==========================================================
     // INTRO: ...
@@ -144,6 +163,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // TONO
     // ==========================================================
@@ -157,6 +177,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       i++;
       continue;
     }
+
 
     // ==========================================================
     // BPM
@@ -172,6 +193,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // COMPÁS
     // ==========================================================
@@ -186,6 +208,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // NOTA
     // ==========================================================
@@ -199,6 +222,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
         notaVal &&
         notaVal !== "-"
       ) {
+
         metadataHeaders.push(
           `{comment: Nota: ${notaVal}}`
         );
@@ -207,6 +231,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       i++;
       continue;
     }
+
 
     // ==========================================================
     // VERSO
@@ -222,11 +247,14 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       const numero = matchVerso[1];
 
       if (numero) {
+
         openBlock(
           "verse",
           `VERSO ${numero}`
         );
+
       } else {
+
         openBlock(
           "verse",
           "VERSO"
@@ -236,6 +264,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       i++;
       continue;
     }
+
 
     // ==========================================================
     // CORO
@@ -249,6 +278,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // PUENTE
     // ==========================================================
@@ -260,6 +290,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       i++;
       continue;
     }
+
 
     // ==========================================================
     // INTERLUDIO
@@ -273,6 +304,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // INTRO
     // ==========================================================
@@ -285,6 +317,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // OUTRO
     // ==========================================================
@@ -296,6 +329,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       i++;
       continue;
     }
+
 
     // ==========================================================
     // FINAL
@@ -312,6 +346,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // PRE-CORO
     // ==========================================================
@@ -326,6 +361,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // TAB
     // ==========================================================
@@ -337,6 +373,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       i++;
       continue;
     }
+
 
     // ==========================================================
     // GRID
@@ -350,6 +387,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // FIN
     // ==========================================================
@@ -362,6 +400,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // LÍNEA DE ACORDES
     // ==========================================================
@@ -371,6 +410,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       const nextLine = lines[i + 1];
 
       let puedeFusionarse = false;
+
 
       if (
         nextLine !== undefined &&
@@ -388,6 +428,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
           puedeFusionarse = true;
         }
       }
+
 
       // --------------------------------------------------------
       // ACORDES + LETRA
@@ -409,6 +450,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
         continue;
       }
 
+
       // --------------------------------------------------------
       // LÍNEA DE ACORDES SOLA
       // --------------------------------------------------------
@@ -423,11 +465,13 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       continue;
     }
 
+
     // ==========================================================
     // LÍNEA NORMAL
     // ==========================================================
 
     if (trimmed !== "") {
+
       chordProResult.push(
         currentLine
       );
@@ -436,6 +480,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
     i++;
   }
 
+
   // ============================================================
   // CERRAR ÚLTIMO BLOQUE
   // ============================================================
@@ -443,6 +488,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
   if (currentBlock) {
     closeCurrentBlock();
   }
+
 
   // ============================================================
   // RESULTADO
@@ -454,8 +500,6 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
     chordProResult.join("\n")
   );
 }
-
-
 // ================================================================
 // DETECTAR LÍNEA DE ACORDES
 // ================================================================
