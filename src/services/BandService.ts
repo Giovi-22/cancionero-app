@@ -137,4 +137,44 @@ export class BandService {
         onUpdate(members);
       });
   }
+
+  /**
+   * Actualiza el rol de un miembro de la banda ('member' | 'director').
+   * Solamente autorizado para el Owner de la banda. NUNCA permite crear un owner.
+   */
+  static async updateMemberRole(
+    bandId: string,
+    memberUserId: string,
+    newRole: 'member' | 'director'
+  ): Promise<void> {
+    if (!bandId || !memberUserId) return;
+    if (newRole !== 'member' && newRole !== 'director') {
+      throw new Error('Solo se puede asignar el rol de Miembro o Director.');
+    }
+
+    const memberRef = firestore()
+      .collection(this.COLLECTION)
+      .doc(bandId)
+      .collection('members')
+      .doc(memberUserId);
+
+    await memberRef.update({ role: newRole });
+    console.log(`[BandService] Rol del miembro ${memberUserId} actualizado a:`, newRole);
+  }
+
+  /**
+   * Elimina a un miembro de la banda o permite que un usuario abandone la banda.
+   */
+  static async removeMember(bandId: string, memberUserId: string): Promise<void> {
+    if (!bandId || !memberUserId) return;
+
+    const memberRef = firestore()
+      .collection(this.COLLECTION)
+      .doc(bandId)
+      .collection('members')
+      .doc(memberUserId);
+
+    await memberRef.delete();
+    console.log(`[BandService] Miembro ${memberUserId} eliminado de la banda ${bandId}.`);
+  }
 }

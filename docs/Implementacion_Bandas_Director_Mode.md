@@ -2,11 +2,11 @@
 
 ## Objetivo
 
-Rediseñar el sistema de **Director Mode** para que la aplicación pueda publicarse en Google Play Store y ser utilizada por cualquier usuario, pero permitiendo que las funciones de dirección y sincronización en tiempo real estén restringidas a los miembros autorizados de una banda.
+Rediseñar el sistema de Director Mode para que la aplicación pueda publicarse en Google Play Store y ser utilizada por cualquier usuario, pero permitiendo que las funciones de dirección y sincronización en tiempo real estén restringidas a los miembros autorizados de una banda.
 
-La implementación debe aprovechar la migración actual de **Supabase a Firebase/Firestore**.
+La implementación debe aprovechar la migración actual de Supabase a Firebase/Firestore.
 
-La idea central es dejar de pensar Director Mode como una simple función habilitada para determinados emails y pasar a un modelo de **Bandas**, donde los usuarios pertenecen a uno o más grupos musicales y tienen distintos roles y permisos.
+La idea central es dejar de pensar Director Mode como una simple función habilitada para determinados emails y pasar a un modelo de Bandas, donde los usuarios pertenecen a uno o más grupos musicales y tienen distintos roles y permisos.
 
 ---
 
@@ -24,7 +24,6 @@ Una banda representa un grupo de usuarios que comparten repertorio y pueden util
 
 Ejemplo:
 
-```text
 Usuario
 │
 ├── Listas personales
@@ -40,7 +39,6 @@ Usuario
         ├── Miembros
         ├── Listas
         └── Sesiones de Director
-```
 
 Un usuario podrá pertenecer a varias bandas.
 
@@ -50,41 +48,35 @@ Un usuario podrá pertenecer a varias bandas.
 
 Agregar una nueva sección principal de navegación llamada:
 
-**Banda**
+Banda
 
 Esta sección debe centralizar todo lo relacionado con las bandas del usuario.
 
-La pantalla no debería contener toda la lógica de negocio. Debe ser una pantalla liviana que consuma hooks/servicios/componentes reutilizables.
+La pantalla no debería contener toda la lógica de negocio. Debe ser una pantalla liviana que consuma hooks, servicios y componentes reutilizables.
 
 ## Posible estructura
 
-```text
 Banda
 │
 ├── Mis bandas
-│
 ├── Crear banda
-│
+├── Invitaciones
 ├── Unirse a una banda
-│
 └── [Banda seleccionada]
      │
      ├── Información
      ├── Miembros
      ├── Listas / Repertorio
      └── Director Mode
-```
 
 Si el usuario no pertenece a ninguna banda:
 
-```text
 Banda
 
 Todavía no pertenecés a ninguna banda.
 
 [Crear banda]
 [Unirse a una banda]
-```
 
 ---
 
@@ -94,45 +86,65 @@ Un usuario puede crear una banda.
 
 Formulario mínimo:
 
-```text
 Nombre de la banda
 [________________]
 
 [Crear banda]
-```
 
 El creador pasa automáticamente a ser:
 
-```text
 role: owner
-```
 
 Ejemplo:
 
-```text
 Mi Banda
 
 Juan      OWNER
 Pedro     MEMBER
 Luis      MEMBER
 María     MEMBER
-```
 
-Más adelante se puede permitir más de un director.
+La creación inicial debe ser atómica y crear simultáneamente:
+
+bands/{bandId}
+
+y
+
+bands/{bandId}/members/{ownerId}
+
+El usuario creador será el único OWNER inicial.
+
+No se debe permitir la creación de un segundo OWNER mediante operaciones del cliente.
 
 ---
 
-# 4. Roles
+# 4. Roles y permisos
 
 Definir roles de manera clara.
 
 Roles iniciales:
 
-```text
 owner
 director
 member
-```
+
+Los permisos no deben depender de comprobaciones dispersas del tipo:
+
+if (role === 'owner')
+
+Debe existir una capa de abstracción:
+
+ROLE
+  ↓
+PERMISSIONS
+  ↓
+FEATURES
+
+La implementación actual utiliza:
+
+getBandPermissions(role)
+
+para transformar el rol del usuario en permisos granulares.
 
 ## Owner
 
@@ -141,11 +153,16 @@ Puede:
 - editar información de la banda
 - administrar miembros
 - invitar miembros
+- invitar usuarios como member o director
 - eliminar miembros
-- asignar/quitar permisos de director
+- asignar el rol director
+- quitar el rol director
 - crear/iniciar sesiones de Director
+- controlar sesiones de Director
 - administrar listas de la banda
 - eliminar la banda
+
+El Owner es el único rol que puede administrar roles.
 
 ## Director
 
@@ -157,8 +174,18 @@ Puede:
 - crear/iniciar sesiones de Director
 - controlar una sesión activa
 - enviar comandos a los miembros
+- invitar nuevos usuarios como member
 
-No debería poder eliminar la banda ni administrar funciones críticas del owner.
+El Director NO puede:
+
+- eliminar la banda
+- editar configuraciones administrativas críticas
+- cambiar roles de miembros
+- asignar el rol director
+- quitar el rol director
+- invitar usuarios como director
+- invitar usuarios como owner
+- administrar funciones exclusivas del Owner
 
 ## Member
 
@@ -172,60 +199,149 @@ Puede:
 No puede:
 
 - administrar miembros
+- enviar invitaciones
 - crear sesiones de Director
+- controlar sesiones
 - modificar configuraciones administrativas
+- cambiar roles
 
-La estructura debe permitir agregar nuevos roles/permisos posteriormente sin tener que rehacer toda la arquitectura.
+---
+
+## Cambios de rol
+
+El rol de un miembro es independiente de la forma en que ingresó a la banda.
+
+Por ejemplo:
+
+Member
+  ↓
+Owner lo promueve
+  ↓
+Director
+
+Al pasar a Director, el usuario obtiene automáticamente los permisos correspondientes al rol director.
+
+No se debe almacenar un campo adicional como:
+
+isDirector
+canInvite
+canControlSession
+
+El rol es la fuente de verdad.
+
+La capa de permisos debe derivarse siempre del rol actual.
+
+Ejemplo:
+
+role: "director"
+
+↓
+
+getBandPermissions("director")
+
+↓
+
+permisos de Director
+
+El Owner también puede quitar el rol de Director:
+
+Director
+  ↓
+Owner modifica el rol
+  ↓
+Member
+
+Al volver a member, el usuario pierde automáticamente los permisos de Director.
+
+## Reglas de asignación de roles
+
+Únicamente el Owner puede modificar el rol de otro miembro.
+
+Un Owner puede asignar:
+
+member
+director
+
+Un Owner nunca puede crear otro owner desde el cliente.
+
+Un Director nunca puede promover a otro usuario a Director.
+
+Un Director tampoco puede modificar su propio rol para obtener privilegios adicionales.
 
 ---
 
 # 5. Invitaciones
 
-El owner/director debería poder invitar usuarios.
+El Owner y el Director pueden invitar usuarios a la banda.
 
-Primera implementación recomendada: **invitación mediante email**.
+Las invitaciones se realizan inicialmente mediante email.
 
-Ejemplo de UI:
+## Permisos para invitar
 
-```text
+Owner:
+
+- puede invitar usuarios como member
+- puede invitar usuarios como director
+
+Director:
+
+- puede invitar usuarios únicamente como member
+
+Member:
+
+- no puede enviar invitaciones
+
+El Director no puede utilizar una invitación para otorgar el rol director.
+
+La asignación del rol director permanece exclusivamente bajo control del Owner.
+
+Nunca se puede invitar ni incorporar un usuario con role: owner.
+
+## Ejemplo de UI
+
 Invitar miembro
 
 Email
 [________________________]
 
 [Enviar invitación]
-```
 
 La invitación debe almacenarse en Firestore.
 
 Conceptualmente:
 
-```text
 invitations/{invitationId}
 
 {
   bandId,
   invitedEmail,
-  invitedBy,
+  invitedUserId,
+  invitedByUserId,
+  role: "member",
   status: "pending",
   createdAt,
   expiresAt
 }
-```
 
 Estados posibles:
 
-```text
 pending
 accepted
 rejected
 expired
 cancelled
-```
 
 No asumir que el usuario invitado ya existe.
 
-Si todavía no tiene cuenta, la invitación debe poder quedar pendiente y asociarse posteriormente cuando se registre con ese email.
+Si todavía no tiene cuenta, la invitación debe quedar pendiente y poder asociarse posteriormente cuando se registre con ese email.
+
+Las Security Rules deben impedir:
+
+- invitaciones creadas por miembros;
+- invitaciones creadas por usuarios ajenos a la banda;
+- invitaciones de Director que asignen role: director;
+- cualquier invitación con role: owner;
+- modificación arbitraria de bandId, invitedEmail, invitedByUserId o role.
 
 ---
 
@@ -233,9 +349,8 @@ Si todavía no tiene cuenta, la invitación debe poder quedar pendiente y asocia
 
 Cuando un usuario inicia sesión, la aplicación debe comprobar si existen invitaciones pendientes asociadas a su email.
 
-Mostrar algo similar a:
+Mostrar algo similar:
 
-```text
 Tenés una invitación
 
 Juan te invitó a:
@@ -243,17 +358,22 @@ Juan te invitó a:
 "Mi Banda"
 
 [Rechazar] [Aceptar]
-```
 
 Al aceptar:
 
 1. validar que la invitación siga vigente;
-2. agregar al usuario como miembro de la banda;
-3. actualizar la invitación a `accepted`;
-4. asociar correctamente el `userId`;
-5. evitar duplicar membresías.
+2. verificar que el usuario autenticado sea realmente el destinatario;
+3. verificar que la invitación esté en estado pending;
+4. verificar que no esté vencida;
+5. agregar al usuario como miembro de la banda;
+6. utilizar el rol autorizado por la invitación;
+7. actualizar la invitación a accepted;
+8. asociar correctamente el userId;
+9. evitar duplicar membresías.
 
-La operación debería ser segura y, cuando corresponda, utilizar una transacción/batch de Firestore.
+La operación debe estar protegida por Firestore Security Rules y, cuando corresponda, utilizar una transacción o mecanismo atómico.
+
+El usuario nunca puede modificar por sí mismo el rol de la invitación para obtener privilegios adicionales.
 
 ---
 
@@ -261,18 +381,15 @@ La operación debería ser segura y, cuando corresponda, utilizar una transacci�
 
 No implementar algo como:
 
-```text
 directorEmails = [
   "juan@gmail.com",
   "pedro@gmail.com"
 ]
-```
 
 Esto no escala y mezcla autorización con usuarios individuales.
 
 La autorización debe derivarse de:
 
-```text
 Usuario
    ↓
 Membresía de banda
@@ -280,7 +397,6 @@ Membresía de banda
 Rol
    ↓
 Permisos
-```
 
 Esto permitirá que la aplicación sea pública y que cada banda administre sus propios miembros.
 
@@ -293,13 +409,12 @@ Director Mode debe estar asociado a una banda.
 Un usuario solamente puede iniciar Director Mode si:
 
 1. está autenticado;
-2. pertenece a una banda;
-3. tiene rol `owner` o `director`;
+2. pertenece a la banda;
+3. tiene rol owner o director;
 4. la banda tiene una sesión válida disponible para iniciar.
 
 Conceptualmente:
 
-```text
 ¿Está autenticado?
     ↓
 ¿Pertenece a una banda?
@@ -307,7 +422,6 @@ Conceptualmente:
 ¿Tiene permiso de director?
     ↓
 Sí → puede iniciar Director Mode
-```
 
 Un miembro normal puede participar en una sesión, pero no iniciarla.
 
@@ -319,8 +433,7 @@ Cuando el director inicia Director Mode, se crea una sesión asociada a la banda
 
 Conceptualmente:
 
-```text
-directorSessions/{sessionId}
+bands/{bandId}/sessions/{sessionId}
 
 {
   bandId,
@@ -331,21 +444,18 @@ directorSessions/{sessionId}
   startedAt,
   endedAt
 }
-```
 
-No guardar continuamente el `scrollY` como estado principal.
+No guardar continuamente el scrollY como estado principal.
 
-La comunicación debe basarse preferentemente en **eventos/comandos**.
+La comunicación debe basarse preferentemente en eventos/comandos.
 
 Ejemplos:
 
-```text
 SONG_CHANGED
 SCROLL_UP
 SCROLL_DOWN
 NEXT_SONG
 PREVIOUS_SONG
-```
 
 Esto mantiene el sistema desacoplado y evita depender de sincronizar continuamente la posición exacta del scroll.
 
@@ -355,7 +465,6 @@ Esto mantiene el sistema desacoplado y evita depender de sincronizar continuamen
 
 Ejemplo:
 
-```text
 Director
    │
    │ inicia sesión
@@ -369,11 +478,9 @@ Miembros de la banda
    ├── Pedro
    ├── Luis
    └── María
-```
 
 El director utiliza el pedal ESP32.
 
-```text
 ESP32
   ↓
 Bluetooth HID
@@ -385,11 +492,9 @@ Evento
 Firestore
   ↓
 Apps de los miembros
-```
 
 Ejemplo:
 
-```text
 ESP32
   ↓
 SCROLL_DOWN
@@ -399,7 +504,6 @@ App Director
 Firestore
   ↓
 Pedro / Luis / María
-```
 
 Cada cliente ejecuta localmente el comportamiento correspondiente.
 
@@ -409,18 +513,15 @@ Cada cliente ejecuta localmente el comportamiento correspondiente.
 
 Cuando un miembro abre la sección de Banda y existe una sesión activa:
 
-```text
-🎵 Sesión activa
+Sesión activa
 
 Mi Banda
 Director: Juan
 
 [Unirse]
-```
 
 Una vez unido:
 
-```text
 Modo Director
 
 Sincronizado con:
@@ -431,7 +532,6 @@ Canción:
 
 Director:
 Juan
-```
 
 El miembro no debería tener controles de dirección, salvo los que posteriormente se definan explícitamente.
 
@@ -445,35 +545,29 @@ No confiar únicamente en la interfaz.
 
 Ocultar el botón de Director Mode NO es seguridad.
 
-Las **Firestore Security Rules** deben impedir que un usuario no autorizado acceda o modifique datos de una banda o sesión.
+Las Firestore Security Rules deben impedir que un usuario no autorizado acceda o modifique datos de una banda o sesión.
 
-Reglas conceptuales:
+La seguridad real debe derivarse de:
 
-```text
 Usuario autenticado
        ↓
-¿Pertenece a bandId?
+Membresía
        ↓
-     SÍ
+Rol
        ↓
-Puede leer información permitida
-```
-
-Para crear/modificar sesiones:
-
-```text
-¿Es owner o director?
+Permiso
        ↓
-     SÍ
-       ↓
-Puede crear/modificar sesión
-```
+Operación autorizada
 
-Un `member` no debería poder crear una sesión de Director.
+Un member no puede crear sesiones.
 
-Un usuario que no pertenece a la banda no debería poder leer sus datos privados.
+Un usuario externo no puede leer información privada de una banda.
 
-Las reglas deben ser diseñadas junto con el modelo de datos, no como una tarea posterior.
+Un Director no puede modificar roles.
+
+Un Director puede crear sesiones y controlar las sesiones que tenga autorizadas.
+
+Un Owner conserva todos los privilegios administrativos.
 
 ---
 
@@ -485,7 +579,6 @@ Preferir una estructura que permita crecer.
 
 Una posible arquitectura:
 
-```text
 users/{userId}
 
 bands/{bandId}
@@ -495,6 +588,7 @@ bands/{bandId}
   └── updatedAt
 
 bands/{bandId}/members/{userId}
+  ├── userId
   ├── role
   ├── joinedAt
   └── displayName / información mínima necesaria
@@ -522,12 +616,12 @@ bands/{bandId}/sessions/{sessionId}/events/{eventId}
 invitations/{invitationId}
   ├── bandId
   ├── invitedEmail
-  ├── invitedUserId (si ya existe)
-  ├── invitedBy
+  ├── invitedUserId
+  ├── invitedByUserId
+  ├── role
   ├── status
   ├── createdAt
   └── expiresAt
-```
 
 Esta estructura es conceptual y debe adaptarse al modelo Firestore que ya existe en la aplicación.
 
@@ -539,9 +633,9 @@ Antes de modificarla, revisar el esquema actual y reutilizar entidades existente
 
 Evitar guardar información que ya puede obtenerse de otra fuente.
 
-Por ejemplo, si `userId` es suficiente para identificar al usuario, no duplicar permanentemente todo su perfil dentro de cada documento.
+Por ejemplo, si userId es suficiente para identificar al usuario, no duplicar permanentemente todo su perfil dentro de cada documento.
 
-Sin embargo, pequeños datos desnormalizados como `displayName` pueden ser aceptables si mejoran considerablemente la lectura y se actualizan de forma controlada.
+Sin embargo, pequeños datos desnormalizados como displayName pueden ser aceptables si mejoran considerablemente la lectura y se actualizan de forma controlada.
 
 Priorizar consistencia y simplicidad.
 
@@ -551,7 +645,7 @@ Priorizar consistencia y simplicidad.
 
 La implementación debe mantener una arquitectura limpia y profesional.
 
-**No concentrar toda la lógica en las pantallas.**
+No concentrar toda la lógica en las pantallas.
 
 Las pantallas deben tener únicamente el código necesario para:
 
@@ -571,7 +665,6 @@ Crear servicios específicos cuando corresponda.
 
 Ejemplo:
 
-```text
 services/
 ├── auth/
 ├── firestore/
@@ -581,7 +674,6 @@ services/
 │   ├── invitationService.ts
 │   └── directorSessionService.ts
 └── ...
-```
 
 No es obligatorio copiar exactamente esta estructura.
 
@@ -589,7 +681,6 @@ Adaptarla a la arquitectura actual del proyecto.
 
 Los servicios deben encargarse de operaciones como:
 
-```text
 createBand()
 getUserBands()
 getBand()
@@ -602,13 +693,13 @@ createInvitation()
 getPendingInvitations()
 acceptInvitation()
 rejectInvitation()
+cancelInvitation()
 
 createDirectorSession()
 endDirectorSession()
 sendDirectorEvent()
 listenToDirectorSession()
 listenToDirectorEvents()
-```
 
 Los nombres pueden adaptarse a las convenciones existentes.
 
@@ -620,20 +711,18 @@ Toda función genérica y reutilizable debe estar fuera de las pantallas.
 
 Por ejemplo:
 
-```text
 utils/
 ├── emailUtils.ts
 ├── dateUtils.ts
 ├── permissionUtils.ts
 ├── bandUtils.ts
 └── ...
-```
 
 Solo colocar allí funciones realmente reutilizables y sin responsabilidad directa de acceso a Firestore.
 
-No convertir `utils` en un depósito de lógica de negocio.
+No convertir utils en un depósito de lógica de negocio.
 
-Si una función interactúa con Firestore, probablemente corresponda a un `service`.
+Si una función interactúa con Firestore, probablemente corresponda a un service.
 
 ---
 
@@ -643,7 +732,6 @@ Cuando una funcionalidad necesite estado y suscripciones, crear hooks reutilizab
 
 Ejemplos:
 
-```text
 hooks/
 ├── useBands.ts
 ├── useBand.ts
@@ -651,17 +739,6 @@ hooks/
 ├── useBandInvitations.ts
 ├── useDirectorSession.ts
 └── ...
-```
-
-Ejemplo conceptual:
-
-```ts
-const {
-  bands,
-  loading,
-  error,
-} = useBands();
-```
 
 La pantalla no debería conocer detalles de consultas Firestore.
 
@@ -673,7 +750,6 @@ Crear componentes cuando una UI tenga comportamiento reutilizable.
 
 Ejemplos:
 
-```text
 components/band/
 ├── BandCard.tsx
 ├── BandMemberList.tsx
@@ -683,15 +759,10 @@ components/band/
 ├── InviteMemberForm.tsx
 ├── BandEmptyState.tsx
 └── DirectorSessionCard.tsx
-```
 
 También reutilizar componentes generales ya existentes en el proyecto antes de crear nuevos.
 
 No crear componentes artificialmente solo para dividir código.
-
-El criterio debe ser:
-
-> Si una pieza tiene responsabilidad clara, puede reutilizarse o tiene suficiente complejidad para justificar su aislamiento, convertirla en componente.
 
 ---
 
@@ -699,19 +770,16 @@ El criterio debe ser:
 
 La navegación debería quedar conceptualmente así:
 
-```text
 Tabs
 ├── Canciones
 ├── Listas
 ├── Banda
 └── Configuración
-```
 
 El nombre exacto de las tabs debe respetar la navegación actual de la aplicación.
 
 Dentro de Banda:
 
-```text
 BandHomeScreen
     │
     ├── lista de bandas
@@ -725,7 +793,6 @@ BandDetailScreen
     ├── miembros
     ├── repertorio
     └── Director Mode
-```
 
 Si el sistema de navegación actual utiliza otra estructura, adaptarlo en lugar de introducir una arquitectura paralela.
 
@@ -737,28 +804,23 @@ La sección Banda debe ser sencilla.
 
 ### Sin banda
 
-```text
 🎸 Tu banda
 
 Todavía no pertenecés a ninguna banda.
 
 [Crear banda]
 [Unirme con invitación]
-```
 
 ### Con una banda
 
-```text
 🎸 Mi Banda
 
 6 miembros
 
 [Ver banda]
-```
 
 ### Dentro de la banda
 
-```text
 Mi Banda
 
 Repertorio
@@ -767,7 +829,6 @@ Repertorio
 Director Mode
 
 [Iniciar Director Mode]
-```
 
 El botón de Director Mode solo debe aparecer habilitado para quienes tengan permiso.
 
@@ -777,7 +838,6 @@ El botón de Director Mode solo debe aparecer habilitado para quienes tengan per
 
 Dentro de la banda:
 
-```text
 Miembros
 
 Juan
@@ -793,19 +853,20 @@ María
 Miembro
 
 [+ Invitar miembro]
-```
 
-El owner podría abrir un menú:
+El Owner puede administrar los roles.
 
-```text
+Ejemplo:
+
 Pedro
 Director
 
 Cambiar rol
 Eliminar miembro
-```
 
-Los permisos deben ser validados también por Firestore Rules.
+El cambio de rol debe estar limitado al Owner.
+
+Un Director no puede administrar roles aunque tenga permiso para invitar miembros.
 
 ---
 
@@ -815,24 +876,14 @@ No asumir que un usuario solo puede pertenecer a una banda.
 
 La arquitectura debe soportar:
 
-```text
 Usuario
  ├── Banda A
  ├── Banda B
  └── Banda C
-```
 
 Esto evita tener que rediseñar la base de datos posteriormente.
 
 La UI puede permitir seleccionar una banda activa.
-
-Por ejemplo:
-
-```text
-Banda activa:
-
-[ Mi Banda ▼ ]
-```
 
 La banda activa debería ser estado de aplicación/UI, no necesariamente un dato permanente de seguridad.
 
@@ -842,21 +893,19 @@ La seguridad siempre debe derivarse de Firestore.
 
 # 24. Director Mode y la banda activa
 
-Director Mode debe trabajar siempre con un `bandId` explícito.
+Director Mode debe trabajar siempre con un bandId explícito.
 
 Evitar depender únicamente de variables globales ambiguas.
 
 Conceptualmente:
 
-```ts
 startDirectorSession({
   bandId,
   directorId,
   ...
 })
-```
 
-Y las consultas/eventos deben estar asociados a esa banda.
+Las consultas y eventos deben estar asociados a esa banda.
 
 Esto evita que un usuario perteneciente a varias bandas mezcle sesiones.
 
@@ -868,16 +917,13 @@ El sistema de Director debe ser desacoplado de la UI.
 
 La capa de comunicación debería exponer algo parecido a:
 
-```ts
 sendDirectorEvent(...)
 subscribeToDirectorEvents(...)
-```
 
 La UI decide qué hacer con el evento.
 
 Ejemplo:
 
-```text
 Firestore event
       ↓
 directorSessionService
@@ -885,9 +931,8 @@ directorSessionService
 useDirectorSession
       ↓
 SongViewer / UI
-```
 
-No hacer que `SongViewer` consulte directamente Firestore.
+No hacer que SongViewer consulte directamente Firestore.
 
 ---
 
@@ -897,7 +942,6 @@ El pedal existente debe seguir funcionando como fuente de comandos.
 
 Arquitectura:
 
-```text
 ESP32
  ↓
 Bluetooth HID
@@ -908,8 +952,7 @@ DirectorSessionService
  ↓
 Firestore
  ↓
-Listeners de miembros
-```
+listeners de miembros
 
 El ESP32 no debería conocer nada acerca de:
 
@@ -920,8 +963,6 @@ El ESP32 no debería conocer nada acerca de:
 - permisos.
 
 Toda esa responsabilidad pertenece a la aplicación.
-
-Esto mantiene el firmware independiente y reutilizable.
 
 ---
 
@@ -941,53 +982,66 @@ No intentar resolver todo en la primera versión, pero diseñar las interfaces p
 
 Por ejemplo:
 
-```text
 status:
 active
 ended
 expired
-```
 
 ---
 
-# 28. Primera versión recomendada
+# 28. Estado actual de implementación y fases
 
-No implementar todo de golpe.
+La implementación se realiza de manera incremental.
 
-Orden sugerido:
-
-## Fase 1 — Modelo
+## Fase 1 — Modelo y arquitectura inicial
 
 - revisar modelo Firestore actual;
-- definir `bands`;
-- definir `members`;
-- definir `invitations`;
+- definir bandas;
+- definir miembros;
 - definir roles;
-- definir reglas de seguridad.
+- preparar reglas de seguridad;
+- preparar arquitectura base.
 
-## Fase 2 — UI Banda
+## Fase 2 — UI y estructura de Banda
 
 - nueva tab Banda;
 - crear banda;
 - listar bandas;
-- entrar a detalle de banda;
-- mostrar miembros.
+- seleccionar banda;
+- mostrar miembros;
+- estructura inicial de Band UI.
 
-## Fase 3 — Invitaciones
+## Fase 3 — Creación de bandas
 
-- invitar por email;
-- detectar invitaciones pendientes;
-- aceptar/rechazar;
-- agregar miembro.
+- validación del formulario;
+- creación atómica de banda + owner;
+- auto-selección de la banda creada;
+- actualización inmediata de UI;
+- protección mediante Firestore Security Rules.
 
-## Fase 4 — Roles
+## Fase 4 — Roles y permisos
 
 - owner;
 - director;
 - member;
-- administración de permisos.
+- abstracción ROLE → PERMISSIONS → FEATURES;
+- protección backend mediante Firestore Security Rules;
+- promoción y degradación de miembros entre member/director exclusivamente por Owner;
+- protección contra creación de segundos owners.
 
-## Fase 5 — Director Session
+## Fase 5 — Invitaciones
+
+- invitación mediante email;
+- Owner puede invitar member/director;
+- Director puede invitar únicamente member;
+- detección de invitaciones pendientes;
+- aceptación/rechazo;
+- asociación con usuario existente o futuro registro;
+- prevención de duplicados;
+- expiración/cancelación;
+- seguridad de las operaciones mediante Firestore Rules.
+
+## Fase 6 — Director Session
 
 - iniciar sesión;
 - finalizar sesión;
@@ -995,14 +1049,14 @@ Orden sugerido:
 - identificar director;
 - listeners en tiempo real.
 
-## Fase 6 — Integración con SongViewer
+## Fase 7 — Integración con SongViewer
 
 - recibir eventos;
 - cambiar canción;
 - scroll;
 - sincronización.
 
-## Fase 7 — Integración completa con pedal
+## Fase 8 — Integración completa con pedal
 
 - ESP32 → App Director → Firestore → miembros.
 
@@ -1012,23 +1066,38 @@ Orden sugerido:
 
 Nunca confiar en:
 
-```text
 if (user.role === "director") {
    mostrarBoton();
 }
-```
 
 Eso es solamente UX.
 
 La seguridad real debe estar en:
 
-```text
 Firestore Security Rules
-```
 
 También evitar guardar permisos únicamente en el dispositivo.
 
 El cliente puede mostrar/ocultar funcionalidades, pero Firestore debe decidir si una operación está autorizada.
+
+La matriz de seguridad debe mantenerse alineada:
+
+OWNER
+- administración total de banda
+- administración de roles
+- invitaciones member/director
+- Director Mode
+
+DIRECTOR
+- Director Mode
+- invitaciones member
+- sin administración de roles
+
+MEMBER
+- participación
+- sin administración
+- sin invitaciones
+- sin Director Mode
 
 ---
 
@@ -1040,22 +1109,8 @@ Durante toda la implementación respetar estas reglas:
 
 Las pantallas deben tener el código justo y necesario.
 
-Evitar:
-
-```text
-Screen
- ├── consultas Firestore
- ├── lógica de permisos
- ├── transformación de datos
- ├── lógica de invitaciones
- ├── listeners
- ├── navegación
- └── UI
-```
-
 Preferir:
 
-```text
 Screen
    ↓
 Hook
@@ -1063,7 +1118,6 @@ Hook
 Service
    ↓
 Firestore
-```
 
 ### 2. Servicios desacoplados
 
@@ -1079,7 +1133,7 @@ Extraer componentes cuando tengan responsabilidad clara o reutilización potenci
 
 ### 5. Utils
 
-Funciones puras y genéricas en `utils`.
+Funciones puras y genéricas en utils.
 
 No colocar acceso a Firestore dentro de utils.
 
@@ -1116,7 +1170,6 @@ Antes de crear una nueva clase, hook, servicio o componente, revisar si ya exist
 
 Priorizar:
 
-```text
 Reutilizar
    ↓
 Extender
@@ -1124,7 +1177,6 @@ Extender
 Refactorizar
    ↓
 Crear nuevo
-```
 
 Evitar duplicar servicios o crear dos mecanismos diferentes para hacer la misma cosa.
 
@@ -1142,16 +1194,24 @@ Al finalizar esta implementación, un usuario nuevo de la Play Store podrá:
 6. participar en una sesión de Director;
 7. recibir comandos en tiempo real.
 
-Y un director podrá:
+Y un Owner podrá:
 
 1. crear una banda;
 2. invitar músicos por email;
 3. administrar miembros;
-4. asignar permisos de director;
+4. asignar o quitar el rol de Director;
 5. seleccionar una lista/repertorio;
 6. iniciar Director Mode;
 7. utilizar el pedal ESP32;
 8. controlar remotamente las aplicaciones de los miembros.
+
+Y un Director podrá:
+
+1. participar como miembro autorizado;
+2. iniciar y controlar Director Mode;
+3. invitar nuevos usuarios como miembros;
+4. utilizar el pedal ESP32 como fuente de comandos;
+5. controlar remotamente las aplicaciones de los miembros durante una sesión.
 
 Un usuario ajeno a la banda no podrá acceder a sus datos ni utilizar su Director Mode.
 
@@ -1176,9 +1236,22 @@ Antes de modificar código:
 13. No asumir que ocultar botones constituye una medida de seguridad.
 14. Hacer la implementación incrementalmente.
 15. Después de cada etapa, verificar que las funcionalidades existentes continúan funcionando.
+16. Antes de implementar cada fase, realizar un análisis previo de los archivos existentes.
+17. No modificar una parte de la arquitectura si ya existe una implementación equivalente sin justificarlo.
+18. Mantener ROLE → PERMISSIONS → FEATURES como mecanismo central de autorización en el frontend.
+19. Mantener Firestore Security Rules como autoridad final de seguridad en el backend.
+20. Nunca permitir que una operación del cliente cree o asigne el rol owner.
 
 La prioridad debe ser:
 
-**arquitectura limpia + seguridad + reutilización + simplicidad + compatibilidad con el código existente.**
+arquitectura limpia
++
+seguridad
++
+reutilización
++
+simplicidad
++
+compatibilidad con el código existente
 
 No realizar un rewrite innecesario de la aplicación.

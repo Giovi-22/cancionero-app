@@ -273,33 +273,53 @@ service cloud.firestore {
       // Caso B:
       // OWNER o DIRECTOR cancela una invitación pendiente.
       //
-      allow update: if isSignedIn() && (
+allow update: if isSignedIn() && (
+  
+  // Usuario invitado acepta o rechaza
+  (
+    resource.data.invitedEmail == request.auth.token.email &&
+    resource.data.status == 'pending' &&
+    resource.data.expiresAt > request.time &&
+    request.resource.data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly(['status', 'invitedUserId']) &&
+    (
+      (
+        request.resource.data.status == 'accepted' &&
+        request.resource.data.invitedUserId == request.auth.uid &&
         
-        // Usuario invitado acepta/rechaza
-        (
-          resource.data.invitedEmail == request.auth.token.email &&
-          resource.data.status == 'pending' &&
-          resource.data.expiresAt > request.time &&
-          request.resource.data.diff(resource.data)
-            .affectedKeys()
-            .hasOnly(['status', 'invitedUserId']) &&
-          (
-            (request.resource.data.status == 'accepted' && request.resource.data.invitedUserId == request.auth.uid) ||
-            (request.resource.data.status == 'rejected')
-          )
-        ) ||
+        // La aceptación SOLO es válida si el miembro
+        // existe en el estado final de la misma operación.
+        existsAfter(
+          /databases/$(database)/documents/bands/$(resource.data.bandId)/members/$(request.auth.uid)
+        ) &&
         
-        // OWNER o DIRECTOR cancela
-        (
-          isBandDirectorOrOwner(resource.data.bandId) &&
-          resource.data.status == 'pending' &&
-          request.resource.data.diff(resource.data)
-            .affectedKeys()
-            .hasOnly(['status']) &&
-          request.resource.data.status == 'cancelled'
-        )
-      );
+        // El miembro debe apuntar a ESTA invitación.
+        getAfter(
+          /databases/$(database)/documents/bands/$(resource.data.bandId)/members/$(request.auth.uid)
+        ).data.invitationId == invitationId &&
+        
+        // El rol del miembro debe coincidir con el de la invitación.
+        getAfter(
+          /databases/$(database)/documents/bands/$(resource.data.bandId)/members/$(request.auth.uid)
+        ).data.role == resource.data.role
+      ) ||
       
+      // Rechazar sí puede hacerse sin crear miembro.
+      request.resource.data.status == 'rejected'
+    )
+  ) ||
+  
+  // OWNER o DIRECTOR cancela
+  (
+    isBandDirectorOrOwner(resource.data.bandId) &&
+    resource.data.status == 'pending' &&
+    request.resource.data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly(['status']) &&
+    request.resource.data.status == 'cancelled'
+  )
+);
       // Eliminación: OWNER o DIRECTOR de la banda
       allow delete: if isSignedIn() &&
         isBandDirectorOrOwner(resource.data.bandId);
@@ -325,21 +345,27 @@ service cloud.firestore {
     }
     
     // 3. Listas personales compartidas en la nube
+    // Cualquier usuario autenticado puede crear y gestionar sus propias listas.
+    // NO se requiere pertenencia a ninguna banda.
     match /setlists/{setlistId} {
+      // Lectura: el propio dueño o documentos públicos.
       allow read: if isSignedIn() && (
-        resource.data.isPublic == true || 
-        resource.data.user_id == request.auth.uid || 
-        resource.data.createdBy == request.auth.uid ||
-        !('user_id' in resource.data)
+        resource.data.user_id == request.auth.uid ||
+        resource.data.is_public == true
       );
-      
-      allow create: if isSignedIn();
-      
-      allow update, delete: if isSignedIn() && (
-        resource.data.user_id == request.auth.uid || 
-        resource.data.createdBy == request.auth.uid ||
-        !('user_id' in resource.data)
-      );
+
+      // Creación: cualquier usuario autenticado, pero el user_id debe ser su propio UID.
+      allow create: if isSignedIn() &&
+        request.resource.data.user_id == request.auth.uid;
+
+      // Actualización: solo el propietario, y no puede transferir la propiedad.
+      allow update: if isSignedIn() &&
+        resource.data.user_id == request.auth.uid &&
+        request.resource.data.user_id == resource.data.user_id;
+
+      // Eliminación: solo el propietario.
+      allow delete: if isSignedIn() &&
+        resource.data.user_id == request.auth.uid;
     }
 
     // 4. Prototipo inicial de sesiones en vivo

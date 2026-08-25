@@ -16,16 +16,21 @@ import {
   ListMusic,
   UserPlus,
   ChevronRight,
-  ShieldAlert,
   Sparkles,
 } from 'lucide-react-native';
 import { useBands } from '../../src/hooks/useBands';
+import { useBandInvitations } from '../../src/hooks/useBandInvitations';
+import { BandService } from '../../src/services/BandService';
 import { COLORS } from '../../src/constants/theme';
 import { CreateBandModal } from '../../src/components/band/CreateBandModal';
+import { InviteMemberModal } from '../../src/components/band/InviteMemberModal';
+import { PendingInvitationsList } from '../../src/components/band/PendingInvitationsList';
 import { BandMemberList } from '../../src/components/band/BandMemberList';
+import { useAppContext } from '../../src/context/AppContext';
 
 export default function BandScreen() {
   const insets = useSafeAreaInsets();
+  const { user } = useAppContext();
   const {
     bands,
     selectedBand,
@@ -37,37 +42,67 @@ export default function BandScreen() {
     createBand,
   } = useBands();
 
+  const {
+    pendingInvitations,
+    sendInvitation,
+    acceptInvitation,
+    rejectInvitation,
+  } = useBandInvitations();
+
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+
+  const currentUserId = user?.uid || user?.id;
 
   const handleCreateBand = async (name: string, description: string) => {
     await createBand(name, description);
   };
 
-  const handleUnirseClick = () => {
-    Alert.alert(
-      'Unirse a una banda',
-      'Las invitaciones a bandas aparecerán aquí cuando estén disponibles.'
-    );
+  const handleSendInvitation = async (email: string, role: 'member' | 'director') => {
+    if (!selectedBand) return;
+    await sendInvitation(selectedBand, email, role);
+  };
+
+  const handleChangeMemberRole = async (
+    memberUserId: string,
+    newRole: 'member' | 'director'
+  ) => {
+    if (!selectedBand) return;
+    await BandService.updateMemberRole(selectedBand.id, memberUserId, newRole);
+  };
+
+  const handleRemoveMember = async (memberUserId: string) => {
+    if (!selectedBand) return;
+    await BandService.removeMember(selectedBand.id, memberUserId);
   };
 
   const handleDirectorClick = () => {
     if (!permissions.canCreateDirectorSession) {
-      Alert.alert('Acceso restringido', 'Únicamente el Director u Owner de la banda puede iniciar Director Mode.');
+      Alert.alert(
+        'Acceso restringido',
+        'Únicamente el Director u Owner de la banda puede iniciar Director Mode.'
+      );
       return;
     }
-    Alert.alert('Director Mode', 'Sesión de Director lista para la Fase 5.');
+    Alert.alert('Director Mode', 'Sesión de Director lista para la Fase 6.');
   };
 
   const handleRepertorioClick = () => {
-    Alert.alert('Repertorio de la Banda', 'El repertorio compartido estará disponible en las siguientes fases.');
+    Alert.alert(
+      'Repertorio de la Banda',
+      'El repertorio compartido estará disponible en las siguientes fases.'
+    );
   };
 
   const handleInviteClick = () => {
     if (!permissions.canInviteMembers) {
-      Alert.alert('Acceso restringido', 'Únicamente el propietario (Owner) de la banda puede enviar invitaciones.');
+      Alert.alert(
+        'Acceso restringido',
+        'No tenés permisos para invitar miembros a esta banda.'
+      );
       return;
     }
-    Alert.alert('Invitar miembro', 'El módulo de invitaciones se activará en las siguientes fases.');
+    setIsInviteModalOpen(true);
   };
 
   if (loading && bands.length === 0) {
@@ -81,6 +116,7 @@ export default function BandScreen() {
 
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
+      {/* Header */}
       <View style={styles.header}>
         <View style={styles.headerTitleRow}>
           <Users color={COLORS.accent} size={24} />
@@ -104,6 +140,13 @@ export default function BandScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
+        {/* Banner de Invitaciones Pendientes Recibidas */}
+        <PendingInvitationsList
+          invitations={pendingInvitations}
+          onAccept={acceptInvitation}
+          onReject={rejectInvitation}
+        />
+
         {/* ESTADO 1: USUARIO SIN BANDAS */}
         {bands.length === 0 ? (
           <View style={styles.emptyCard}>
@@ -112,8 +155,9 @@ export default function BandScreen() {
             </View>
             <Text style={styles.emptyTitle}>Tu Banda</Text>
             <Text style={styles.emptySubtitle}>
-              Todavía no pertenecés a ninguna banda. Creá tu propio grupo o unite
-              mediante una invitación.
+              {pendingInvitations.length > 0
+                ? 'Tenés invitaciones pendientes arriba. Aceptá una para unirte o creá tu propio grupo.'
+                : 'Todavía no pertenecés a ninguna banda. Creá tu propio grupo o unite mediante una invitación.'}
             </Text>
 
             <View style={styles.emptyActions}>
@@ -123,14 +167,6 @@ export default function BandScreen() {
               >
                 <Plus size={18} color="#000" />
                 <Text style={styles.primaryBtnText}>Crear banda</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.secondaryBtn}
-                onPress={handleUnirseClick}
-              >
-                <UserPlus size={18} color={COLORS.foreground} />
-                <Text style={styles.secondaryBtnText}>Unirse con invitación</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -225,15 +261,24 @@ export default function BandScreen() {
                       </View>
                       <View style={styles.actionInfo}>
                         <Text style={styles.actionTitle}>Invitar Miembro</Text>
-                        <Text style={styles.actionSubtitle}>Enviar invitación por email</Text>
+                        <Text style={styles.actionSubtitle}>
+                          {userRole === 'owner' ? 'Invitar miembros o directores' : 'Invitar miembros'}
+                        </Text>
                       </View>
                       <ChevronRight size={18} color={COLORS.mutedForeground} />
                     </TouchableOpacity>
                   )}
                 </View>
 
-                {/* Lista de Miembros */}
-                <BandMemberList members={members} />
+                {/* Lista de Miembros con Opciones Administrativas para Owner */}
+                <BandMemberList
+                  members={members}
+                  currentUserId={currentUserId}
+                  canChangeRole={permissions.canChangeMemberRole}
+                  canRemoveMember={permissions.canRemoveMembers}
+                  onChangeRole={handleChangeMemberRole}
+                  onRemoveMember={handleRemoveMember}
+                />
               </View>
             )}
           </View>
@@ -245,6 +290,14 @@ export default function BandScreen() {
         visible={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onCreate={handleCreateBand}
+      />
+
+      {/* Modal para Invitar Miembros */}
+      <InviteMemberModal
+        visible={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        onInvite={handleSendInvitation}
+        canInviteDirector={userRole === 'owner'}
       />
     </View>
   );

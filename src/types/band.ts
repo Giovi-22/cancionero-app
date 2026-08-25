@@ -28,7 +28,7 @@ export interface Band {
   updatedAt: string;
 }
 
-export type InvitationStatus = 'pending' | 'accepted' | 'rejected' | 'expired';
+export type InvitationStatus = 'pending' | 'accepted' | 'rejected' | 'expired' | 'cancelled';
 
 export interface Invitation {
   id: string;
