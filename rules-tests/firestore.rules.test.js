@@ -1883,12 +1883,17 @@ describe("AUDITORÍA DE SEGURIDAD - SESSIONS", () => {
         });
 
         const dirA = authenticatedUser("director-a", "directora@test.com");
-        await dirA.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a").set({
+        const batch = dirA.firestore().batch();
+        batch.set(dirA.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a"), {
             bandId: "band-1",
             directorId: "director-a",
             status: "active",
             currentSongId: "song-1"
         });
+        batch.update(dirA.firestore().collection("bands").doc("band-1"), {
+            activeSessionId: "session-a"
+        });
+        await batch.commit();
 
         const dirB = authenticatedUser("director-b", "directorb@test.com");
         await assertFails(
@@ -1907,11 +1912,16 @@ describe("AUDITORÍA DE SEGURIDAD - SESSIONS", () => {
         });
 
         const dirA = authenticatedUser("director-a", "directora@test.com");
-        await dirA.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a").set({
+        const batch = dirA.firestore().batch();
+        batch.set(dirA.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a"), {
             bandId: "band-1",
             directorId: "director-a",
             status: "active"
         });
+        batch.update(dirA.firestore().collection("bands").doc("band-1"), {
+            activeSessionId: "session-a"
+        });
+        await batch.commit();
 
         await assertFails(
             dirA.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a").update({
@@ -1938,7 +1948,7 @@ describe("AUDITORÍA DE SEGURIDAD - SESSIONS", () => {
         );
     });
 
-    test("owner PUEDE modificar la sesión de cualquier director", async () => {
+    test("owner PUEDE modificar la sesión de cualquier director y finalizarla con su activeSessionId", async () => {
         await createBandWithOwner();
         const owner = authenticatedUser("owner-1", "owner@test.com");
         await owner.firestore().collection("bands").doc("band-1").collection("members").doc("director-a").set({
@@ -1947,19 +1957,26 @@ describe("AUDITORÍA DE SEGURIDAD - SESSIONS", () => {
         });
 
         const dirA = authenticatedUser("director-a", "directora@test.com");
-        await dirA.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a").set({
+        const batch = dirA.firestore().batch();
+        batch.set(dirA.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a"), {
             bandId: "band-1",
             directorId: "director-a",
             status: "active"
         });
+        batch.update(dirA.firestore().collection("bands").doc("band-1"), {
+            activeSessionId: "session-a"
+        });
+        await batch.commit();
 
-        await assertSucceeds(
-            owner.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a").update({
-                status: "ended",
-                bandId: "band-1",
-                directorId: "director-a"
-            })
-        );
+        const ownerBatch = owner.firestore().batch();
+        ownerBatch.update(owner.firestore().collection("bands").doc("band-1").collection("sessions").doc("session-a"), {
+            status: "ended"
+        });
+        ownerBatch.update(owner.firestore().collection("bands").doc("band-1"), {
+            activeSessionId: null
+        });
+
+        await assertSucceeds(ownerBatch.commit());
     });
 });
 
@@ -2042,5 +2059,397 @@ describe("AUDITORÍA DE SEGURIDAD - QUERIES (WHERE)", () => {
 
         const query = db.collection("song_stats").where("user_id", "==", "user-1");
         await assertSucceeds(query.get());
+    });
+});
+
+// ============================================================================
+// FASE 6 - INFRAESTRUCTURA Y SEGURIDAD DE SESIONES DE DIRECTOR
+// ============================================================================
+
+describe("FASE 6 - DIRECTOR SESSIONS & ACTIVE_SESSION_ID ATOMICITY", () => {
+    test("owner puede crear sesión activa y actualizar atómicamente activeSessionId en la banda", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        const db = owner.firestore();
+
+        const batch = db.batch();
+        batch.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-1"), {
+            bandId: "band-1",
+            directorId: "owner-1",
+            directorName: "Owner User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        batch.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-1"
+        });
+
+        await assertSucceeds(batch.commit());
+    });
+
+    test("director de la banda puede crear sesión activa y actualizar atómicamente activeSessionId", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        await owner.firestore().collection("bands").doc("band-1").collection("members").doc("director-1").set({
+            role: "director",
+            email: "director@test.com"
+        });
+
+        const director = authenticatedUser("director-1", "director@test.com");
+        const db = director.firestore();
+
+        const batch = db.batch();
+        batch.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-2"), {
+            bandId: "band-1",
+            directorId: "director-1",
+            directorName: "Director User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        batch.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-2"
+        });
+
+        await assertSucceeds(batch.commit());
+    });
+
+    test("member NO puede crear una sesión de director ni actualizar activeSessionId", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        await owner.firestore().collection("bands").doc("band-1").collection("members").doc("member-1").set({
+            role: "member",
+            email: "member@test.com"
+        });
+
+        const member = authenticatedUser("member-1", "member@test.com");
+        const db = member.firestore();
+
+        const batch = db.batch();
+        batch.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-mem"), {
+            bandId: "band-1",
+            directorId: "member-1",
+            directorName: "Member User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        batch.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-mem"
+        });
+
+        await assertFails(batch.commit());
+    });
+
+    test("usuario externo NO puede crear una sesión de director", async () => {
+        await createBandWithOwner();
+        const outsider = authenticatedUser("outsider-1", "outsider@test.com");
+        const db = outsider.firestore();
+
+        const batch = db.batch();
+        batch.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-out"), {
+            bandId: "band-1",
+            directorId: "outsider-1",
+            directorName: "Outsider User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        batch.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-out"
+        });
+
+        await assertFails(batch.commit());
+    });
+
+    test("director NO puede crear una sesión asignando directorId ajeno", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        await owner.firestore().collection("bands").doc("band-1").collection("members").doc("director-1").set({
+            role: "director",
+            email: "director@test.com"
+        });
+
+        const director = authenticatedUser("director-1", "director@test.com");
+        const db = director.firestore();
+
+        const batch = db.batch();
+        batch.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-spoof"), {
+            bandId: "band-1",
+            directorId: "owner-1", // Falsificación
+            directorName: "Owner User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        batch.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-spoof"
+        });
+
+        await assertFails(batch.commit());
+    });
+
+    test("crear sesión activa SIN actualizar activeSessionId en la banda debe fallar por regla de consistencia", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        const db = owner.firestore();
+
+        await assertFails(
+            db.collection("bands").doc("band-1").collection("sessions").doc("sess-lonely").set({
+                bandId: "band-1",
+                directorId: "owner-1",
+                directorName: "Owner User",
+                setlistId: "setlist-1",
+                setlistName: "Lista En Vivo",
+                currentSongId: null,
+                status: "active",
+                startedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+            })
+        );
+    });
+
+    test("miembro de la banda PUEDE leer las sesiones y la sesión activa", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        await owner.firestore().collection("bands").doc("band-1").collection("members").doc("member-1").set({
+            role: "member",
+            email: "member@test.com"
+        });
+
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await ctx.firestore().collection("bands").doc("band-1").collection("sessions").doc("sess-read").set({
+                bandId: "band-1",
+                directorId: "owner-1",
+                directorName: "Owner User",
+                setlistId: "setlist-1",
+                setlistName: "Lista En Vivo",
+                currentSongId: null,
+                status: "active",
+                startedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+            });
+            await ctx.firestore().collection("bands").doc("band-1").update({
+                activeSessionId: "sess-read"
+            });
+        });
+
+        const member = authenticatedUser("member-1", "member@test.com");
+        const db = member.firestore();
+
+        await assertSucceeds(
+            db.collection("bands").doc("band-1").collection("sessions").doc("sess-read").get()
+        );
+        await assertSucceeds(
+            db.collection("bands").doc("band-1").get()
+        );
+    });
+
+    test("usuario externo NO PUEDE leer la sesión ni la banda", async () => {
+        await createBandWithOwner();
+
+        await testEnv.withSecurityRulesDisabled(async (ctx) => {
+            await ctx.firestore().collection("bands").doc("band-1").collection("sessions").doc("sess-read").set({
+                bandId: "band-1",
+                directorId: "owner-1",
+                directorName: "Owner User",
+                setlistId: "setlist-1",
+                setlistName: "Lista En Vivo",
+                currentSongId: null,
+                status: "active",
+                startedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+            });
+        });
+
+        const outsider = authenticatedUser("outsider-1", "outsider@test.com");
+        const db = outsider.firestore();
+
+        await assertFails(
+            db.collection("bands").doc("band-1").collection("sessions").doc("sess-read").get()
+        );
+        await assertFails(
+            db.collection("bands").doc("band-1").get()
+        );
+    });
+
+    test("finalizar sesión actualiza a status 'ended' y limpia atómicamente activeSessionId a null", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        const db = owner.firestore();
+
+        // Iniciar sesión
+        const b1 = db.batch();
+        b1.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-end"), {
+            bandId: "band-1",
+            directorId: "owner-1",
+            directorName: "Owner User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        b1.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-end"
+        });
+        await b1.commit();
+
+        // Finalizar sesión
+        const b2 = db.batch();
+        b2.update(db.collection("bands").doc("band-1").collection("sessions").doc("sess-end"), {
+            status: "ended",
+            endedAt: new Date().toISOString()
+        });
+        b2.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: null
+        });
+
+        await assertSucceeds(b2.commit());
+    });
+
+    test("NO se puede finalizar una sesión dejando activeSessionId apuntando a ella", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        const db = owner.firestore();
+
+        const b1 = db.batch();
+        b1.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-end-fail"), {
+            bandId: "band-1",
+            directorId: "owner-1",
+            directorName: "Owner User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        b1.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-end-fail"
+        });
+        await b1.commit();
+
+        // Intentar pasar a ended SIN limpiar activeSessionId
+        await assertFails(
+            db.collection("bands").doc("band-1").collection("sessions").doc("sess-end-fail").update({
+                status: "ended"
+            })
+        );
+    });
+
+    test("NO se puede manipular directamente activeSessionId desde un usuario no autorizado", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        await owner.firestore().collection("bands").doc("band-1").collection("members").doc("member-1").set({
+            role: "member",
+            email: "member@test.com"
+        });
+
+        const member = authenticatedUser("member-1", "member@test.com");
+        await assertFails(
+            member.firestore().collection("bands").doc("band-1").update({
+                activeSessionId: "hacked-session"
+            })
+        );
+    });
+
+    test("una sesión en estado 'ended' NO puede volver a 'active'", async () => {
+        await createBandWithOwner();
+        const owner = authenticatedUser("owner-1", "owner@test.com");
+        const db = owner.firestore();
+
+        // Iniciar y finalizar sesión legítimamente
+        const b1 = db.batch();
+        b1.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-reactivate"), {
+            bandId: "band-1",
+            directorId: "owner-1",
+            directorName: "Owner User",
+            setlistId: "setlist-1",
+            setlistName: "Lista En Vivo",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        b1.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-reactivate"
+        });
+        await b1.commit();
+
+        const b2 = db.batch();
+        b2.update(db.collection("bands").doc("band-1").collection("sessions").doc("sess-reactivate"), {
+            status: "ended",
+            endedAt: new Date().toISOString()
+        });
+        b2.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: null
+        });
+        await b2.commit();
+
+        // Intentar reactivar la sesión terminada
+        const b3 = db.batch();
+        b3.update(db.collection("bands").doc("band-1").collection("sessions").doc("sess-reactivate"), {
+            status: "active"
+        });
+        b3.update(db.collection("bands").doc("band-1"), {
+            activeSessionId: "sess-reactivate"
+        });
+
+        await assertFails(b3.commit());
+    });
+
+    test("director de la Banda A NO puede manipular ni iniciar sesiones en la Banda B", async () => {
+        await createBandWithOwner(); // Crea band-1 con owner-1
+        
+        // Crear band-2 con owner-2
+        const owner2 = authenticatedUser("owner-2", "owner2@test.com");
+        await owner2.firestore().collection("bands").doc("band-2").set({
+            name: "Banda 2",
+            ownerId: "owner-2"
+        });
+        await owner2.firestore().collection("bands").doc("band-2").collection("members").doc("owner-2").set({
+            role: "owner",
+            email: "owner2@test.com"
+        });
+
+        // owner-1 es director en band-1, intenta iniciar sesión en band-2
+        const owner1 = authenticatedUser("owner-1", "owner@test.com");
+        const db1 = owner1.firestore();
+
+        const batch = db1.batch();
+        batch.set(db1.collection("bands").doc("band-2").collection("sessions").doc("sess-cross"), {
+            bandId: "band-2",
+            directorId: "owner-1",
+            directorName: "Attacker",
+            setlistId: "setlist-1",
+            setlistName: "Cross Attack",
+            currentSongId: null,
+            status: "active",
+            startedAt: new Date().toISOString(),
+            createdAt: new Date().toISOString()
+        });
+        batch.update(db1.collection("bands").doc("band-2"), {
+            activeSessionId: "sess-cross"
+        });
+
+        await assertFails(batch.commit());
     });
 });

@@ -24,6 +24,7 @@ export interface Band {
   name: string;
   description?: string;
   ownerId: string;
+  activeSessionId?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -53,8 +54,9 @@ export interface DirectorSession {
   directorName: string;
   setlistId: string;
   setlistName: string;
-  currentSongId: string | null;
+  currentSongId?: string | null;
   status: DirectorSessionStatus;
   startedAt: string;
+  createdAt: string;
   endedAt?: string | null;
 }

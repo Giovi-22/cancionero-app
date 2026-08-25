@@ -92,10 +92,34 @@ service cloud.firestore {
       allow create: if isSignedIn() 
         && request.resource.data.ownerId == request.auth.uid;
         
-      // Edición: solamente el OWNER.
+      // Edición: el OWNER para metadatos generales, o Director/Owner para actualizar activeSessionId.
       // ownerId debe permanecer inmutable.
-      allow update: if isBandOwner(bandId)
-        && request.resource.data.ownerId == resource.data.ownerId;
+      allow update: if isBandOwner(bandId) && request.resource.data.ownerId == resource.data.ownerId && request.resource.data.get('activeSessionId', null) == resource.data.get('activeSessionId', null)
+        || (
+          isBandDirectorOrOwner(bandId)
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.get('activeSessionId', null) != resource.data.get('activeSessionId', null)
+          && (
+            // Iniciar sesión: activeSessionId pasa a ser sessionId
+            (
+              request.resource.data.get('activeSessionId', null) != null &&
+              existsAfter(/databases/$(database)/documents/bands/$(bandId)/sessions/$(request.resource.data.activeSessionId)) &&
+              getAfter(/databases/$(database)/documents/bands/$(bandId)/sessions/$(request.resource.data.activeSessionId)).data.status == 'active' &&
+              getAfter(/databases/$(database)/documents/bands/$(bandId)/sessions/$(request.resource.data.activeSessionId)).data.directorId == request.auth.uid
+            ) ||
+            // Finalizar sesión: activeSessionId pasa a ser null
+            (
+              request.resource.data.get('activeSessionId', null) == null &&
+              resource.data.get('activeSessionId', null) != null &&
+              existsAfter(/databases/$(database)/documents/bands/$(bandId)/sessions/$(resource.data.activeSessionId)) &&
+              getAfter(/databases/$(database)/documents/bands/$(bandId)/sessions/$(resource.data.activeSessionId)).data.status == 'ended' &&
+              (
+                getAfter(/databases/$(database)/documents/bands/$(bandId)/sessions/$(resource.data.activeSessionId)).data.directorId == request.auth.uid ||
+                isBandOwner(bandId)
+              )
+            )
+          )
+        );
 
       // Eliminación: solamente el OWNER.
       allow delete: if isBandOwner(bandId);
@@ -198,26 +222,40 @@ service cloud.firestore {
         allow read: if isBandMember(bandId);
         
         // Solamente OWNER o DIRECTOR pueden crear sesiones.
-        // El creador debe ser el director de la sesión.
-        // La sesión debe comenzar como "active".
+        // El creador debe ser el director de la sesión y su UID coincidir con auth.uid.
+        // La sesión debe comenzar como "active" y registrarse atómicamente en activeSessionId de la banda.
         allow create: if isBandDirectorOrOwner(bandId) 
           && request.resource.data.directorId == request.auth.uid 
-          && request.resource.data.status == 'active';
+          && request.resource.data.bandId == bandId
+          && request.resource.data.status == 'active'
+          && getAfter(/databases/$(database)/documents/bands/$(bandId)).data.get('activeSessionId', null) == sessionId;
           
         // Solamente el Director asignado o el OWNER puede actualizar.
         //
         // Protección:
         // bandId y directorId deben permanecer inmutables.
+        // Transición permitida: únicamente active -> active (modificación) o active -> ended.
         allow update: if isBandDirectorOrOwner(bandId) 
           && (
             resource.data.directorId == request.auth.uid ||
             isBandOwner(bandId)
           )
           && request.resource.data.directorId == resource.data.directorId
-          && request.resource.data.bandId == resource.data.bandId;
+          && request.resource.data.bandId == resource.data.bandId
+          && (
+            (
+              resource.data.status == 'active' &&
+              request.resource.data.status == 'active' &&
+              getAfter(/databases/$(database)/documents/bands/$(bandId)).data.get('activeSessionId', null) == sessionId
+            ) ||
+            (
+              resource.data.status == 'active' &&
+              request.resource.data.status == 'ended' &&
+              getAfter(/databases/$(database)/documents/bands/$(bandId)).data.get('activeSessionId', null) != sessionId
+            )
+          );
           
-        // Solamente el OWNER o el Director que inició la sesión
-        // pueden eliminarla.
+        // Solamente el OWNER o el Director que inició la sesión pueden eliminarla.
         allow delete: if isBandDirectorOrOwner(bandId) 
           && (
             resource.data.directorId == request.auth.uid ||

@@ -3,6 +3,10 @@
 # dependencies
 node_modules/
 
+.agents/
+.claude/
+skills-lock.json
+
 # Expo
 .expo/
 dist/
