@@ -51,8 +51,9 @@ interface SongViewerProps {
   onClose: () => void;
   initialSettings?: any;
   onSaveSettings?: (settings: any) => void;
-  // Director mode
+  // Director/Follower mode
   isDirector?: boolean;
+  isFollower?: boolean;
   setlistSongs?: SongMetadata[];
   onDirectorNext?: () => void;
   onDirectorPrev?: () => void;
@@ -72,6 +73,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   content, title, songId, onClose,
   initialSettings, onSaveSettings,
   isDirector = false,
+  isFollower = false,
   setlistSongs = [], onDirectorNext, onDirectorPrev,
   onSendDirectorEvent,
   onFollowSongChange, incomingDirectorEvent,
@@ -716,7 +718,7 @@ export const SongViewer: React.FC<SongViewerProps> = ({
       {/* Sub-header de navegación de lista */}
       <SetlistNavSubHeader
         isDirector={isDirector}
-        followSessionId={followSessionId}
+        isFollower={isFollower}
         setlistSongs={setlistSongs}
         songId={songId}
         onDirectorPrev={onDirectorPrev}

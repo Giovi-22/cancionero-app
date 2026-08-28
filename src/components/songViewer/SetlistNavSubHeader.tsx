@@ -12,7 +12,7 @@ const COLORS = {
 
 interface SetlistNavSubHeaderProps {
   isDirector: boolean;
-  followSessionId?: string;
+  isFollower?: boolean;
   setlistSongs: SongMetadata[];
   songId: string;
   onDirectorPrev?: () => void;
@@ -22,7 +22,7 @@ interface SetlistNavSubHeaderProps {
 
 export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
   isDirector,
-  followSessionId,
+  isFollower = false,
   setlistSongs,
   songId,
   onDirectorPrev,
@@ -34,12 +34,11 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [showSongNoteModal, setShowSongNoteModal] = useState(false);
 
-  if (!isDirector && !followSessionId && setlistSongs.length === 0) {
+  if (!isDirector && !isFollower && setlistSongs.length === 0) {
     return null;
   }
 
   const idx = setlistSongs.findIndex(s => s.id === songId);
-  const isFollower = !!followSessionId && !isDirector;
   const effectiveNotes = propNotes || activeSetlist?.notes;
   const hasNotes = !!effectiveNotes && effectiveNotes.trim().length > 0;
 

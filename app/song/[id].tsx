@@ -23,12 +23,14 @@ export default function SongScreen() {
     } = useAppContext();
 
     const {
+        activeSession,
         isDirectorOfSession,
         latestEvent,
         sendEvent,
     } = useDirectorSession(activeBandId);
 
     const isDirector = isDirectorOfSession;
+    const isFollower = !isDirector && !!activeSession;
 
     if (!selectedSong || !songContent) {
         return (
@@ -81,6 +83,7 @@ export default function SongScreen() {
                 globalTheme={globalTheme}
                 onSaveGlobalTheme={handleSaveGlobalTheme}
                 isDirector={isDirector}
+                isFollower={isFollower}
                 onSendDirectorEvent={isDirector ? sendEvent : undefined}
                 incomingDirectorEvent={!isDirector ? latestEvent : null}
                 onFollowSongChange={!isDirector ? handleFollowSongChange : undefined}

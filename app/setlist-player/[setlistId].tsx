@@ -178,6 +178,7 @@ export default function SetlistPlayerScreen() {
           globalTheme={globalTheme}
           onSaveGlobalTheme={handleSaveGlobalTheme}
           isDirector={isDirector}
+          isFollower={!isDirector && !!activeSession}
           onSendDirectorEvent={isDirector ? sendEvent : undefined}
           incomingDirectorEvent={!isDirector ? latestEvent : null}
           onFollowSongChange={!isDirector ? handleFollowSongChangeLocal : undefined}
