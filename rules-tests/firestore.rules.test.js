@@ -2452,4 +2452,193 @@ describe("FASE 6 - DIRECTOR SESSIONS & ACTIVE_SESSION_ID ATOMICITY", () => {
 
         await assertFails(batch.commit());
     });
+
+    describe("Fase 7 - Director Session Events", () => {
+        const setupActiveSession = async () => {
+            await createBandWithOwner(); // band-1, owner-1
+            
+            // Add member-1 as regular member using admin bypass
+            await testEnv.withSecurityRulesDisabled(async (context) => {
+                await context.firestore().collection("bands").doc("band-1").collection("members").doc("member-1").set({
+                    role: "member",
+                    email: "member@test.com"
+                });
+            });
+
+            // Start active session by owner-1
+            const owner1 = authenticatedUser("owner-1", "owner@test.com");
+            const db = owner1.firestore();
+            const batch = db.batch();
+            batch.set(db.collection("bands").doc("band-1").collection("sessions").doc("sess-active"), {
+                bandId: "band-1",
+                directorId: "owner-1",
+                directorName: "Director Owner",
+                setlistId: "setlist-1",
+                setlistName: "Setlist Domingo",
+                currentSongId: null,
+                status: "active",
+                startedAt: new Date().toISOString(),
+                createdAt: new Date().toISOString()
+            });
+            batch.update(db.collection("bands").doc("band-1"), {
+                activeSessionId: "sess-active"
+            });
+            await batch.commit();
+        };
+
+        test("Director de la sesión activa puede emitir eventos SONG_CHANGED, SCROLL_UP, SCROLL_DOWN", async () => {
+            await setupActiveSession();
+
+            const owner1 = authenticatedUser("owner-1", "owner@test.com");
+            const db = owner1.firestore();
+
+            const eventsRef = db.collection("bands").doc("band-1").collection("sessions").doc("sess-active").collection("events");
+
+            await assertSucceeds(eventsRef.add({
+                type: "SONG_CHANGED",
+                senderId: "owner-1",
+                payload: { songId: "song-123" },
+                timestamp: new Date().toISOString()
+            }));
+
+            await assertSucceeds(eventsRef.add({
+                type: "SCROLL_DOWN",
+                senderId: "owner-1",
+                payload: {},
+                timestamp: new Date().toISOString()
+            }));
+
+            await assertSucceeds(eventsRef.add({
+                type: "SCROLL_UP",
+                senderId: "owner-1",
+                payload: {},
+                timestamp: new Date().toISOString()
+            }));
+        });
+
+        test("Atomic write: Director puede emitir SONG_CHANGED y actualizar currentSongId de la sesión en un solo batch", async () => {
+            await setupActiveSession();
+
+            const owner1 = authenticatedUser("owner-1", "owner@test.com");
+            const db = owner1.firestore();
+
+            const sessionRef = db.collection("bands").doc("band-1").collection("sessions").doc("sess-active");
+            const eventRef = sessionRef.collection("events").doc("evt-song-change");
+
+            const batch = db.batch();
+            batch.set(eventRef, {
+                type: "SONG_CHANGED",
+                senderId: "owner-1",
+                payload: { songId: "song-456" },
+                timestamp: new Date().toISOString()
+            });
+            batch.update(sessionRef, {
+                currentSongId: "song-456"
+            });
+
+            await assertSucceeds(batch.commit());
+        });
+
+        test("Miembro NO director NO puede modificar directamente el currentSongId de la sesión", async () => {
+            await setupActiveSession();
+
+            const member1 = authenticatedUser("member-1", "member@test.com");
+            const db = member1.firestore();
+
+            const sessionRef = db.collection("bands").doc("band-1").collection("sessions").doc("sess-active");
+
+            await assertFails(sessionRef.update({
+                currentSongId: "hacked-song-id"
+            }));
+        });
+
+        test("Miembro de la banda puede LEER eventos pero NO puede crear eventos", async () => {
+            await setupActiveSession();
+
+            const member1 = authenticatedUser("member-1", "member@test.com");
+            const db = member1.firestore();
+
+            const eventsRef = db.collection("bands").doc("band-1").collection("sessions").doc("sess-active").collection("events");
+
+            // Lectura debe permitirse
+            await assertSucceeds(eventsRef.get());
+
+            // Escritura debe denegarse
+            await assertFails(eventsRef.add({
+                type: "SCROLL_DOWN",
+                senderId: "member-1",
+                payload: {},
+                timestamp: new Date().toISOString()
+            }));
+        });
+
+        test("Usuario no miembro NO puede leer ni crear eventos", async () => {
+            await setupActiveSession();
+
+            const stranger = authenticatedUser("stranger-uid", "stranger@test.com");
+            const db = stranger.firestore();
+
+            const eventsRef = db.collection("bands").doc("band-1").collection("sessions").doc("sess-active").collection("events");
+
+            await assertFails(eventsRef.get());
+            await assertFails(eventsRef.add({
+                type: "SCROLL_DOWN",
+                senderId: "stranger-uid",
+                payload: {},
+                timestamp: new Date().toISOString()
+            }));
+        });
+
+        test("Falla la creación de evento con senderId falso, tipo inválido o payload inválido para SONG_CHANGED", async () => {
+            await setupActiveSession();
+
+            const owner1 = authenticatedUser("owner-1", "owner@test.com");
+            const db = owner1.firestore();
+
+            const eventsRef = db.collection("bands").doc("band-1").collection("sessions").doc("sess-active").collection("events");
+
+            // SenderId suplantado
+            await assertFails(eventsRef.add({
+                type: "SCROLL_DOWN",
+                senderId: "another-uid",
+                payload: {},
+                timestamp: new Date().toISOString()
+            }));
+
+            // Tipo de evento inválido
+            await assertFails(eventsRef.add({
+                type: "INVALID_TYPE",
+                senderId: "owner-1",
+                payload: {},
+                timestamp: new Date().toISOString()
+            }));
+
+            // SONG_CHANGED sin songId en payload
+            await assertFails(eventsRef.add({
+                type: "SONG_CHANGED",
+                senderId: "owner-1",
+                payload: {},
+                timestamp: new Date().toISOString()
+            }));
+        });
+
+        test("Los eventos de sesión son inmutables (update / delete denegados)", async () => {
+            await setupActiveSession();
+
+            const owner1 = authenticatedUser("owner-1", "owner@test.com");
+            const db = owner1.firestore();
+
+            const eventsRef = db.collection("bands").doc("band-1").collection("sessions").doc("sess-active").collection("events");
+
+            const docRef = await eventsRef.add({
+                type: "SONG_CHANGED",
+                senderId: "owner-1",
+                payload: { songId: "song-1" },
+                timestamp: new Date().toISOString()
+            });
+
+            await assertFails(docRef.update({ type: "SCROLL_DOWN" }));
+            await assertFails(docRef.delete());
+        });
+    });
 });

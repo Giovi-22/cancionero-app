@@ -11,7 +11,6 @@ import {
 } from '../utils/chordpro';
 import { legacyToChordPro } from '../utils/legacyToChordPro';
 import { transposeChord } from '../utils/chordUtils';
-import { LiveSessionService } from '../services/LiveSessionService';
 import { SongMetadata } from '../types';
 import { PdfService } from '../services/PdfService';
 import { FileSystemService } from '../services/FileSystemService';
@@ -54,12 +53,14 @@ interface SongViewerProps {
   onSaveSettings?: (settings: any) => void;
   // Director mode
   isDirector?: boolean;
-  directorSessionId?: string;
   setlistSongs?: SongMetadata[];
   onDirectorNext?: () => void;
   onDirectorPrev?: () => void;
+  /** Callback para que el Director envíe eventos a Firestore vía useDirectorSession */
+  onSendDirectorEvent?: (type: 'SONG_CHANGED' | 'SCROLL_UP' | 'SCROLL_DOWN', payload?: any) => void;
   // Follower mode
-  followSessionId?: string;
+  /** Evento entrante recibido por el Follower desde useDirectorSession.latestEvent */
+  incomingDirectorEvent?: { type: 'SONG_CHANGED' | 'SCROLL_UP' | 'SCROLL_DOWN'; payload?: any; senderId?: string; timestamp: string; id?: string } | null;
   onFollowSongChange?: (newSongId: string) => void;
   // Global theme
   globalTheme?: any;
@@ -70,9 +71,10 @@ interface SongViewerProps {
 export const SongViewer: React.FC<SongViewerProps> = ({
   content, title, songId, onClose,
   initialSettings, onSaveSettings,
-  isDirector = false, directorSessionId,
+  isDirector = false,
   setlistSongs = [], onDirectorNext, onDirectorPrev,
-  followSessionId, onFollowSongChange,
+  onSendDirectorEvent,
+  onFollowSongChange, incomingDirectorEvent,
   globalTheme, onSaveGlobalTheme,
   onContentUpdated
 }) => {
@@ -429,25 +431,58 @@ export const SongViewer: React.FC<SongViewerProps> = ({
     pedalTargetVelRef.current = 0;
   }, []);
 
-  const handlePedalScrollUp = useCallback(() => startPedalScroll('up'), [startPedalScroll]);
-  const handlePedalScrollDown = useCallback(() => startPedalScroll('down'), [startPedalScroll]);
+  const handlePedalScrollUp = useCallback(() => {
+    startPedalScroll('up');
+    if (isDirector && onSendDirectorEvent) {
+      onSendDirectorEvent('SCROLL_UP');
+    }
+  }, [startPedalScroll, isDirector, onSendDirectorEvent]);
+
+  const handlePedalScrollDown = useCallback(() => {
+    startPedalScroll('down');
+    if (isDirector && onSendDirectorEvent) {
+      onSendDirectorEvent('SCROLL_DOWN');
+    }
+  }, [startPedalScroll, isDirector, onSendDirectorEvent]);
 
   // ── Director / Follower ────────────────────────
-  useEffect(() => {
-    if (isDirector && directorSessionId && songId) {
-      LiveSessionService.updateCurrentSong(directorSessionId, songId);
-    }
-  }, [isDirector, directorSessionId, songId]);
+  const lastEmittedSongIdRef = useRef<string | null>(null);
+  const lastProcessedEventIdRef = useRef<string | null>(null);
 
+  // Emisión de cambio de canción únicamente por parte del Director cuando cambia el ID de la canción
   useEffect(() => {
-    if (!followSessionId || !onFollowSongChange) return;
-    const unsub = LiveSessionService.subscribeToSession(followSessionId, (newSongId) => {
-      if (newSongId !== songId) {
+    if (isDirector && songId && onSendDirectorEvent) {
+      if (lastEmittedSongIdRef.current === songId) return;
+      lastEmittedSongIdRef.current = songId;
+      onSendDirectorEvent('SONG_CHANGED', { songId });
+    }
+  }, [isDirector, songId, onSendDirectorEvent]);
+
+  // Sincronización reactiva para seguidores (vía eventos discretos del Director)
+  useEffect(() => {
+    if (!incomingDirectorEvent) return;
+
+    const eventId = (incomingDirectorEvent as any).id || incomingDirectorEvent.timestamp;
+    if (!eventId || lastProcessedEventIdRef.current === eventId) {
+      return;
+    }
+    lastProcessedEventIdRef.current = eventId;
+
+    if (incomingDirectorEvent.type === 'SONG_CHANGED') {
+      const newSongId = incomingDirectorEvent.payload?.songId;
+      if (newSongId && newSongId !== songId && onFollowSongChange) {
         onFollowSongChange(newSongId);
       }
-    });
-    return unsub;
-  }, [followSessionId, songId, onFollowSongChange]);
+    } else if (incomingDirectorEvent.type === 'SCROLL_DOWN') {
+      scrollPosRef.current += 250;
+      scrollRef.current?.scrollTo({ y: scrollPosRef.current, animated: true });
+    } else if (incomingDirectorEvent.type === 'SCROLL_UP') {
+      scrollPosRef.current = Math.max(0, scrollPosRef.current - 250);
+      scrollRef.current?.scrollTo({ y: scrollPosRef.current, animated: true });
+    }
+  }, [incomingDirectorEvent, songId, onFollowSongChange]);
+
+
 
   useEffect(() => {
     if (globalTheme) {

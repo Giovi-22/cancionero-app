@@ -4,12 +4,12 @@ import {
 } from 'react-native';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useAppContext } from '../../src/context/AppContext';
+import { useDirectorSession } from '../../src/hooks/useDirectorSession';
 import { SongViewer } from '../../src/components/SongViewer';
 import { FileSystemService } from '../../src/services/FileSystemService';
 import { StorageService } from '../../src/services/StorageService';
 import { SongMetadata } from '../../src/types';
 import { COLORS } from '../../src/constants/theme';
-import { LiveSessionService } from '../../src/services/LiveSessionService';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -21,25 +21,37 @@ interface SongPage {
 }
 
 export default function SetlistPlayerScreen() {
-  const { setlistId, directorMode } = useLocalSearchParams<{
+  const { setlistId, bandId: bandIdParam } = useLocalSearchParams<{
     setlistId: string;
-    directorMode?: string;
+    bandId?: string;
   }>();
 
   const {
     setlists,
     songs,
     activeLibrary,
-    myDirectorSession,
-    followingSession,
-    handleSaveSongSettings,
+    activeBandId,
     handleFollowSongChange,
+    handleSaveSongSettings,
     setSetlistSongs,
     globalTheme,
     handleSaveGlobalTheme,
   } = useAppContext();
 
-  const isDirector = directorMode === 'true';
+  // bandId puede venir como param de navegación o del contexto global
+  const resolvedBandId = bandIdParam || activeBandId || null;
+
+  const {
+    activeSession,
+    isDirectorOfSession,
+    latestEvent,
+    sendEvent,
+    startSession,
+    endSession,
+  } = useDirectorSession(resolvedBandId);
+
+  const isDirector = isDirectorOfSession;
+
   const flatListRef = useRef<FlatList>(null);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [pages, setPages] = useState<SongPage[]>([]);
@@ -67,6 +79,7 @@ export default function SetlistPlayerScreen() {
     }));
     setPages(initialPages);
     setReady(true);
+    setSetlistSongs(songsOfList);
   }, [setlistId, setlists, songs]);
 
   // Cargar contenido lazy: solo current + 1 adelante + 1 atrás
@@ -98,16 +111,7 @@ export default function SetlistPlayerScreen() {
     loadPage(currentIndex - 1, pages);
   }, [currentIndex, ready, pages.length]);
 
-  // Notificar al director la canción actual
-  useEffect(() => {
-    if (isDirector && myDirectorSession && pages[currentIndex]?.song) {
-      LiveSessionService.updateCurrentSong(myDirectorSession.id, pages[currentIndex].song.id);
-    }
-  }, [currentIndex, isDirector, myDirectorSession]);
-
   const handleClose = () => {
-    // Limpiar el estado de la lista para que no aparezca el banner
-    // al abrir una canción individual después
     setSetlistSongs([]);
     router.back();
   };
@@ -127,6 +131,16 @@ export default function SetlistPlayerScreen() {
       setCurrentIndex(prevIndex);
     }
   };
+
+  // Seguidor: cuando recibe SONG_CHANGED, navegar a la página correspondiente
+  const handleFollowSongChangeLocal = useCallback(async (newSongId: string) => {
+    await handleFollowSongChange(newSongId);
+    const idx = pages.findIndex(p => p.song.id === newSongId);
+    if (idx >= 0 && idx !== currentIndex) {
+      flatListRef.current?.scrollToIndex({ index: idx, animated: true });
+      setCurrentIndex(idx);
+    }
+  }, [pages, currentIndex, handleFollowSongChange]);
 
   const handleSaveSettings = (data: any) => {
     handleSaveSongSettings(data);
@@ -164,12 +178,12 @@ export default function SetlistPlayerScreen() {
           globalTheme={globalTheme}
           onSaveGlobalTheme={handleSaveGlobalTheme}
           isDirector={isDirector}
-          directorSessionId={myDirectorSession?.id}
-          followSessionId={followingSession?.id}
-          onFollowSongChange={handleFollowSongChange}
+          onSendDirectorEvent={isDirector ? sendEvent : undefined}
+          incomingDirectorEvent={!isDirector ? latestEvent : null}
+          onFollowSongChange={!isDirector ? handleFollowSongChangeLocal : undefined}
           setlistSongs={pages.map(p => p.song)}
-          onDirectorNext={handleNext}
-          onDirectorPrev={handlePrev}
+          onDirectorNext={isDirector ? handleNext : undefined}
+          onDirectorPrev={isDirector ? handlePrev : undefined}
         />
       </View>
     );
@@ -198,7 +212,6 @@ export default function SetlistPlayerScreen() {
       keyExtractor={item => item.song.id}
       horizontal
       pagingEnabled
-      scrollEnabled={false}
       showsHorizontalScrollIndicator={false}
       onMomentumScrollEnd={onMomentumScrollEnd}
       getItemLayout={(_, index) => ({
@@ -209,16 +222,11 @@ export default function SetlistPlayerScreen() {
       initialNumToRender={1}
       maxToRenderPerBatch={2}
       windowSize={3}
-      style={styles.flatList}
     />
   );
 }
 
 const styles = StyleSheet.create({
-  flatList: {
-    flex: 1,
-    backgroundColor: COLORS.background,
-  },
   pageContainer: {
     width: SCREEN_WIDTH,
     flex: 1,
@@ -228,12 +236,10 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
     justifyContent: 'center',
     alignItems: 'center',
-    gap: 15,
+    gap: 12,
   },
   loadingText: {
     color: COLORS.mutedForeground,
     fontSize: 14,
-    textAlign: 'center',
-    paddingHorizontal: 30,
   },
 });

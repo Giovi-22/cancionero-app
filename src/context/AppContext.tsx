@@ -1,6 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { SongMetadata, Library, Setlist } from '../types';
-import { LiveSession, LiveSessionService } from '../services/LiveSessionService';
 import { firestore } from '../lib/firebase';
 import { authService } from '../services/AuthService';
 import { StorageService } from '../services/StorageService';
@@ -67,18 +66,11 @@ export interface AppContextType {
   globalTheme: any;
   handleSaveGlobalTheme: (theme: any) => Promise<void>;
 
-  // Live session states & actions
-  liveSessions: LiveSession[];
-  myDirectorSession: LiveSession | null;
-  followingSession: LiveSession | null;
-  handleStartShow: (setlist: Setlist) => Promise<void>;
-  handleStartShowFromSetlist: (setlist: Setlist) => Promise<void>;
+  // Band / Director session state
+  /** ID de la banda activa para Director Mode (se setea al iniciar una sesión). */
+  activeBandId: string | null;
+  setActiveBandId: (id: string | null) => void;
   handleStartSetlistLocally: (setlist: Setlist) => void;
-  handleDirectorNext: () => Promise<void>;
-  handleDirectorPrev: () => Promise<void>;
-  handleEndShow: () => Promise<void>;
-  handleJoinSession: (session: LiveSession) => void;
-  handleLeaveSession: () => void;
   handleFollowSongChange: (newSongId: string) => Promise<void>;
 
   // Actions
@@ -134,10 +126,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   const [songContent, setSongContent] = useState<string | null>(null);
   const [songSettings, setSongSettings] = useState<any>(null);
 
-  // Live Session (Modo Director)
-  const [liveSessions, setLiveSessions] = useState<LiveSession[]>([]);
-  const [myDirectorSession, setMyDirectorSession] = useState<LiveSession | null>(null);
-  const [followingSession, setFollowingSession] = useState<LiveSession | null>(null);
+  // Band / Director Mode
+  const [activeBandId, setActiveBandId] = useState<string | null>(null);
   const [setlistSongs, setSetlistSongs] = useState<SongMetadata[]>([]);
 
   // Estado de Setlist Activa
@@ -167,17 +157,8 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
       setUser(u);
     });
 
-    // Suscribirse a sesiones live en tiempo real
-    const unsubSessions = LiveSessionService.subscribeToAllSessions((sessions) => {
-      setLiveSessions(prev => {
-        if (JSON.stringify(prev) === JSON.stringify(sessions)) return prev;
-        return sessions;
-      });
-    });
-
     return () => {
       unsubAuth();
-      unsubSessions();
     };
   }, []);
 
@@ -185,21 +166,6 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     setSearchQuery('');
   }, [activeSetlist]);
-
-  // Actualizar "mi sesión de director"
-  useEffect(() => {
-    if (!user) {
-      setMyDirectorSession(null);
-      return;
-    }
-    const mine = liveSessions.find(s => s.director_email === user.email) ?? null;
-    setMyDirectorSession(prev => {
-      if (prev?.id === mine?.id && prev?.current_song_id === mine?.current_song_id && prev?.status === mine?.status) {
-        return prev;
-      }
-      return mine;
-    });
-  }, [liveSessions, user]);
 
   const loadInitialData = async () => {
     let currentUser = null;
@@ -621,101 +587,24 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
     );
   };
 
-  // --- Live Session handlers ---
-  const handleStartShow = async (setlist: Setlist) => {
-    if (!user) {
-      Alert.alert('Error', 'Debes iniciar sesión para ser director.');
-      return;
-    }
-    startActionLoading('startShow');
-    try {
-      const session = await LiveSessionService.startShow(
-        setlist.id,
-        setlist.name,
-        user.email,
-        user.user_metadata?.full_name || user.email,
-        myDirectorSession?.id
-      );
-      if (session) setMyDirectorSession(session);
-    } catch (e) {
-      console.error('Error starting show:', e);
-      Alert.alert('Error', 'No se pudo iniciar el show.');
-    } finally {
-      stopActionLoading('startShow');
-    }
-  };
-
-  const handleStartShowFromSetlist = async (setlist: Setlist) => {
-    startActionLoading('startShow');
-    try {
-      await handleStartShow(setlist);
-      const songsOfList = setlist.songIds
-        .map(id => songs.find(s => s.id === id))
-        .filter(Boolean) as SongMetadata[];
-      setSetlistSongs(songsOfList);
-      if (songsOfList.length > 0) {
-        router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id, directorMode: 'true' } } as any);
-      }
-    } finally {
-      stopActionLoading('startShow');
-    }
-  };
-
+  // --- Director Mode helpers ---
   const handleStartSetlistLocally = (setlist: Setlist) => {
     const songsOfList = setlist.songIds
       .map(id => songs.find(s => s.id === id))
       .filter(Boolean) as SongMetadata[];
     setSetlistSongs(songsOfList);
     if (songsOfList.length > 0) {
-      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: setlist.id } } as any);
+      router.push({ pathname: '/setlist-player/[setlistId]', params: { setlistId: setlist.id } } as any);
     } else {
       Alert.alert('Lista vacía', 'Agrega canciones a la lista para poder iniciarla.');
     }
   };
 
-  const handleDirectorNext = async () => {
-    if (!selectedSong || setlistSongs.length === 0) return;
-    const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
-    const next = setlistSongs[idx + 1];
-    if (next) await handleNavigateToSong(next);
-  };
-
-  const handleDirectorPrev = async () => {
-    if (!selectedSong || setlistSongs.length === 0) return;
-    const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
-    const prev = setlistSongs[idx - 1];
-    if (prev) await handleNavigateToSong(prev);
-  };
-
-  const handleEndShow = async () => {
-    if (!myDirectorSession) return;
-    startActionLoading('endShow');
-    try {
-      await LiveSessionService.endShow(myDirectorSession.id);
-      setMyDirectorSession(null);
-    } catch (e) {
-      console.error('Error ending show:', e);
-      Alert.alert('Error', 'No se pudo finalizar el show.');
-    } finally {
-      stopActionLoading('endShow');
-    }
-  };
-
-  const handleJoinSession = (session: LiveSession) => {
-    setFollowingSession(session);
-    if (session.setlist_id) {
-      router.push({ pathname: "/setlist-player/[setlistId]", params: { setlistId: session.setlist_id } } as any);
-    } else if (session.current_song_id) {
-      const song = songs.find(s => s.id === session.current_song_id);
-      if (song) handleSongPress(song);
-    }
-    Alert.alert('✅ Conectado', `Siguiendo a ${session.director_name}`);
-  };
-
-  const handleLeaveSession = () => {
-    setFollowingSession(null);
-  };
-
+  /**
+   * Callback para que el SongViewer notifique al contexto cuando el Follower recibe
+   * un evento SONG_CHANGED. Carga el contenido localmente sin navegar (el reproductor
+   * es quien controla la navegación entre canciones).
+   */
   const handleFollowSongChange = async (newSongId: string) => {
     const song = songs.find(s => s.id === newSongId);
     if (!song) return;
@@ -827,17 +716,9 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
         setSearchQuery,
         globalTheme,
         handleSaveGlobalTheme,
-        liveSessions,
-        myDirectorSession,
-        followingSession,
-        handleStartShow,
-        handleStartShowFromSetlist,
+        activeBandId,
+        setActiveBandId,
         handleStartSetlistLocally,
-        handleDirectorNext,
-        handleDirectorPrev,
-        handleEndShow,
-        handleJoinSession,
-        handleLeaveSession,
         handleFollowSongChange,
         refreshLocalData,
         handleSync,

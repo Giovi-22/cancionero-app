@@ -60,3 +60,17 @@ export interface DirectorSession {
   createdAt: string;
   endedAt?: string | null;
 }
+
+export type DirectorEventType = 'SONG_CHANGED' | 'SCROLL_UP' | 'SCROLL_DOWN';
+
+export interface DirectorEvent {
+  id?: string;
+  type: DirectorEventType;
+  senderId: string;
+  payload?: {
+    songId?: string;
+    [key: string]: any;
+  };
+  timestamp: string;
+}
+

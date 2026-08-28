@@ -18,19 +18,22 @@ import {
   ChevronRight,
   Sparkles,
 } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { useBands } from '../../src/hooks/useBands';
 import { useBandInvitations } from '../../src/hooks/useBandInvitations';
+import { useDirectorSession } from '../../src/hooks/useDirectorSession';
 import { BandService } from '../../src/services/BandService';
 import { COLORS } from '../../src/constants/theme';
 import { CreateBandModal } from '../../src/components/band/CreateBandModal';
 import { InviteMemberModal } from '../../src/components/band/InviteMemberModal';
 import { PendingInvitationsList } from '../../src/components/band/PendingInvitationsList';
 import { BandMemberList } from '../../src/components/band/BandMemberList';
+import { DirectorSessionBanner } from '../../src/components/DirectorSessionBanner';
 import { useAppContext } from '../../src/context/AppContext';
 
 export default function BandScreen() {
   const insets = useSafeAreaInsets();
-  const { user } = useAppContext();
+  const { user, setActiveBandId } = useAppContext();
   const {
     bands,
     selectedBand,
@@ -41,6 +44,8 @@ export default function BandScreen() {
     selectBand,
     createBand,
   } = useBands();
+
+  const { activeSession, isDirectorOfSession, startSession, endSession } = useDirectorSession(selectedBand?.id || null);
 
   const {
     pendingInvitations,
@@ -84,7 +89,14 @@ export default function BandScreen() {
       );
       return;
     }
-    Alert.alert('Director Mode', 'Sesión de Director lista para la Fase 6.');
+    if (!selectedBand) {
+      Alert.alert('Error', 'No hay banda seleccionada.');
+      return;
+    }
+    // Guardar el bandId activo para que el reproductor lo utilice
+    setActiveBandId(selectedBand.id);
+    // Navegar a la lista de listas para iniciar un show
+    router.push('/(tabs)/setlists' as any);
   };
 
   const handleRepertorioClick = () => {

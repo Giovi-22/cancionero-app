@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { Music, List, TrendingUp, Star, Play, Radio, BookOpen, Heart, Settings, Folder, Mic, Headphones, Bookmark, Volume2 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
-import { LiveSessionBanners } from '../components/LiveSessionBanners';
+import { useBands } from '../hooks/useBands';
+import { DirectorSessionBanner } from '../components/DirectorSessionBanner';
 import { COLORS } from '../constants/theme';
 import { AppHeader } from '../components/layout/AppHeader';
 import { router } from 'expo-router';
@@ -15,15 +16,18 @@ export const HomeScreen = () => {
     topSongs,
     setlists,
     activeLibrary,
+    activeBandId,
     handleSongPress,
     handleStartSetlistLocally,
-    handleStartShow,
-    myDirectorSession,
     setActiveSetlist,
     isSyncing,
     handleSync,
     loadingActions
   } = useAppContext();
+
+  const { selectedBand } = useBands();
+  // El bandId para el banner: primero activeBandId del contexto, luego la banda seleccionada en la tab Banda
+  const bannerBandId = activeBandId || selectedBand?.id || null;
 
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
@@ -50,8 +54,6 @@ export const HomeScreen = () => {
         return <BookOpen size={size} color={color} />;
     }
   };
-
-  const isStartingShow = loadingActions['startShow'];
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
@@ -93,8 +95,8 @@ export const HomeScreen = () => {
         )}
       </LinearGradient>
 
-      {/* Banners de sesiones live en vivo */}
-      <LiveSessionBanners />
+      {/* Banner de Director Session activa */}
+      <DirectorSessionBanner bandId={bannerBandId} />
 
       {/* ESTADÍSTICAS RÁPIDAS */}
       <View style={styles.statsRow}>
@@ -164,26 +166,6 @@ export const HomeScreen = () => {
                 <Play size={12} color="#fff" />
                 <Text style={styles.startShowText}>Iniciar</Text>
               </TouchableOpacity>
-              {user && (
-                <TouchableOpacity
-                  style={[
-                    styles.startShowBtn,
-                    myDirectorSession?.setlist_id === setlist.id && styles.startShowBtnActive,
-                    { marginTop: 0, flex: 1, justifyContent: 'center' }
-                  ]}
-                  onPress={() => handleStartShow(setlist)}
-                  disabled={isStartingShow}
-                >
-                  {isStartingShow ? (
-                    <ActivityIndicator size="small" color="#fff" style={{ transform: [{ scale: 0.7 }] }} />
-                  ) : (
-                    <Radio size={12} color="#fff" />
-                  )}
-                  <Text style={styles.startShowText} numberOfLines={1}>
-                    {myDirectorSession?.setlist_id === setlist.id ? 'Vivo' : 'Show'}
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
           </LinearGradient>
         ))}

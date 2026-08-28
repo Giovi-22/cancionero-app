@@ -261,6 +261,34 @@ service cloud.firestore {
             resource.data.directorId == request.auth.uid ||
             isBandOwner(bandId)
           );
+
+        // ---------------------------------------------------------------------
+        // EVENTOS DE SESIÓN DE DIRECTOR
+        // bands/{bandId}/sessions/{sessionId}/events/{eventId}
+        // ---------------------------------------------------------------------
+        match /events/{eventId} {
+          // Lectura: todos los miembros de la banda
+          allow read: if isBandMember(bandId);
+
+          // Creación: únicamente el director asignado a la sesión activa (o owner director)
+          allow create: if isBandDirectorOrOwner(bandId)
+            && isSignedIn()
+            && request.resource.data.senderId == request.auth.uid
+            && request.resource.data.type in ['SONG_CHANGED', 'SCROLL_UP', 'SCROLL_DOWN']
+            && request.resource.data.keys().hasOnly(['type', 'senderId', 'payload', 'timestamp'])
+            && (
+              request.resource.data.type != 'SONG_CHANGED' ||
+              (request.resource.data.payload is map && request.resource.data.payload.songId is string)
+            )
+            && get(/databases/$(database)/documents/bands/$(bandId)/sessions/$(sessionId)).data.status == 'active'
+            && (
+              get(/databases/$(database)/documents/bands/$(bandId)/sessions/$(sessionId)).data.directorId == request.auth.uid ||
+              isBandOwner(bandId)
+            );
+
+          // Inmutabilidad
+          allow update, delete: if false;
+        }
       }
     }
 

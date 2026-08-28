@@ -1,11 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAppContext } from '../context/AppContext';
-import { DirectorSession } from '../types/band';
+import { DirectorSession, DirectorEvent, DirectorEventType } from '../types/band';
 import { DirectorSessionService } from '../services/DirectorSessionService';
 
 export function useDirectorSession(bandId: string | null) {
   const { user } = useAppContext();
   const [activeSession, setActiveSession] = useState<DirectorSession | null>(null);
+  const [latestEvent, setLatestEvent] = useState<DirectorEvent | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +40,27 @@ export function useDirectorSession(bandId: string | null) {
       unsubscribe();
     };
   }, [bandId]);
+
+  useEffect(() => {
+    if (!bandId || !activeSession) {
+      setLatestEvent(null);
+      return;
+    }
+
+    const unsubEvents = DirectorSessionService.subscribeToSessionEvents(
+      bandId,
+      activeSession.id,
+      (event) => {
+        // Ignorar eventos emitidos por el propio usuario para evitar bucles Director -> Firebase -> Director
+        if (event.senderId === userId) return;
+        setLatestEvent(event);
+      }
+    );
+
+    return () => {
+      unsubEvents();
+    };
+  }, [bandId, activeSession?.id, userId]);
 
   const startSession = useCallback(
     async (setlistId: string, setlistName: string) => {
@@ -100,13 +122,27 @@ export function useDirectorSession(bandId: string | null) {
     [bandId, activeSession]
   );
 
+  const sendEvent = useCallback(
+    async (type: DirectorEventType, payload?: any) => {
+      if (!bandId || !activeSession) return;
+      try {
+        await DirectorSessionService.sendDirectorEvent(bandId, activeSession.id, type, payload);
+      } catch (e: any) {
+        console.error('[useDirectorSession] Error enviando evento:', e);
+      }
+    },
+    [bandId, activeSession?.id]
+  );
+
   return {
     activeSession,
     isDirectorOfSession,
+    latestEvent,
     loading,
     error,
     startSession,
     endSession,
     updateCurrentSong,
+    sendEvent,
   };
 }
