@@ -4,37 +4,86 @@ import { Band, Invitation, UserProfile } from '../types/band';
 import { InvitationService } from '../services/InvitationService';
 import { UserService } from '../services/UserService';
 
-export function useBandInvitations() {
+export function useBandInvitations(bandId?: string | null) {
   const { user } = useAppContext();
+
+  // Invitaciones que recibió el usuario
   const [pendingInvitations, setPendingInvitations] = useState<Invitation[]>([]);
+
+  // Invitaciones que fueron enviadas desde la banda seleccionada
+  const [sentPendingInvitations, setSentPendingInvitations] = useState<Invitation[]>([]);
+
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const userEmail = user?.email || user?.user_metadata?.email || '';
 
-  // Escuchar invitaciones pendientes en tiempo real para el correo del usuario
+  // ============================================================
+  // INVITACIONES RECIBIDAS
+  // ============================================================
+
   useEffect(() => {
     if (!userEmail) {
       setPendingInvitations([]);
-      setLoading(false);
       return;
     }
 
     setLoading(true);
-    const unsubscribe = InvitationService.subscribeToPendingInvitations(
-      userEmail,
-      invitations => {
-        setPendingInvitations(invitations);
-        setLoading(false);
-      }
-    );
+
+    const unsubscribe =
+      InvitationService.subscribeToPendingInvitations(
+        userEmail,
+        invitations => {
+          setPendingInvitations(invitations);
+          setLoading(false);
+        }
+      );
 
     return () => unsubscribe();
   }, [userEmail]);
 
-  // Enviar una invitación
+  // ============================================================
+  // INVITACIONES ENVIADAS POR LA BANDA
+  // ============================================================
+
+  useEffect(() => {
+    if (!bandId) {
+      setSentPendingInvitations([]);
+      return;
+    }
+
+    const unsubscribe =
+      InvitationService.subscribeToPendingBandInvitations(
+        bandId,
+        invitations => {
+          setSentPendingInvitations(invitations);
+        },
+        error => {
+          console.error(
+            '[useBandInvitations] Error sincronizando invitaciones enviadas:',
+            error
+          );
+
+          setError(
+            error.message ||
+            'No se pudieron sincronizar las invitaciones enviadas.'
+          );
+        }
+      );
+
+    return () => unsubscribe();
+  }, [bandId]);
+
+  // ============================================================
+  // ENVIAR INVITACIÓN
+  // ============================================================
+
   const sendInvitation = useCallback(
-    async (band: Band, invitedEmail: string, role: 'member' | 'director') => {
+    async (
+      band: Band,
+      invitedEmail: string,
+      role: 'member' | 'director'
+    ) => {
       if (!user) {
         throw new Error('Usuario no autenticado');
       }
@@ -42,16 +91,28 @@ export function useBandInvitations() {
       const inviterProfile: UserProfile = {
         uid: user.uid || user.id,
         email: user.email || '',
-        displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Usuario',
+        displayName:
+          user.user_metadata?.full_name ||
+          user.user_metadata?.name ||
+          user.email ||
+          'Usuario',
         photoURL: user.user_metadata?.avatar_url || null,
       };
 
-      return await InvitationService.createInvitation(band, inviterProfile, invitedEmail, role);
+      return await InvitationService.createInvitation(
+        band,
+        inviterProfile,
+        invitedEmail,
+        role
+      );
     },
     [user]
   );
 
-  // Aceptar una invitación
+  // ============================================================
+  // ACEPTAR INVITACIÓN
+  // ============================================================
+
   const acceptInvitation = useCallback(
     async (invitationId: string) => {
       if (!user) {
@@ -60,13 +121,19 @@ export function useBandInvitations() {
 
       setLoading(true);
       setError(null);
+
       try {
         const userProfile: UserProfile = {
           uid: user.uid || user.id,
           email: user.email || '',
-          displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Usuario',
+          displayName:
+            user.user_metadata?.full_name ||
+            user.user_metadata?.name ||
+            user.email ||
+            'Usuario',
           photoURL: user.user_metadata?.avatar_url || null,
         };
+
         console.log('[useBandInvitations] Aceptando invitación:', {
           invitationId,
           uid: userProfile.uid,
@@ -74,15 +141,31 @@ export function useBandInvitations() {
         });
 
         console.log('[useBandInvitations] Sincronizando perfil...');
-        // Garantizar que el usuario exista en Firestore (users/{uid})
-        await UserService.syncUserProfile(userProfile);
-        console.log('[useBandInvitations] Perfil sincronizado. Llamando a InvitationService...');
 
-        await InvitationService.acceptInvitation(invitationId, userProfile);
-        console.log('[useBandInvitations] ✅ Invitación aceptada correctamente.');
+        await UserService.syncUserProfile(userProfile);
+
+        console.log(
+          '[useBandInvitations] Perfil sincronizado. Llamando a InvitationService...'
+        );
+
+        await InvitationService.acceptInvitation(
+          invitationId,
+          userProfile
+        );
+
+        console.log(
+          '[useBandInvitations] ✅ Invitación aceptada correctamente.'
+        );
       } catch (err: any) {
-        console.error('[useBandInvitations] Error al aceptar invitación:', err);
-        setError(err.message || 'No se pudo aceptar la invitación');
+        console.error(
+          '[useBandInvitations] Error al aceptar invitación:',
+          err
+        );
+
+        setError(
+          err.message || 'No se pudo aceptar la invitación'
+        );
+
         throw err;
       } finally {
         setLoading(false);
@@ -91,7 +174,10 @@ export function useBandInvitations() {
     [user]
   );
 
-  // Rechazar una invitación
+  // ============================================================
+  // RECHAZAR INVITACIÓN
+  // ============================================================
+
   const rejectInvitation = useCallback(
     async (invitationId: string) => {
       if (!userEmail) {
@@ -100,11 +186,22 @@ export function useBandInvitations() {
 
       setLoading(true);
       setError(null);
+
       try {
-        await InvitationService.rejectInvitation(invitationId, userEmail);
+        await InvitationService.rejectInvitation(
+          invitationId,
+          userEmail
+        );
       } catch (err: any) {
-        console.error('[useBandInvitations] Error al rechazar invitación:', err);
-        setError(err.message || 'No se pudo rechazar la invitación');
+        console.error(
+          '[useBandInvitations] Error al rechazar invitación:',
+          err
+        );
+
+        setError(
+          err.message || 'No se pudo rechazar la invitación'
+        );
+
         throw err;
       } finally {
         setLoading(false);
@@ -113,20 +210,36 @@ export function useBandInvitations() {
     [userEmail]
   );
 
-  // Cancelar una invitación emitida
-  const cancelInvitation = useCallback(async (invitationId: string) => {
-    try {
-      await InvitationService.cancelInvitation(invitationId);
-    } catch (err: any) {
-      console.error('[useBandInvitations] Error al cancelar invitación:', err);
-      throw err;
-    }
-  }, []);
+  // ============================================================
+  // CANCELAR INVITACIÓN ENVIADA
+  // ============================================================
+
+  const cancelInvitation = useCallback(
+    async (invitationId: string) => {
+      try {
+        await InvitationService.cancelInvitation(invitationId);
+      } catch (err: any) {
+        console.error(
+          '[useBandInvitations] Error al cancelar invitación:',
+          err
+        );
+
+        throw err;
+      }
+    },
+    []
+  );
 
   return {
+    // Recibidas
     pendingInvitations,
+
+    // Enviadas por la banda seleccionada
+    sentPendingInvitations,
+
     loading,
     error,
+
     sendInvitation,
     acceptInvitation,
     rejectInvitation,

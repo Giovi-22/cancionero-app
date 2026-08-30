@@ -30,6 +30,7 @@ import { PendingInvitationsList } from '../../src/components/band/PendingInvitat
 import { BandMemberList } from '../../src/components/band/BandMemberList';
 import { DirectorSessionBanner } from '../../src/components/DirectorSessionBanner';
 import { useAppContext } from '../../src/context/AppContext';
+import { SentInvitationsList } from '../../src/components/band/SentInvitationsList';
 
 export default function BandScreen() {
   const insets = useSafeAreaInsets();
@@ -49,10 +50,12 @@ export default function BandScreen() {
 
   const {
     pendingInvitations,
+    sentPendingInvitations,
     sendInvitation,
     acceptInvitation,
     rejectInvitation,
-  } = useBandInvitations();
+    cancelInvitation,
+  } = useBandInvitations(selectedBand?.id || null);
 
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -291,6 +294,12 @@ export default function BandScreen() {
                   onChangeRole={handleChangeMemberRole}
                   onRemoveMember={handleRemoveMember}
                 />
+                {permissions.canInviteMembers && (
+                  <SentInvitationsList
+                    invitations={sentPendingInvitations}
+                    onCancel={cancelInvitation}
+                  />
+                )}
               </View>
             )}
           </View>

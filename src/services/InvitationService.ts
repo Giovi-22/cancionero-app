@@ -181,6 +181,91 @@ export class InvitationService {
   }
 
   /**
+ * Escucha en tiempo real las invitaciones pendientes enviadas
+ * desde una banda.
+ *
+ * Detecta automáticamente:
+ * - Nuevas invitaciones
+ * - Invitaciones aceptadas
+ * - Invitaciones rechazadas
+ * - Invitaciones canceladas
+ */
+  static subscribeToPendingBandInvitations(
+    bandId: string,
+    onUpdate: (invitations: Invitation[]) => void,
+    onError?: (error: Error) => void
+  ): () => void {
+    if (!bandId) {
+      onUpdate([]);
+      return () => { };
+    }
+
+    console.log(
+      '[InvitationService] Suscribiendo a invitaciones de la banda:',
+      bandId
+    );
+
+    return firestore()
+      .collection(this.COLLECTION)
+      .where('bandId', '==', bandId)
+      .onSnapshot(
+        snapshot => {
+          if (!snapshot) {
+            onUpdate([]);
+            return;
+          }
+
+          const pendingInvitations: Invitation[] = [];
+
+          snapshot.docs.forEach((doc: any) => {
+            const invitation = {
+              id: doc.id,
+              ...doc.data(),
+            } as Invitation;
+
+            if (
+              invitation.status === 'pending' &&
+              !this.isExpired(invitation.expiresAt)
+            ) {
+              pendingInvitations.push(invitation);
+            }
+          });
+
+          // Más recientes primero
+          pendingInvitations.sort((a, b) => {
+            const dateA = new Date(a.createdAt).getTime();
+            const dateB = new Date(b.createdAt).getTime();
+
+            return dateB - dateA;
+          });
+
+          console.log(
+            '[InvitationService] Invitaciones pendientes de la banda:',
+            pendingInvitations
+          );
+
+          onUpdate(pendingInvitations);
+        },
+        error => {
+          console.warn(
+            '[InvitationService] Error en suscripción de invitaciones de banda:',
+            error
+          );
+
+          if (onError) {
+            onError(
+              error instanceof Error
+                ? error
+                : new Error(
+                  'No se pudieron sincronizar las invitaciones de la banda.'
+                )
+            );
+          }
+        }
+      );
+  }
+
+  /**
    * Acepta una invitación pendiente y agrega al usuario a la banda.
    * OPERACIÓN ATÓMICA UNIFICADA (WriteBatch de Firestore):
    * 1. invitation -> status: 'accepted', invitedUserId: userProfile.uid
