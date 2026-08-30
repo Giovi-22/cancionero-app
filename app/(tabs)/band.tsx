@@ -33,7 +33,7 @@ import { useAppContext } from '../../src/context/AppContext';
 
 export default function BandScreen() {
   const insets = useSafeAreaInsets();
-  const { user, setActiveBandId } = useAppContext();
+  const { user, setActiveBandId, driveFolderId } = useAppContext();
   const {
     bands,
     selectedBand,
@@ -310,6 +310,7 @@ export default function BandScreen() {
         onClose={() => setIsInviteModalOpen(false)}
         onInvite={handleSendInvitation}
         canInviteDirector={userRole === 'owner'}
+        folderId={driveFolderId}
       />
     </View>
   );

@@ -67,11 +67,19 @@ export function useBandInvitations() {
           displayName: user.user_metadata?.full_name || user.user_metadata?.name || user.email || 'Usuario',
           photoURL: user.user_metadata?.avatar_url || null,
         };
+        console.log('[useBandInvitations] Aceptando invitación:', {
+          invitationId,
+          uid: userProfile.uid,
+          email: userProfile.email,
+        });
 
+        console.log('[useBandInvitations] Sincronizando perfil...');
         // Garantizar que el usuario exista en Firestore (users/{uid})
         await UserService.syncUserProfile(userProfile);
+        console.log('[useBandInvitations] Perfil sincronizado. Llamando a InvitationService...');
 
         await InvitationService.acceptInvitation(invitationId, userProfile);
+        console.log('[useBandInvitations] ✅ Invitación aceptada correctamente.');
       } catch (err: any) {
         console.error('[useBandInvitations] Error al aceptar invitación:', err);
         setError(err.message || 'No se pudo aceptar la invitación');

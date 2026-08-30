@@ -139,7 +139,7 @@ export class InvitationService {
     email: string,
     onUpdate: (invitations: Invitation[]) => void
   ): () => void {
-    if (!email) return () => {};
+    if (!email) return () => { };
     const cleanEmail = email.trim().toLowerCase();
 
     return firestore()
@@ -197,7 +197,7 @@ export class InvitationService {
     const invRef = firestore().collection(this.COLLECTION).doc(invitationId);
     const invSnap = await invRef.get();
 
-    if (!invSnap.exists) {
+    if (!invSnap.exists()) {
       throw new Error('La invitación no existe o ha sido eliminada.');
     }
 
@@ -230,15 +230,28 @@ export class InvitationService {
       .doc(userProfile.uid);
 
     const memberSnap = await memberRef.get();
-    if (memberSnap.exists) {
+    console.log(
+      '[InvitationService] Verificando miembro:',
+      {
+        bandId: invitation.bandId,
+        userId: userProfile.uid,
+        exists: memberSnap.exists(),
+      }
+    );
+    if (memberSnap.exists()) {
       // Ya es miembro, solo actualizar el estado de la invitación
+      console.log(
+        '[InvitationService] ⚠️ El miembro YA EXISTE. Solo se actualizará la invitación.'
+      );
       await invRef.update({
         status: 'accepted',
         invitedUserId: userProfile.uid,
       });
       return;
     }
-
+    console.log(
+      '[InvitationService] El miembro NO existe. Creando invitación + miembro en batch.'
+    );
     const now = new Date().toISOString();
 
     const newMember: BandMember = {
@@ -266,6 +279,15 @@ export class InvitationService {
     // Comprometer ambas escrituras atómicamente
     await batch.commit();
 
+    console.log(
+      '[InvitationService] ✅ Batch aceptado correctamente:',
+      {
+        invitationId,
+        bandId: invitation.bandId,
+        userId: userProfile.uid,
+        memberPath: `bands/${invitation.bandId}/members/${userProfile.uid}`,
+      }
+    );
     console.log('[InvitationService] Invitación aceptada atómicamente. Miembro creado:', userProfile.uid);
   }
 
@@ -276,7 +298,7 @@ export class InvitationService {
     const invRef = firestore().collection(this.COLLECTION).doc(invitationId);
     const invSnap = await invRef.get();
 
-    if (!invSnap.exists) {
+    if (!invSnap.exists()) {
       throw new Error('La invitación no existe.');
     }
 

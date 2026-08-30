@@ -27,7 +27,7 @@ export class UserService {
       const userDocRef = firestore().collection(this.COLLECTION).doc(uid);
       const docSnapshot = await userDocRef.get();
 
-      if (!docSnapshot.exists) {
+      if (!docSnapshot.exists()) {
         const newUserProfile: UserProfile = {
           uid,
           email,
@@ -78,7 +78,7 @@ export class UserService {
   static async getUserProfile(uid: string): Promise<UserProfile | null> {
     try {
       const docSnapshot = await firestore().collection(this.COLLECTION).doc(uid).get();
-      if (!docSnapshot.exists) return null;
+      if (!docSnapshot.exists()) return null;
       return docSnapshot.data() as UserProfile;
     } catch (error) {
       console.warn('[UserService] Error al obtener usuario por UID:', error);
