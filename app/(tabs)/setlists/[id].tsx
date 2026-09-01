@@ -25,7 +25,9 @@ export default function SetlistDetailScreen() {
     user,
     setIsEditSetlistOpen,
     setlists,
-    loadingActions
+    loadingActions,
+    loadingSongId,
+    handleUpdateSetlistSongNote
   } = useAppContext();
 
   const insets = useSafeAreaInsets();
@@ -87,13 +89,37 @@ export default function SetlistDetailScreen() {
     }
   };
 
+  const handleSaveSongNote = async (
+    songId: string,
+    note: string
+  ) => {
+    if (!activeSetlist) return;
+
+    await handleUpdateSetlistSongNote(
+      activeSetlist.id,
+      songId,
+      note
+    );
+  };
+
+  const handleDeleteSongNote = async (
+    songId: string
+  ) => {
+    if (!activeSetlist) return;
+
+    await handleUpdateSetlistSongNote(
+      activeSetlist.id,
+      songId,
+      ''
+    );
+  };
 
 
   return (
     <View style={styles.container}>
       <View style={[styles.activeSetlistHeader, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity 
-          onPress={() => { setActiveSetlist(null); router.back(); }} 
+        <TouchableOpacity
+          onPress={() => { setActiveSetlist(null); router.back(); }}
           style={styles.closeSetlistBtn}
         >
           <ArrowLeft size={24} color="#fff" />
@@ -232,6 +258,10 @@ export default function SetlistDetailScreen() {
         onRemoveFromSetlist={handleRemoveSongFromSetlist}
         onAddSongsPress={handleOpenEditSetlist}
         onReorder={handleMoveSong}
+        loadingSongId={loadingSongId}
+        songNotes={activeSetlist?.songNotes}
+        onSaveSongNote={handleSaveSongNote}
+        onDeleteSongNote={handleDeleteSongNote}
       />
     </View>
   );

@@ -74,3 +74,15 @@ export interface DirectorEvent {
   timestamp: string;
 }
 
+export interface BandSetlist {
+  id: string;
+  bandId: string;
+  name: string;
+  date?: string;
+  songIds: string[];
+  notes?: string;
+  songNotes?: Record<string, string>;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
