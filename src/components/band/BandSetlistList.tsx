@@ -7,9 +7,9 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { Plus, Music2, ChevronRight } from 'lucide-react-native';
+import { Plus, Music2, ChevronRight, Radio } from 'lucide-react-native';
 
-import { BandSetlist } from '../../types/band';
+import { BandSetlist, DirectorSession } from '../../types/band';
 import { COLORS } from '../../constants/theme';
 
 interface BandSetlistListProps {
@@ -17,6 +17,7 @@ interface BandSetlistListProps {
     setlists: BandSetlist[];
     loading: boolean;
     error: string | null;
+    activeSession?: DirectorSession | null;
     onSelectSetlist?: (setlist: BandSetlist) => void;
     onCreateSetlist?: () => void;
 }
@@ -26,6 +27,7 @@ export function BandSetlistList({
     setlists,
     loading,
     error,
+    activeSession,
     onSelectSetlist,
     onCreateSetlist,
 }: BandSetlistListProps) {
@@ -104,26 +106,55 @@ export function BandSetlistList({
     }: {
         item: BandSetlist;
     }) => {
+        const isActive = activeSession?.setlistId === item.id;
+
         return (
             <TouchableOpacity
-                style={styles.setlistCard}
+                style={[
+                    styles.setlistCard,
+                    isActive && styles.activeSetlistCard,
+                ]}
                 activeOpacity={0.7}
                 onPress={() => onSelectSetlist?.(item)}
             >
-                <View style={styles.iconContainer}>
+                <View
+                    style={[
+                        styles.iconContainer,
+                        isActive && styles.activeIconContainer,
+                    ]}
+                >
                     <Music2
                         size={22}
-                        color={COLORS.accent}
+                        color={
+                            isActive
+                                ? COLORS.accent
+                                : COLORS.accent
+                        }
                     />
                 </View>
 
                 <View style={styles.setlistInfo}>
-                    <Text
-                        style={styles.setlistName}
-                        numberOfLines={1}
-                    >
-                        {item.name}
-                    </Text>
+                    <View style={styles.setlistNameRow}>
+                        <Text
+                            style={styles.setlistName}
+                            numberOfLines={1}
+                        >
+                            {item.name}
+                        </Text>
+
+                        {isActive && (
+                            <View style={styles.liveBadge}>
+                                <Radio
+                                    size={12}
+                                    color={COLORS.background}
+                                />
+
+                                <Text style={styles.liveBadgeText}>
+                                    EN VIVO
+                                </Text>
+                            </View>
+                        )}
+                    </View>
 
                     <Text style={styles.songCount}>
                         {item.songIds?.length ?? 0}{' '}
@@ -144,7 +175,11 @@ export function BandSetlistList({
 
                 <ChevronRight
                     size={22}
-                    color={COLORS.mutedForeground}
+                    color={
+                        isActive
+                            ? COLORS.accent
+                            : COLORS.mutedForeground
+                    }
                 />
             </TouchableOpacity>
         );
@@ -345,6 +380,12 @@ const styles = StyleSheet.create({
         marginBottom: 10,
         borderRadius: 12,
         backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: 'transparent',
+    },
+
+    activeSetlistCard: {
+        borderColor: COLORS.accent,
     },
 
     iconContainer: {
@@ -357,15 +398,43 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
 
+    activeIconContainer: {
+        borderWidth: 1,
+        borderColor: COLORS.accent,
+    },
+
     setlistInfo: {
         flex: 1,
         minWidth: 0,
     },
 
+    setlistNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+
     setlistName: {
+        flex: 1,
         fontSize: 16,
         fontWeight: '600',
         color: COLORS.foreground,
+    },
+
+    liveBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 7,
+        paddingVertical: 4,
+        borderRadius: 6,
+        backgroundColor: COLORS.accent,
+    },
+
+    liveBadgeText: {
+        fontSize: 9,
+        fontWeight: '800',
+        color: COLORS.background,
     },
 
     songCount: {

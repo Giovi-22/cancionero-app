@@ -56,9 +56,6 @@ export class BandService {
     batch.set(memberRef, ownerMember);
 
     await batch.commit();
-
-    console.log('[BandService] Banda creada exitosamente:', newBand.name);
-
     return newBand;
   }
 
@@ -77,14 +74,6 @@ export class BandService {
         .collectionGroup('members')
         .where('userId', '==', userId)
         .get();
-
-      console.log(
-        '[BandService] memberships encontradas:',
-        membersSnapshot.docs.map(doc => ({
-          path: doc.ref.path,
-          data: doc.data(),
-        }))
-      );
 
       if (membersSnapshot.empty) {
         return [];
@@ -114,9 +103,6 @@ export class BandService {
           role: memberData.role,
         });
       }
-
-      console.log('[BandService] Bandas del usuario:', results);
-
       return results;
     } catch (error) {
       console.warn(
@@ -147,11 +133,6 @@ export class BandService {
       onUpdate([]);
       return () => { };
     }
-
-    console.log(
-      '[BandService] Suscribiendo a membresías del usuario:',
-      userId
-    );
 
     let cancelled = false;
 
@@ -190,11 +171,6 @@ export class BandService {
           }
 
           if (cancelled) return;
-
-          console.log(
-            '[BandService] Bandas actualizadas en tiempo real:',
-            bandsInfo
-          );
 
           onUpdate(bandsInfo);
         } catch (error: any) {
@@ -235,10 +211,6 @@ export class BandService {
     return () => {
       cancelled = true;
       unsubscribe();
-
-      console.log(
-        '[BandService] Suscripción a bandas del usuario cancelada.'
-      );
     };
   }
 
@@ -318,11 +290,6 @@ export class BandService {
     await memberRef.update({
       role: newRole,
     });
-
-    console.log(
-      `[BandService] Rol del miembro ${memberUserId} actualizado a:`,
-      newRole
-    );
   }
 
   /**
@@ -342,8 +309,5 @@ export class BandService {
 
     await memberRef.delete();
 
-    console.log(
-      `[BandService] Miembro ${memberUserId} eliminado de la banda ${bandId}.`
-    );
   }
 }

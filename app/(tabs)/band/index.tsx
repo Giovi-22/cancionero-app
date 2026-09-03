@@ -150,8 +150,8 @@ export default function BandScreen() {
         // Guardar la banda activa.
         setActiveBandId(selectedBand.id);
 
-        // Navegar a la lista de listas para iniciar un show.
-        router.push('/(tabs)/setlists' as any);
+        // Navegar al repertorio compartido de la banda.
+        router.push('/(tabs)/band/setlists');
     };
 
     const handleRepertorioClick = () => {
@@ -330,11 +330,16 @@ export default function BandScreen() {
                                             selectedBand?.id ===
                                             b.id;
 
+                                        const isLive =
+                                            !!b.activeSessionId;
+
                                         return (
                                             <TouchableOpacity
                                                 key={b.id}
                                                 style={[
                                                     styles.chip,
+                                                    isLive &&
+                                                    styles.chipLive,
                                                     isSelected &&
                                                     styles.chipSelected,
                                                 ]}
@@ -344,6 +349,14 @@ export default function BandScreen() {
                                                     )
                                                 }
                                             >
+                                                {isLive && (
+                                                    <View
+                                                        style={
+                                                            styles.liveDot
+                                                        }
+                                                    />
+                                                )}
+
                                                 <Text
                                                     style={[
                                                         styles.chipText,
@@ -775,6 +788,18 @@ const styles = StyleSheet.create({
         marginRight: 8,
         borderWidth: 1,
         borderColor: COLORS.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    chipLive: {
+        borderColor: COLORS.accent,
+    },
+    liveDot: {
+        width: 7,
+        height: 7,
+        borderRadius: 4,
+        backgroundColor: '#ef4444',
+        marginRight: 6,
     },
     chipSelected: {
         backgroundColor: COLORS.accent,

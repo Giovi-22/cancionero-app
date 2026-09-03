@@ -16,6 +16,7 @@ import { BandSetlist } from '../../../../src/types/band';
 import { COLORS } from '../../../../src/constants/theme';
 import { useBandSetlists } from '../../../../src/hooks/useBandSetlists';
 import { useAppContext } from '../../../../src/context/AppContext';
+import { useDirectorSession } from '../../../../src/hooks/useDirectorSession';
 
 export default function BandSetlistsScreen() {
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -23,6 +24,8 @@ export default function BandSetlistsScreen() {
     const insets = useSafeAreaInsets();
 
     const { activeBandId } = useAppContext();
+
+    const { activeSession } = useDirectorSession(activeBandId);
 
     const {
         userBandsInfo,
@@ -107,6 +110,7 @@ export default function BandSetlistsScreen() {
                 setlists={setlists}
                 loading={loading}
                 error={error}
+                activeSession={activeSession}
                 onSelectSetlist={handleSelectSetlist}
                 onCreateSetlist={handleCreateSetlist}
             />

@@ -86,19 +86,9 @@ export function useBands() {
       return;
     }
 
-    console.log(
-      '[useBands] Suscribiendo a bandas del usuario:',
-      userId
-    );
-
     const unsubscribe = BandService.subscribeToUserBands(
       userId,
       updatedBands => {
-        console.log(
-          '[useBands] Bandas actualizadas en tiempo real:',
-          updatedBands
-        );
-
         setUserBandsInfo(updatedBands);
 
         // Mantener la banda actualmente seleccionada si todavía existe
@@ -141,7 +131,6 @@ export function useBands() {
     );
 
     return () => {
-      console.log('[useBands] Cancelando suscripción de bandas.');
       unsubscribe();
     };
   }, [user]);

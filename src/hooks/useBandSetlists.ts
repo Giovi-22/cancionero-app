@@ -5,7 +5,7 @@ export function useBandSetlists(
     bandId: string | null
 ) {
     const [setlists, setSetlists] = useState<BandSetlist[]>([]);
-    const [loading, setLoading] = useState(false);
+    const [loading, setLoading] = useState(!!bandId);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {

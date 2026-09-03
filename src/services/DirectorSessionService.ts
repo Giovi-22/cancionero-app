@@ -1,5 +1,5 @@
 import { firestore, auth } from '../lib/firebase';
-import { DirectorSession } from '../types/band';
+import { DirectorEvent, DirectorEventType, DirectorSession } from '../types/band';
 
 export class DirectorSessionService {
   private static BANDS_COLLECTION = 'bands';
@@ -179,7 +179,7 @@ export class DirectorSessionService {
     onEvent: (event: DirectorEvent) => void
   ): () => void {
     if (!bandId || !sessionId) {
-      return () => {};
+      return () => { };
     }
 
     const eventsRef = firestore()
@@ -218,7 +218,7 @@ export class DirectorSessionService {
   ): () => void {
     if (!bandId) {
       onUpdate(null);
-      return () => {};
+      return () => { };
     }
 
     const bandRef = firestore().collection(this.BANDS_COLLECTION).doc(bandId);

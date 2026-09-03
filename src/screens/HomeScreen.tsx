@@ -3,7 +3,6 @@ import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator
 import { Music, List, TrendingUp, Star, Play, Radio, BookOpen, Heart, Settings, Folder, Mic, Headphones, Bookmark, Volume2 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { useBands } from '../hooks/useBands';
-import { DirectorSessionBanner } from '../components/DirectorSessionBanner';
 import { COLORS } from '../constants/theme';
 import { AppHeader } from '../components/layout/AppHeader';
 import { router } from 'expo-router';
@@ -26,8 +25,6 @@ export const HomeScreen = () => {
   } = useAppContext();
 
   const { selectedBand } = useBands();
-  // El bandId para el banner: primero activeBandId del contexto, luego la banda seleccionada en la tab Banda
-  const bannerBandId = activeBandId || selectedBand?.id || null;
 
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
@@ -95,8 +92,6 @@ export const HomeScreen = () => {
         )}
       </LinearGradient>
 
-      {/* Banner de Director Session activa */}
-      <DirectorSessionBanner bandId={bannerBandId} />
 
       {/* ESTADÍSTICAS RÁPIDAS */}
       <View style={styles.statsRow}>

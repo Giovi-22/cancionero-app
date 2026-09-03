@@ -17,11 +17,14 @@ import {
     Check,
     ChevronDown,
     ChevronUp,
+    Radio,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppContext } from '../../../../src/context/AppContext';
 import { useBandSetlists } from '../../../../src/hooks/useBandSetlists';
+import { useBands } from '../../../../src/hooks/useBands';
+import { useDirectorSession } from '../../../../src/hooks/useDirectorSession';
 import { BandSetlist } from '../../../../src/types/band';
 import { SongMetadata } from '../../../../src/types';
 import { SongList } from '../../../../src/components/SongList';
@@ -30,17 +33,25 @@ import { COLORS } from '../../../../src/constants/theme';
 export default function BandSetlistDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
     const insets = useSafeAreaInsets();
+
     const [isSaving, setIsSaving] = useState(false);
     const [isEditingNotes, setIsEditingNotes] = useState(false);
     const [notesText, setNotesText] = useState('');
     const [isNotesExpanded, setIsNotesExpanded] = useState(false);
     const [isSavingNotes, setIsSavingNotes] = useState(false);
+    const [isStartingDirector, setIsStartingDirector] = useState(false);
+
     const {
         songs,
         handleSongPress,
         activeBandId,
         loadingSongId,
+        user,
     } = useAppContext();
+
+    const {
+        permissions,
+    } = useBands();
 
     const {
         setlists: bandSetlists,
@@ -48,6 +59,30 @@ export default function BandSetlistDetailScreen() {
         error: bandSetlistsError,
         updateSetlist: updateBandSetlist,
     } = useBandSetlists(activeBandId);
+
+    const {
+        startSession,
+        activeSession,
+        isDirectorOfSession,
+    } = useDirectorSession(activeBandId);
+    const userId = user?.uid || user.id;
+    useEffect(() => {
+        console.log('[BandSetlistDetail] Director Session:', {
+            activeBandId,
+            setlistId: id,
+            activeSessionId: activeSession?.id,
+            activeSessionSetlistId: activeSession?.setlistId,
+            activeSessionDirectorId: activeSession?.directorId,
+            userId,
+            isDirectorOfSession,
+        });
+    }, [
+        activeBandId,
+        id,
+        activeSession,
+        userId,
+        isDirectorOfSession,
+    ]);
 
     /**
      * Busca el repertorio actual dentro de los repertorios
@@ -64,6 +99,32 @@ export default function BandSetlistDetailScreen() {
             ) || null
         );
     }, [bandSetlists, id]);
+
+    /**
+     * Determina si este es el repertorio que actualmente
+     * está siendo dirigido.
+     *
+     * activeSession es la fuente de verdad de Director Mode.
+     */
+    const isActiveSetlist = useMemo(() => {
+        if (!activeSession || !setlist) {
+            return false;
+        }
+
+        return activeSession.setlistId === setlist.id;
+    }, [activeSession, setlist]);
+
+    /**
+     * Determina si existe una sesión activa pero pertenece
+     * a otro repertorio.
+     */
+    const hasAnotherActiveSetlist = useMemo(() => {
+        if (!activeSession || !setlist) {
+            return false;
+        }
+
+        return activeSession.setlistId !== setlist.id;
+    }, [activeSession, setlist]);
 
     useEffect(() => {
         if (setlist) {
@@ -118,6 +179,127 @@ export default function BandSetlistDetailScreen() {
             songId => !localSongIds.has(songId)
         );
     }, [setlist, songs]);
+
+    /**
+     * Entra a la sesión activa.
+     *
+     * Esto funciona tanto para el director como para los
+     * followers de la banda.
+     */
+    const handleGoToActiveSession = () => {
+        if (!activeSession || !activeBandId) {
+            return;
+        }
+
+        router.push({
+            pathname: '/setlist-player/[setlistId]',
+            params: {
+                setlistId: activeSession.setlistId,
+                bandId: activeBandId,
+            },
+        });
+    };
+
+    /**
+     * Inicia una sesión de Director Mode para este repertorio.
+     *
+     * La sesión se crea antes de navegar al SetlistPlayer.
+     * El bandId se pasa explícitamente por route params para
+     * no depender únicamente de activeBandId durante la navegación.
+     */
+    const handleStartDirectorMode = async () => {
+        console.log('[BandSetlistDetail] handleStartDirectorMode');
+
+        if (
+            !setlist ||
+            !activeBandId ||
+            isStartingDirector
+        ) {
+            console.log('[BandSetlistDetail] return');
+            return;
+        }
+
+        /**
+         * Si ya existe una sesión activa, no intentamos crear
+         * otra. Si casualmente es este mismo repertorio,
+         * simplemente entramos a la sesión existente.
+         */
+        if (activeSession) {
+            if (
+                activeSession.setlistId === setlist.id
+            ) {
+                handleGoToActiveSession();
+                return;
+            }
+
+            Alert.alert(
+                'Director Mode activo',
+                `Ya se está dirigiendo "${activeSession.setlistName}".\n\nFinalizá esa sesión antes de iniciar otra.`
+            );
+
+            return;
+        }
+
+        if (!permissions.canCreateDirectorSession) {
+            Alert.alert(
+                'Acceso restringido',
+                'Únicamente el Director u Owner de la banda puede iniciar Director Mode.'
+            );
+            return;
+        }
+
+        try {
+            console.log('[BandSetlistDetail] try');
+
+            setIsStartingDirector(true);
+
+            console.log(
+                '[BandSetlistDetail] startSession BEFORE'
+            );
+
+            await startSession(
+                setlist.id,
+                setlist.name
+            );
+
+            console.log(
+                '[BandSetlistDetail] startSession AFTER'
+            );
+
+            console.log(
+                '[BandSetlistDetail] router.push BEFORE'
+            );
+
+            router.push({
+                pathname: '/setlist-player/[setlistId]',
+                params: {
+                    setlistId: setlist.id,
+                    bandId: activeBandId,
+                },
+            });
+
+            console.log(
+                '[BandSetlistDetail] router.push AFTER'
+            );
+        } catch (err: any) {
+            console.error(
+                '[BandSetlistDetail] Error iniciando Director Mode:',
+                err
+            );
+
+            Alert.alert(
+                'No se pudo iniciar Director Mode',
+                err?.message ||
+                'Ocurrió un error al iniciar la sesión.'
+            );
+        } finally {
+            console.log(
+                '[BandSetlistDetail] finally -> setIsStartingDirector(false)'
+            );
+
+            setIsStartingDirector(false);
+        }
+    };
 
     /**
      * Elimina una canción del repertorio.
@@ -186,7 +368,11 @@ export default function BandSetlistDetailScreen() {
         fromIndex: number,
         toIndex: number
     ) => {
-        if (!setlist || fromIndex === toIndex || isSaving) {
+        if (
+            !setlist ||
+            fromIndex === toIndex ||
+            isSaving
+        ) {
             return;
         }
 
@@ -229,8 +415,8 @@ export default function BandSetlistDetailScreen() {
     };
 
     /**
- * Guarda o actualiza la nota de una canción del repertorio.
- */
+     * Guarda la nota de una canción del repertorio.
+     */
     const handleSaveSongNote = async (
         songId: string,
         note: string
@@ -318,8 +504,8 @@ export default function BandSetlistDetailScreen() {
     };
 
     /**
- * Guarda la nota general del repertorio.
- */
+     * Guarda la nota general del repertorio.
+     */
     const handleSaveNotes = async () => {
         if (!setlist || isSavingNotes) {
             return;
@@ -356,8 +542,6 @@ export default function BandSetlistDetailScreen() {
 
     /**
      * Abre el selector de canciones.
-     *
-     * El selector será implementado en el siguiente paso.
      */
     const handleAddSongs = () => {
         if (!setlist) {
@@ -430,7 +614,10 @@ export default function BandSetlistDetailScreen() {
     /**
      * Estado: cargando repertorios.
      */
-    if (bandSetlistsLoading && !setlist) {
+    if (
+        bandSetlistsLoading &&
+        !setlist
+    ) {
         return (
             <View
                 style={[
@@ -476,7 +663,10 @@ export default function BandSetlistDetailScreen() {
     /**
      * Estado: error.
      */
-    if (bandSetlistsError && !setlist) {
+    if (
+        bandSetlistsError &&
+        !setlist
+    ) {
         return (
             <View
                 style={[
@@ -655,12 +845,15 @@ export default function BandSetlistDetailScreen() {
                     </Text>
                 </View>
             )}
+
             {/* Notas del repertorio */}
             <View style={styles.notesContainer}>
                 <TouchableOpacity
                     style={styles.notesHeader}
                     onPress={() =>
-                        setIsNotesExpanded(!isNotesExpanded)
+                        setIsNotesExpanded(
+                            !isNotesExpanded
+                        )
                     }
                     activeOpacity={0.7}
                 >
@@ -676,20 +869,36 @@ export default function BandSetlistDetailScreen() {
 
                         {setlist.notes &&
                             setlist.notes.trim().length > 0 && (
-                                <View style={styles.notesBadge}>
-                                    <Text style={styles.notesBadgeText}>
+                                <View
+                                    style={
+                                        styles.notesBadge
+                                    }
+                                >
+                                    <Text
+                                        style={
+                                            styles.notesBadgeText
+                                        }
+                                    >
                                         1
                                     </Text>
                                 </View>
                             )}
                     </View>
 
-                    <View style={styles.notesHeaderActions}>
+                    <View
+                        style={
+                            styles.notesHeaderActions
+                        }
+                    >
                         <TouchableOpacity
                             style={styles.editNotesBtn}
                             onPress={() => {
-                                if (!isNotesExpanded) {
-                                    setIsNotesExpanded(true);
+                                if (
+                                    !isNotesExpanded
+                                ) {
+                                    setIsNotesExpanded(
+                                        true
+                                    );
                                 }
 
                                 setIsEditingNotes(
@@ -697,7 +906,11 @@ export default function BandSetlistDetailScreen() {
                                 );
                             }}
                         >
-                            <Text style={styles.editNotesBtnText}>
+                            <Text
+                                style={
+                                    styles.editNotesBtnText
+                                }
+                            >
                                 {isEditingNotes
                                     ? 'Cancelar'
                                     : setlist.notes
@@ -709,12 +922,16 @@ export default function BandSetlistDetailScreen() {
                         {isNotesExpanded ? (
                             <ChevronUp
                                 size={18}
-                                color={COLORS.mutedForeground}
+                                color={
+                                    COLORS.mutedForeground
+                                }
                             />
                         ) : (
                             <ChevronDown
                                 size={18}
-                                color={COLORS.mutedForeground}
+                                color={
+                                    COLORS.mutedForeground
+                                }
                             />
                         )}
                     </View>
@@ -723,11 +940,19 @@ export default function BandSetlistDetailScreen() {
                 {isNotesExpanded && (
                     <View style={styles.notesBody}>
                         {isEditingNotes ? (
-                            <View style={styles.notesEditWrapper}>
+                            <View
+                                style={
+                                    styles.notesEditWrapper
+                                }
+                            >
                                 <TextInput
-                                    style={styles.notesInput}
+                                    style={
+                                        styles.notesInput
+                                    }
                                     value={notesText}
-                                    onChangeText={setNotesText}
+                                    onChangeText={
+                                        setNotesText
+                                    }
                                     placeholder="Escribe notas, recordatorios u observaciones..."
                                     placeholderTextColor={
                                         COLORS.mutedForeground
@@ -738,9 +963,15 @@ export default function BandSetlistDetailScreen() {
                                 />
 
                                 <TouchableOpacity
-                                    style={styles.saveNotesBtn}
-                                    onPress={handleSaveNotes}
-                                    disabled={isSavingNotes}
+                                    style={
+                                        styles.saveNotesBtn
+                                    }
+                                    onPress={
+                                        handleSaveNotes
+                                    }
+                                    disabled={
+                                        isSavingNotes
+                                    }
                                 >
                                     {isSavingNotes ? (
                                         <ActivityIndicator
@@ -768,13 +999,19 @@ export default function BandSetlistDetailScreen() {
                         ) : (
                             <TouchableOpacity
                                 onPress={() =>
-                                    setIsEditingNotes(true)
+                                    setIsEditingNotes(
+                                        true
+                                    )
                                 }
                                 activeOpacity={0.8}
                             >
                                 {setlist.notes &&
                                     setlist.notes.trim().length > 0 ? (
-                                    <Text style={styles.notesText}>
+                                    <Text
+                                        style={
+                                            styles.notesText
+                                        }
+                                    >
                                         {setlist.notes}
                                     </Text>
                                 ) : (
@@ -783,8 +1020,9 @@ export default function BandSetlistDetailScreen() {
                                             styles.notesPlaceholder
                                         }
                                     >
-                                        Sin notas para este repertorio.
-                                        Tocá para añadir observaciones,
+                                        Sin notas para este
+                                        repertorio. Tocá para
+                                        añadir observaciones,
                                         orden del servicio, etc.
                                     </Text>
                                 )}
@@ -794,20 +1032,158 @@ export default function BandSetlistDetailScreen() {
                 )}
             </View>
 
+            {/* Director Mode */}
+
+            {/*
+             * Este repertorio es el que está activo.
+             *
+             * Lo pueden abrir tanto el director como los followers.
+             */}
+            {isActiveSetlist && activeSession && (
+                <TouchableOpacity
+                    style={[
+                        styles.directorButton,
+                        styles.directorButtonActive,
+                    ]}
+                    activeOpacity={0.8}
+                    onPress={handleGoToActiveSession}
+                >
+                    <Radio
+                        size={19}
+                        color={COLORS.background}
+                    />
+
+                    <View
+                        style={
+                            styles.directorButtonContent
+                        }
+                    >
+                        <Text
+                            style={
+                                styles.directorButtonText
+                            }
+                        >
+                            {isDirectorOfSession
+                                ? 'Volver a Director Mode'
+                                : 'Entrar a sesión activa'}
+                        </Text>
+
+                        <Text
+                            style={
+                                styles.directorButtonSubtitle
+                            }
+                            numberOfLines={1}
+                        >
+                            {activeSession.directorName
+                                ? `Dirige ${activeSession.directorName}`
+                                : 'Sesión activa'}
+                        </Text>
+                    </View>
+                </TouchableOpacity>
+            )}
+
+            {/*
+             * No hay sesión activa.
+             *
+             * Solamente Director/Owner puede iniciar una.
+             */}
+            {!activeSession &&
+                permissions.canCreateDirectorSession && (
+                    <TouchableOpacity
+                        style={styles.directorButton}
+                        activeOpacity={0.8}
+                        onPress={handleStartDirectorMode}
+                        disabled={isStartingDirector}
+                    >
+                        {isStartingDirector ? (
+                            <ActivityIndicator
+                                size="small"
+                                color={COLORS.background}
+                            />
+                        ) : (
+                            <Radio
+                                size={18}
+                                color={COLORS.background}
+                            />
+                        )}
+
+                        <Text
+                            style={
+                                styles.directorButtonText
+                            }
+                        >
+                            {isStartingDirector
+                                ? 'Iniciando Director Mode...'
+                                : 'Iniciar Director Mode'}
+                        </Text>
+                    </TouchableOpacity>
+                )}
+
+            {/*
+             * Hay otra sesión activa en la banda y este no
+             * es el repertorio que se está dirigiendo.
+             */}
+            {hasAnotherActiveSetlist &&
+                activeSession && (
+                    <View
+                        style={
+                            styles.otherActiveSessionContainer
+                        }
+                    >
+                        <Radio
+                            size={18}
+                            color={COLORS.accent}
+                        />
+
+                        <View
+                            style={
+                                styles.otherActiveSessionContent
+                            }
+                        >
+                            <Text
+                                style={
+                                    styles.otherActiveSessionTitle
+                                }
+                                numberOfLines={1}
+                            >
+                                Otro repertorio está en
+                                Director Mode
+                            </Text>
+
+                            <Text
+                                style={
+                                    styles.otherActiveSessionSubtitle
+                                }
+                                numberOfLines={1}
+                            >
+                                {activeSession.setlistName}
+                            </Text>
+                        </View>
+                    </View>
+                )}
+
             {/* Lista de canciones */}
             <View style={styles.listContainer}>
                 <SongList
                     songs={setlistSongs}
                     onSongPress={handleSongPress}
                     isSetlistMode
-                    onRemoveFromSetlist={handleRemoveSong}
+                    onRemoveFromSetlist={
+                        handleRemoveSong
+                    }
                     onAddSongsPress={handleAddSongs}
                     onReorder={handleReorder}
                     loadingSongId={loadingSongId}
                     scrollEnabled={!isSaving}
-                    songNotes={setlist.songNotes || {}}
-                    onSaveSongNote={handleSaveSongNote}
-                    onDeleteSongNote={handleDeleteSongNote}
+                    songNotes={
+                        setlist.songNotes || {}
+                    }
+                    onSaveSongNote={
+                        handleSaveSongNote
+                    }
+                    onDeleteSongNote={
+                        handleDeleteSongNote
+                    }
                 />
             </View>
 
@@ -948,6 +1324,74 @@ const styles = StyleSheet.create({
         lineHeight: 18,
     },
 
+    directorButton: {
+        marginHorizontal: 15,
+        marginTop: 12,
+        marginBottom: 4,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 10,
+        backgroundColor: COLORS.accent,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+    },
+
+    directorButtonActive: {
+        marginBottom: 8,
+    },
+
+    directorButtonContent: {
+        flex: 1,
+        alignItems: 'center',
+    },
+
+    directorButtonText: {
+        color: COLORS.background,
+        fontSize: 14,
+        fontWeight: '700',
+    },
+
+    directorButtonSubtitle: {
+        marginTop: 2,
+        color: COLORS.background,
+        opacity: 0.8,
+        fontSize: 11,
+        fontWeight: '500',
+    },
+
+    otherActiveSessionContainer: {
+        marginHorizontal: 15,
+        marginTop: 12,
+        marginBottom: 4,
+        paddingVertical: 11,
+        paddingHorizontal: 14,
+        borderRadius: 10,
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+
+    otherActiveSessionContent: {
+        flex: 1,
+    },
+
+    otherActiveSessionTitle: {
+        color: COLORS.foreground,
+        fontSize: 13,
+        fontWeight: '700',
+    },
+
+    otherActiveSessionSubtitle: {
+        marginTop: 2,
+        color: COLORS.mutedForeground,
+        fontSize: 12,
+    },
+
     savingIndicator: {
         position: 'absolute',
         bottom: 20,
@@ -985,7 +1429,8 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         paddingHorizontal: 14,
         paddingVertical: 10,
-        backgroundColor: 'rgba(255,255,255,0.03)',
+        backgroundColor:
+            'rgba(255,255,255,0.03)',
     },
 
     notesTitleRow: {
@@ -1023,7 +1468,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 6,
-        backgroundColor: 'rgba(255,255,255,0.08)',
+        backgroundColor:
+            'rgba(255,255,255,0.08)',
     },
 
     editNotesBtnText: {
