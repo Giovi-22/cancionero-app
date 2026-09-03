@@ -286,6 +286,35 @@ export const SongViewer: React.FC<
     void normalizedContent;
 
     // ─────────────────────────────────────────────
+    // Director → Scroll Position
+    // ─────────────────────────────────────────────
+
+    const handleScrollPositionChange =
+      useCallback(
+        (progress: number) => {
+          if (
+            !isDirector ||
+            !isActive ||
+            !onSendDirectorEvent
+          ) {
+            return;
+          }
+
+          onSendDirectorEvent(
+            'SCROLL_POSITION',
+            {
+              progress,
+            }
+          );
+        },
+        [
+          isDirector,
+          isActive,
+          onSendDirectorEvent,
+        ]
+      );
+
+    // ─────────────────────────────────────────────
     // Scroll
     // ─────────────────────────────────────────────
 
@@ -313,8 +342,6 @@ export const SongViewer: React.FC<
       scrollAreaPageY,
       scrollAreaPageX,
 
-      measureScrollArea,
-
       viewportHeightRef,
       contentHeightRef,
 
@@ -329,14 +356,15 @@ export const SongViewer: React.FC<
       scrollSpeed,
       pedalSpeed,
       isScrolling,
+
+      onScrollPositionChange:
+        handleScrollPositionChange,
     });
 
     void scrollAreaPageX;
     void viewportHeightRef;
     void contentHeightRef;
     void getScrollProgress;
-    void scrollToProgress;
-    void measureScrollArea;
 
     // ─────────────────────────────────────────────
     // Editor de notas
@@ -385,47 +413,21 @@ export const SongViewer: React.FC<
     });
 
     // ─────────────────────────────────────────────
-    // Pedal + Director
+    // Pedal
     // ─────────────────────────────────────────────
 
     const handlePedalScrollUp =
       useCallback(() => {
         startLocalPedalScrollUp();
-
-        if (
-          isDirector &&
-          isActive &&
-          onSendDirectorEvent
-        ) {
-          onSendDirectorEvent(
-            'SCROLL_UP'
-          );
-        }
       }, [
         startLocalPedalScrollUp,
-        isDirector,
-        isActive,
-        onSendDirectorEvent,
       ]);
 
     const handlePedalScrollDown =
       useCallback(() => {
         startLocalPedalScrollDown();
-
-        if (
-          isDirector &&
-          isActive &&
-          onSendDirectorEvent
-        ) {
-          onSendDirectorEvent(
-            'SCROLL_DOWN'
-          );
-        }
       }, [
         startLocalPedalScrollDown,
-        isDirector,
-        isActive,
-        onSendDirectorEvent,
       ]);
 
     // ─────────────────────────────────────────────
@@ -486,45 +488,39 @@ export const SongViewer: React.FC<
       }
 
       /**
-       * TEMPORAL:
-       * Esta lógica será reemplazada por
-       * SCROLL_POSITION una vez que probemos
-       * correctamente el cálculo proporcional.
+       * Sincronización proporcional.
+       *
+       * El director envía un progress 0..1.
+       * Este dispositivo calcula su propio
+       * maxScroll y se posiciona en el mismo
+       * porcentaje.
        */
       if (
         incomingDirectorEvent.type ===
-        'SCROLL_DOWN'
+        'SCROLL_POSITION'
       ) {
-        scrollPosRef.current +=
-          250;
+        const progress =
+          incomingDirectorEvent
+            .payload?.progress;
 
-        scrollRef.current?.scrollTo({
-          y: scrollPosRef.current,
-          animated: true,
-        });
-      } else if (
-        incomingDirectorEvent.type ===
-        'SCROLL_UP'
-      ) {
-        scrollPosRef.current =
-          Math.max(
-            0,
-            scrollPosRef.current -
-            250
-          );
+        if (
+          typeof progress !==
+          'number'
+        ) {
+          return;
+        }
 
-        scrollRef.current?.scrollTo({
-          y: scrollPosRef.current,
-          animated: true,
-        });
+        scrollToProgress(
+          progress,
+          false
+        );
       }
     }, [
       incomingDirectorEvent,
       isFollower,
       isActive,
       followDirector,
-      scrollRef,
-      scrollPosRef,
+      scrollToProgress,
     ]);
 
     // ─────────────────────────────────────────────
@@ -877,7 +873,6 @@ export const SongViewer: React.FC<
           }
           bpm={bpm}
           setBpm={setBpm}
-
           timeSignature={
             timeSignature
           }

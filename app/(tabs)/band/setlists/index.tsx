@@ -4,6 +4,7 @@ import {
     StyleSheet,
     TouchableOpacity,
     Text,
+    Alert,
 } from 'react-native';
 import { CreateBandSetlistModal } from '../../../../src/components/band/CreateBandSetlistModal';
 import { router } from 'expo-router';
@@ -17,25 +18,37 @@ import { COLORS } from '../../../../src/constants/theme';
 import { useBandSetlists } from '../../../../src/hooks/useBandSetlists';
 import { useAppContext } from '../../../../src/context/AppContext';
 import { useDirectorSession } from '../../../../src/hooks/useDirectorSession';
+import { BandSetlistService } from '../../../../src/services/BandSetlistService';
 
 export default function BandSetlistsScreen() {
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] =
+        useState(false);
+
+    const [deletingSetlistId, setDeletingSetlistId] =
+        useState<string | null>(null);
 
     const insets = useSafeAreaInsets();
 
     const { activeBandId } = useAppContext();
 
-    const { activeSession } = useDirectorSession(activeBandId);
+    const { activeSession } =
+        useDirectorSession(activeBandId);
 
     const {
         userBandsInfo,
     } = useBands();
 
-    // La banda del repertorio se determina por activeBandId,
-    // que es el ID establecido desde BandScreen antes de navegar.
-    const activeBand = userBandsInfo.find(
-        info => info.band.id === activeBandId
-    )?.band || null;
+    // La banda activa y su rol salen de la misma entrada.
+    const activeBandInfo =
+        userBandsInfo.find(
+            info => info.band.id === activeBandId
+        ) || null;
+
+    const activeBand =
+        activeBandInfo?.band || null;
+
+    const activeBandRole =
+        activeBandInfo?.role || null;
 
     const {
         setlists,
@@ -44,7 +57,17 @@ export default function BandSetlistsScreen() {
         createSetlist,
     } = useBandSetlists(activeBandId);
 
-    const handleSelectSetlist = (setlist: BandSetlist) => {
+    // Owner y Director pueden administrar repertorios.
+    const canManageSetlists =
+        activeBandRole === 'owner' ||
+        activeBandRole === 'director';
+
+    const canDeleteSetlist = canManageSetlists;
+    const canCreateSetlist = canManageSetlists;
+
+    const handleSelectSetlist = (
+        setlist: BandSetlist
+    ) => {
         router.push({
             pathname: '/(tabs)/band/setlists/[id]',
             params: {
@@ -54,12 +77,85 @@ export default function BandSetlistsScreen() {
     };
 
     const handleCreateSetlist = () => {
+        if (!canCreateSetlist) {
+            return;
+        }
+
         setIsCreateModalOpen(true);
     };
 
     const handleCreate = async (name: string) => {
+        if (!canCreateSetlist) {
+            return;
+        }
+
         await createSetlist(name);
         setIsCreateModalOpen(false);
+    };
+
+    const handleDeleteSetlist = (
+        setlist: BandSetlist
+    ) => {
+        if (!canDeleteSetlist) {
+            return;
+        }
+
+        // Por seguridad, no permitimos eliminar desde acá
+        // un repertorio que tiene una sesión activa.
+        if (activeSession?.setlistId === setlist.id) {
+            Alert.alert(
+                'Repertorio en vivo',
+                'Este repertorio está siendo reproducido actualmente. Finalizá la sesión de Director Mode antes de eliminarlo.'
+            );
+            return;
+        }
+
+        Alert.alert(
+            'Eliminar repertorio',
+            `¿Seguro que querés eliminar "${setlist.name}"?\n\nEsta acción no se puede deshacer.`,
+            [
+                {
+                    text: 'Cancelar',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Eliminar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        if (!activeBandId) {
+                            Alert.alert(
+                                'Error',
+                                'No hay una banda seleccionada.'
+                            );
+                            return;
+                        }
+
+                        try {
+                            setDeletingSetlistId(
+                                setlist.id
+                            );
+
+                            await BandSetlistService.deleteBandSetlist(
+                                activeBandId,
+                                setlist.id
+                            );
+                        } catch (err) {
+                            console.error(
+                                '[BandSetlistsScreen] Error eliminando repertorio:',
+                                err
+                            );
+
+                            Alert.alert(
+                                'Error',
+                                'No se pudo eliminar el repertorio. Intentá nuevamente.'
+                            );
+                        } finally {
+                            setDeletingSetlistId(null);
+                        }
+                    },
+                },
+            ]
+        );
     };
 
     const handleGoBack = () => {
@@ -112,15 +208,30 @@ export default function BandSetlistsScreen() {
                 error={error}
                 activeSession={activeSession}
                 onSelectSetlist={handleSelectSetlist}
-                onCreateSetlist={handleCreateSetlist}
+                onCreateSetlist={
+                    canCreateSetlist
+                        ? handleCreateSetlist
+                        : undefined
+                }
+                canDeleteSetlist={canDeleteSetlist}
+                onDeleteSetlist={
+                    canDeleteSetlist
+                        ? handleDeleteSetlist
+                        : undefined
+                }
+                deletingSetlistId={deletingSetlistId}
             />
 
             {/* Crear repertorio */}
-            <CreateBandSetlistModal
-                visible={isCreateModalOpen}
-                onClose={() => setIsCreateModalOpen(false)}
-                onCreate={handleCreate}
-            />
+            {canCreateSetlist && (
+                <CreateBandSetlistModal
+                    visible={isCreateModalOpen}
+                    onClose={() =>
+                        setIsCreateModalOpen(false)
+                    }
+                    onCreate={handleCreate}
+                />
+            )}
         </View>
     );
 }

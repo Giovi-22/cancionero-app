@@ -4,7 +4,12 @@ import { Band, Invitation, UserProfile } from '../types/band';
 import { InvitationService } from '../services/InvitationService';
 import { UserService } from '../services/UserService';
 
-export function useBandInvitations(bandId?: string | null) {
+type BandRole = 'owner' | 'director' | 'member';
+
+export function useBandInvitations(
+  bandId?: string | null,
+  bandRole?: BandRole | null
+) {
   const { user } = useAppContext();
 
   // Invitaciones que recibió el usuario
@@ -47,7 +52,13 @@ export function useBandInvitations(bandId?: string | null) {
   // ============================================================
 
   useEffect(() => {
-    if (!bandId) {
+    // Solo Owner y Director pueden consultar
+    // las invitaciones administrativas de una banda.
+    const canManageInvitations =
+      bandRole === 'owner' ||
+      bandRole === 'director';
+
+    if (!bandId || !canManageInvitations) {
       setSentPendingInvitations([]);
       return;
     }
@@ -57,6 +68,7 @@ export function useBandInvitations(bandId?: string | null) {
         bandId,
         invitations => {
           setSentPendingInvitations(invitations);
+          setError(null);
         },
         error => {
           console.error(
@@ -72,7 +84,7 @@ export function useBandInvitations(bandId?: string | null) {
       );
 
     return () => unsubscribe();
-  }, [bandId]);
+  }, [bandId, bandRole]);
 
   // ============================================================
   // ENVIAR INVITACIÓN

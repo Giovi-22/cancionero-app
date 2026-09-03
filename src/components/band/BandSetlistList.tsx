@@ -7,9 +7,18 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { Plus, Music2, ChevronRight, Radio } from 'lucide-react-native';
+import {
+    Plus,
+    Music2,
+    ChevronRight,
+    Radio,
+    Trash2,
+} from 'lucide-react-native';
 
-import { BandSetlist, DirectorSession } from '../../types/band';
+import {
+    BandSetlist,
+    DirectorSession,
+} from '../../types/band';
 import { COLORS } from '../../constants/theme';
 
 interface BandSetlistListProps {
@@ -18,8 +27,14 @@ interface BandSetlistListProps {
     loading: boolean;
     error: string | null;
     activeSession?: DirectorSession | null;
+
     onSelectSetlist?: (setlist: BandSetlist) => void;
     onCreateSetlist?: () => void;
+
+    // Eliminación
+    canDeleteSetlist?: boolean;
+    onDeleteSetlist?: (setlist: BandSetlist) => void;
+    deletingSetlistId?: string | null;
 }
 
 export function BandSetlistList({
@@ -30,6 +45,9 @@ export function BandSetlistList({
     activeSession,
     onSelectSetlist,
     onCreateSetlist,
+    canDeleteSetlist = false,
+    onDeleteSetlist,
+    deletingSetlistId = null,
 }: BandSetlistListProps) {
 
     /**
@@ -106,82 +124,144 @@ export function BandSetlistList({
     }: {
         item: BandSetlist;
     }) => {
-        const isActive = activeSession?.setlistId === item.id;
+        const isActive =
+            activeSession?.setlistId === item.id;
+
+        const isDeleting =
+            deletingSetlistId === item.id;
 
         return (
-            <TouchableOpacity
+            <View
                 style={[
                     styles.setlistCard,
                     isActive && styles.activeSetlistCard,
+                    isDeleting && styles.deletingSetlistCard,
                 ]}
-                activeOpacity={0.7}
-                onPress={() => onSelectSetlist?.(item)}
             >
-                <View
-                    style={[
-                        styles.iconContainer,
-                        isActive && styles.activeIconContainer,
-                    ]}
+                {/* Zona principal del repertorio */}
+                <TouchableOpacity
+                    style={styles.setlistMainButton}
+                    activeOpacity={0.7}
+                    disabled={isDeleting}
+                    onPress={() =>
+                        onSelectSetlist?.(item)
+                    }
                 >
-                    <Music2
-                        size={22}
-                        color={
-                            isActive
-                                ? COLORS.accent
-                                : COLORS.accent
-                        }
-                    />
-                </View>
+                    <View
+                        style={[
+                            styles.iconContainer,
+                            isActive &&
+                            styles.activeIconContainer,
+                        ]}
+                    >
+                        <Music2
+                            size={22}
+                            color={COLORS.accent}
+                        />
+                    </View>
 
-                <View style={styles.setlistInfo}>
-                    <View style={styles.setlistNameRow}>
-                        <Text
-                            style={styles.setlistName}
-                            numberOfLines={1}
-                        >
-                            {item.name}
+                    <View style={styles.setlistInfo}>
+                        <View style={styles.setlistNameRow}>
+                            <Text
+                                style={styles.setlistName}
+                                numberOfLines={1}
+                            >
+                                {item.name}
+                            </Text>
+
+                            {isActive && (
+                                <View style={styles.liveBadge}>
+                                    <Radio
+                                        size={12}
+                                        color={
+                                            COLORS.background
+                                        }
+                                    />
+
+                                    <Text
+                                        style={
+                                            styles.liveBadgeText
+                                        }
+                                    >
+                                        EN VIVO
+                                    </Text>
+                                </View>
+                            )}
+                        </View>
+
+                        <Text style={styles.songCount}>
+                            {item.songIds?.length ?? 0}{' '}
+                            {item.songIds?.length === 1
+                                ? 'canción'
+                                : 'canciones'}
                         </Text>
 
-                        {isActive && (
-                            <View style={styles.liveBadge}>
-                                <Radio
-                                    size={12}
-                                    color={COLORS.background}
-                                />
-
-                                <Text style={styles.liveBadgeText}>
-                                    EN VIVO
-                                </Text>
-                            </View>
+                        {item.date && (
+                            <Text
+                                style={styles.date}
+                                numberOfLines={1}
+                            >
+                                {item.date}
+                            </Text>
                         )}
                     </View>
 
-                    <Text style={styles.songCount}>
-                        {item.songIds?.length ?? 0}{' '}
-                        {item.songIds?.length === 1
-                            ? 'canción'
-                            : 'canciones'}
-                    </Text>
-
-                    {item.date && (
-                        <Text
-                            style={styles.date}
-                            numberOfLines={1}
-                        >
-                            {item.date}
-                        </Text>
+                    {!isDeleting && (
+                        <ChevronRight
+                            size={22}
+                            color={
+                                isActive
+                                    ? COLORS.accent
+                                    : COLORS.mutedForeground
+                            }
+                        />
                     )}
-                </View>
+                </TouchableOpacity>
 
-                <ChevronRight
-                    size={22}
-                    color={
-                        isActive
-                            ? COLORS.accent
-                            : COLORS.mutedForeground
-                    }
-                />
-            </TouchableOpacity>
+                {/* Botón eliminar */}
+                {canDeleteSetlist &&
+                    onDeleteSetlist &&
+                    !isActive && (
+                        <TouchableOpacity
+                            style={styles.deleteButton}
+                            activeOpacity={0.7}
+                            disabled={isDeleting}
+                            onPress={() =>
+                                onDeleteSetlist(item)
+                            }
+                        >
+                            {isDeleting ? (
+                                <ActivityIndicator
+                                    size="small"
+                                    color="#ef4444"
+                                />
+                            ) : (
+                                <Trash2
+                                    size={19}
+                                    color="#ef4444"
+                                />
+                            )}
+                        </TouchableOpacity>
+                    )}
+
+                {/* Estado eliminando */}
+                {isDeleting && (
+                    <View style={styles.deletingOverlay}>
+                        <ActivityIndicator
+                            size="small"
+                            color={COLORS.accent}
+                        />
+
+                        <Text
+                            style={
+                                styles.deletingText
+                            }
+                        >
+                            Eliminando...
+                        </Text>
+                    </View>
+                )}
+            </View>
         );
     };
 
@@ -213,7 +293,9 @@ export function BandSetlistList({
                                 color={COLORS.background}
                             />
 
-                            <Text style={styles.addButtonText}>
+                            <Text
+                                style={styles.addButtonText}
+                            >
                                 Nuevo
                             </Text>
                         </TouchableOpacity>
@@ -237,7 +319,9 @@ export function BandSetlistList({
 
                     {onCreateSetlist && (
                         <TouchableOpacity
-                            style={styles.emptyCreateButton}
+                            style={
+                                styles.emptyCreateButton
+                            }
                             activeOpacity={0.8}
                             onPress={onCreateSetlist}
                         >
@@ -376,16 +460,28 @@ const styles = StyleSheet.create({
     setlistCard: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 14,
         marginBottom: 10,
         borderRadius: 12,
         backgroundColor: COLORS.surface,
         borderWidth: 1,
         borderColor: 'transparent',
+        overflow: 'hidden',
     },
 
     activeSetlistCard: {
         borderColor: COLORS.accent,
+    },
+
+    deletingSetlistCard: {
+        opacity: 0.7,
+    },
+
+    setlistMainButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        minWidth: 0,
     },
 
     iconContainer: {
@@ -447,6 +543,34 @@ const styles = StyleSheet.create({
         marginTop: 2,
         fontSize: 12,
         color: COLORS.mutedForeground,
+    },
+
+    deleteButton: {
+        width: 48,
+        alignSelf: 'stretch',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderLeftWidth: 1,
+        borderLeftColor: COLORS.border,
+        backgroundColor: 'rgba(239, 68, 68, 0.04)',
+    },
+
+    deletingOverlay: {
+        position: 'absolute',
+        right: 0,
+        top: 0,
+        bottom: 0,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 14,
+        backgroundColor: COLORS.surface,
+    },
+
+    deletingText: {
+        fontSize: 12,
+        color: COLORS.mutedForeground,
+        fontWeight: '600',
     },
 
     emptyListContainer: {

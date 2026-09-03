@@ -58,11 +58,33 @@ service cloud.firestore {
         && getAfter(invRef).data.expiresAt > request.time;
     }
 
+
+    // =========================================================================
+    // COLLECTION GROUP: MEMBERS
+    // =========================================================================
+    //
+    // BandService.getUserBands() y subscribeToUserBands() utilizan:
+    //
+    //   collectionGroup('members')
+    //     .where('userId', '==', userId)
+    //
+    // Esta regla permite que un usuario consulte únicamente sus propias
+    // membresías cuando se utiliza una consulta collectionGroup.
+    //
+    // La regla NO permite consultar las membresías de otros usuarios.
+    //
+    match /{path=**}/members/{memberUserId} {
+      allow read: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+    }
+
+
     // =========================================================================
     // PERFILES DE USUARIO (users/{userId})
     // =========================================================================
 
     match /users/{userId} {
+
       // Lectura: cualquier usuario autenticado puede leer perfiles
       allow read: if isSignedIn();
 
@@ -85,6 +107,7 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+
     // =========================================================================
     // BANDAS (bands/{bandId})
     // =========================================================================
@@ -99,7 +122,8 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid;
 
-      // Edición: el OWNER para metadatos generales, o Director/Owner para actualizar activeSessionId.
+      // Edición: el OWNER para metadatos generales, o Director/Owner para
+      // actualizar activeSessionId.
       // ownerId debe permanecer inmutable.
       allow update: if isBandOwner(bandId)
         && request.resource.data.ownerId == resource.data.ownerId
@@ -145,6 +169,7 @@ service cloud.firestore {
 
       // Eliminación: solamente el OWNER.
       allow delete: if isBandOwner(bandId);
+
 
       // -----------------------------------------------------------------------
       // MIEMBROS DE LA BANDA
@@ -222,6 +247,7 @@ service cloud.firestore {
         );
       }
 
+
       // -----------------------------------------------------------------------
       // REPERTORIO COMPARTIDO DE LA BANDA
       // bands/{bandId}/setlists/{setlistId}
@@ -284,6 +310,7 @@ service cloud.firestore {
         allow delete: if isBandDirectorOrOwner(bandId);
       }
 
+
       // -----------------------------------------------------------------------
       // SESIONES DE DIRECTOR
       // bands/{bandId}/sessions/{sessionId}
@@ -295,8 +322,8 @@ service cloud.firestore {
         allow read: if isBandMember(bandId);
 
         // Solamente OWNER o DIRECTOR pueden crear sesiones.
-        // El creador debe ser el director de la sesión y su UID coincidir con auth.uid.
-        // La sesión debe comenzar como "active" y registrarse atómicamente en activeSessionId.
+        // El creador debe ser el director de la sesión y su UID coincidir
+        // con auth.uid.
         allow create: if isBandDirectorOrOwner(bandId)
           && request.resource.data.directorId == request.auth.uid
           && request.resource.data.bandId == bandId
@@ -338,10 +365,11 @@ service cloud.firestore {
             || isBandOwner(bandId)
           );
 
-        // -----------------------------------------------------------------------
+
+        // ---------------------------------------------------------------------
         // EVENTOS DE SESIÓN DE DIRECTOR
         // bands/{bandId}/sessions/{sessionId}/events/{eventId}
-        // -----------------------------------------------------------------------
+        // ---------------------------------------------------------------------
 
         match /events/{eventId} {
 
@@ -402,6 +430,7 @@ service cloud.firestore {
         }
       }
     }
+
 
     // =========================================================================
     // INVITACIONES A BANDAS
@@ -488,6 +517,7 @@ service cloud.firestore {
       allow delete: if isSignedIn() &&
         isBandDirectorOrOwner(resource.data.bandId);
     }
+
 
     // =========================================================================
     // REGLAS LEGACY Y COMPATIBILIDAD CON FUNCIONALIDADES EXISTENTES

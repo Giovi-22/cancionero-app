@@ -54,7 +54,6 @@ export default function BandScreen() {
     const {
         activeSession,
         isDirectorOfSession,
-        startSession,
         endSession,
     } = useDirectorSession(selectedBand?.id || null);
 
@@ -65,12 +64,77 @@ export default function BandScreen() {
         acceptInvitation,
         rejectInvitation,
         cancelInvitation,
-    } = useBandInvitations(selectedBand?.id || null);
+    } = useBandInvitations(
+        selectedBand?.id || null,
+        userRole
+    );
 
     const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
 
     const currentUserId = user?.uid || user?.id;
+
+    // ============================================================
+    // Navegar a la sesión activa
+    // ============================================================
+    const handleGoToActiveSession = () => {
+        if (!selectedBand || !activeSession) {
+            return;
+        }
+
+        setActiveBandId(selectedBand.id);
+
+        router.push({
+            pathname: '/setlist-player/[setlistId]',
+            params: {
+                setlistId: activeSession.setlistId,
+                bandId: selectedBand.id,
+            },
+        });
+    };
+
+    // ============================================================
+    // Finalizar sesión activa
+    // ============================================================
+    const handleEndActiveSession = () => {
+        if (
+            !selectedBand ||
+            !activeSession ||
+            !isDirectorOfSession
+        ) {
+            return;
+        }
+
+        Alert.alert(
+            'Finalizar sesión',
+            `¿Querés finalizar la sesión de "${activeSession.setlistName}"?`,
+            [
+                {
+                    text: 'Cancelar',
+                    style: 'cancel',
+                },
+                {
+                    text: 'Finalizar',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await endSession();
+                        } catch (error) {
+                            console.error(
+                                '[BandScreen] Error al finalizar sesión:',
+                                error
+                            );
+
+                            Alert.alert(
+                                'Error',
+                                'No se pudo finalizar la sesión.'
+                            );
+                        }
+                    },
+                },
+            ]
+        );
+    };
 
     // ============================================================
     // Seleccionar banda
@@ -93,6 +157,9 @@ export default function BandScreen() {
         setActiveBandId(newBand.id);
     };
 
+    // ============================================================
+    // Invitaciones
+    // ============================================================
     const handleSendInvitation = async (
         email: string,
         role: 'member' | 'director'
@@ -130,15 +197,10 @@ export default function BandScreen() {
         );
     };
 
+    // ============================================================
+    // Director Mode
+    // ============================================================
     const handleDirectorClick = () => {
-        if (!permissions.canCreateDirectorSession) {
-            Alert.alert(
-                'Acceso restringido',
-                'Únicamente el Director u Owner de la banda puede iniciar Director Mode.'
-            );
-            return;
-        }
-
         if (!selectedBand) {
             Alert.alert(
                 'Error',
@@ -147,13 +209,33 @@ export default function BandScreen() {
             return;
         }
 
-        // Guardar la banda activa.
+        // Seguridad adicional:
+        // si existe una sesión activa, volver directamente a ella.
+        if (activeSession) {
+            setActiveBandId(selectedBand.id);
+            handleGoToActiveSession();
+            return;
+        }
+
+        // Si no hay sesión activa, solamente Director u Owner
+        // pueden iniciar una nueva.
+        if (!permissions.canCreateDirectorSession) {
+            Alert.alert(
+                'Acceso restringido',
+                'Únicamente el Director u Owner de la banda puede iniciar Director Mode.'
+            );
+            return;
+        }
+
         setActiveBandId(selectedBand.id);
 
         // Navegar al repertorio compartido de la banda.
         router.push('/(tabs)/band/setlists');
     };
 
+    // ============================================================
+    // Repertorio
+    // ============================================================
     const handleRepertorioClick = () => {
         if (!selectedBand) {
             Alert.alert(
@@ -163,12 +245,14 @@ export default function BandScreen() {
             return;
         }
 
-        // Guardar la banda activa antes de navegar.
         setActiveBandId(selectedBand.id);
 
         router.push('/(tabs)/band/setlists');
     };
 
+    // ============================================================
+    // Invitar miembros
+    // ============================================================
     const handleInviteClick = () => {
         if (!permissions.canInviteMembers) {
             Alert.alert(
@@ -181,6 +265,9 @@ export default function BandScreen() {
         setIsInviteModalOpen(true);
     };
 
+    // ============================================================
+    // Loading
+    // ============================================================
     if (loading && bands.length === 0) {
         return (
             <View
@@ -426,70 +513,195 @@ export default function BandScreen() {
                                     ) : null}
                                 </View>
 
+                                {/* ====================================================
+                                    SESIÓN DE DIRECTOR MODE ACTIVA
+                                ==================================================== */}
+                                {activeSession && (
+                                    <View
+                                        style={
+                                            styles.activeSessionCard
+                                        }
+                                    >
+                                        <View
+                                            style={
+                                                styles.activeSessionHeader
+                                            }
+                                        >
+                                            <View
+                                                style={
+                                                    styles.activeSessionTitleRow
+                                                }
+                                            >
+                                                <View
+                                                    style={
+                                                        styles.activeSessionDot
+                                                    }
+                                                />
+
+                                                <Text
+                                                    style={
+                                                        styles.activeSessionTitle
+                                                    }
+                                                >
+                                                    SESIÓN ACTIVA
+                                                </Text>
+                                            </View>
+
+                                            {isDirectorOfSession && (
+                                                <View
+                                                    style={
+                                                        styles.directorBadge
+                                                    }
+                                                >
+                                                    <Text
+                                                        style={
+                                                            styles.directorBadgeText
+                                                        }
+                                                    >
+                                                        DIRIGIENDO
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </View>
+
+                                        <Text
+                                            style={
+                                                styles.activeSessionSetlist
+                                            }
+                                        >
+                                            {activeSession.setlistName}
+                                        </Text>
+
+                                        <Text
+                                            style={
+                                                styles.activeSessionDirector
+                                            }
+                                        >
+                                            {isDirectorOfSession
+                                                ? 'Estás dirigiendo este repertorio'
+                                                : `${activeSession.directorName} está dirigiendo`}
+                                        </Text>
+
+                                        {/* Volver a la sesión */}
+                                        <TouchableOpacity
+                                            style={
+                                                styles.activeSessionButton
+                                            }
+                                            onPress={
+                                                handleGoToActiveSession
+                                            }
+                                        >
+                                            <Radio
+                                                size={18}
+                                                color="#000"
+                                            />
+
+                                            <Text
+                                                style={
+                                                    styles.activeSessionButtonText
+                                                }
+                                            >
+                                                Volver a la sesión
+                                            </Text>
+
+                                            <ChevronRight
+                                                size={18}
+                                                color="#000"
+                                            />
+                                        </TouchableOpacity>
+
+                                        {/* Finalizar sesión */}
+                                        {isDirectorOfSession && (
+                                            <TouchableOpacity
+                                                style={
+                                                    styles.endSessionButton
+                                                }
+                                                onPress={
+                                                    handleEndActiveSession
+                                                }
+                                            >
+                                                <Text
+                                                    style={
+                                                        styles.endSessionButtonText
+                                                    }
+                                                >
+                                                    Finalizar sesión
+                                                </Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                )}
+
                                 {/* Secciones de Funcionalidades */}
                                 <View
                                     style={
                                         styles.actionsGrid
                                     }
                                 >
-                                    {/* Director Mode */}
-                                    <TouchableOpacity
-                                        style={[
-                                            styles.actionCard,
-                                            permissions.canCreateDirectorSession
-                                                ? styles.actionCardActive
-                                                : styles.actionCardDisabled,
-                                        ]}
-                                        onPress={
-                                            handleDirectorClick
-                                        }
-                                    >
-                                        <View
-                                            style={
-                                                styles.actionIconCircle
+                                    {/* ====================================================
+                                        Director Mode
+
+                                        Solo se muestra cuando NO hay una sesión activa.
+                                    ==================================================== */}
+                                    {!activeSession && (
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.actionCard,
+                                                permissions.canCreateDirectorSession
+                                                    ? styles.actionCardActive
+                                                    : styles.actionCardDisabled,
+                                            ]}
+                                            onPress={
+                                                handleDirectorClick
                                             }
                                         >
-                                            <Radio
-                                                size={20}
+                                            <View
+                                                style={
+                                                    styles.actionIconCircle
+                                                }
+                                            >
+                                                <Radio
+                                                    size={20}
+                                                    color={
+                                                        permissions.canCreateDirectorSession
+                                                            ? COLORS.accent
+                                                            : COLORS.mutedForeground
+                                                    }
+                                                />
+                                            </View>
+
+                                            <View
+                                                style={
+                                                    styles.actionInfo
+                                                }
+                                            >
+                                                <Text
+                                                    style={
+                                                        styles.actionTitle
+                                                    }
+                                                >
+                                                    Director Mode
+                                                </Text>
+
+                                                <Text
+                                                    style={
+                                                        styles.actionSubtitle
+                                                    }
+                                                >
+                                                    {permissions.canCreateDirectorSession
+                                                        ? 'Iniciar o controlar sesión'
+                                                        : 'Solo Director u Owner'}
+                                                </Text>
+                                            </View>
+
+                                            <ChevronRight
+                                                size={18}
                                                 color={
-                                                    permissions.canCreateDirectorSession
-                                                        ? COLORS.accent
-                                                        : COLORS.mutedForeground
+                                                    COLORS.mutedForeground
                                                 }
                                             />
-                                        </View>
-
-                                        <View
-                                            style={
-                                                styles.actionInfo
-                                            }
-                                        >
-                                            <Text
-                                                style={
-                                                    styles.actionTitle
-                                                }
-                                            >
-                                                Director Mode
-                                            </Text>
-
-                                            <Text
-                                                style={
-                                                    styles.actionSubtitle
-                                                }
-                                            >
-                                                {permissions.canCreateDirectorSession
-                                                    ? 'Iniciar o controlar sesión'
-                                                    : 'Solo Director u Owner'}
-                                            </Text>
-                                        </View>
-
-                                        <ChevronRight
-                                            size={18}
-                                            color={
-                                                COLORS.mutedForeground
-                                            }
-                                        />
-                                    </TouchableOpacity>
+                                        </TouchableOpacity>
+                                    )}
 
                                     {/* Repertorio */}
                                     <TouchableOpacity
@@ -846,6 +1058,97 @@ const styles = StyleSheet.create({
         fontSize: 14,
         marginTop: 4,
     },
+
+    // ============================================================
+    // Sesión activa
+    // ============================================================
+    activeSessionCard: {
+        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+        borderRadius: 18,
+        padding: 16,
+        marginBottom: 20,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.35)',
+    },
+    activeSessionHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 8,
+    },
+    activeSessionTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 7,
+    },
+    activeSessionDot: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#ef4444',
+    },
+    activeSessionTitle: {
+        color: '#ef4444',
+        fontSize: 11,
+        fontWeight: '800',
+        letterSpacing: 0.7,
+    },
+    directorBadge: {
+        backgroundColor: 'rgba(234, 179, 8, 0.15)',
+        borderRadius: 8,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+    directorBadgeText: {
+        color: COLORS.accent,
+        fontSize: 9,
+        fontWeight: '800',
+        letterSpacing: 0.5,
+    },
+    activeSessionSetlist: {
+        color: COLORS.foreground,
+        fontSize: 18,
+        fontWeight: '800',
+        marginBottom: 4,
+    },
+    activeSessionDirector: {
+        color: COLORS.mutedForeground,
+        fontSize: 12,
+        marginBottom: 14,
+    },
+    activeSessionButton: {
+        backgroundColor: COLORS.accent,
+        borderRadius: 12,
+        minHeight: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+    },
+    activeSessionButtonText: {
+        color: '#000',
+        fontSize: 14,
+        fontWeight: '800',
+    },
+    endSessionButton: {
+        marginTop: 8,
+        minHeight: 40,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.4)',
+        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    endSessionButtonText: {
+        color: '#ef4444',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+
+    // ============================================================
+    // Acciones
+    // ============================================================
     actionsGrid: {
         gap: 10,
         marginBottom: 20,
