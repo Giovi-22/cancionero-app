@@ -67,6 +67,9 @@ interface SongViewerProps {
   globalTheme?: any;
   onSaveGlobalTheme?: (theme: any) => void;
   onContentUpdated?: (newContent: string) => void;
+  // Notas del repertorio
+  setlistNotes?: string;
+  songNote?: string;
 }
 
 export const SongViewer: React.FC<SongViewerProps> = ({
@@ -78,7 +81,9 @@ export const SongViewer: React.FC<SongViewerProps> = ({
   onSendDirectorEvent,
   onFollowSongChange, incomingDirectorEvent,
   globalTheme, onSaveGlobalTheme,
-  onContentUpdated
+  onContentUpdated,
+  setlistNotes,
+  songNote
 }) => {
   // Título a mostrar: prioriza {title:} del contenido ChordPro sobre el nombre del archivo
   const displayTitle = useMemo(() => {
@@ -723,6 +728,8 @@ export const SongViewer: React.FC<SongViewerProps> = ({
         songId={songId}
         onDirectorPrev={onDirectorPrev}
         onDirectorNext={onDirectorNext}
+        notes={setlistNotes}
+        songNote={songNote}
       />
 
       {/* Área del Contenido de Canción */}

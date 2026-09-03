@@ -37,8 +37,8 @@ export default function SetlistPlayerScreen() {
 
   const {
     songs,
+    setlists,
     activeLibrary,
-    activeBandId,
     handleFollowSongChange,
     handleSaveSongSettings,
     setSetlistSongs,
@@ -47,19 +47,28 @@ export default function SetlistPlayerScreen() {
   } = useAppContext();
 
   /**
-   * La banda se obtiene primero del parámetro de la ruta
-   * y como fallback del contexto global.
+   * El modo del player se determina por la ruta.
+   *
+   * Si viene bandId => Band Mode.
+   * Si no viene bandId => Setlist personal.
+   *
+   * No usamos activeBandId como fallback porque puede haber
+   * una banda seleccionada globalmente mientras el usuario
+   * está abriendo un setlist personal.
    */
-  const resolvedBandId = bandIdParam || activeBandId || null;
+  const isBandMode = !!bandIdParam;
+  const resolvedBandId = isBandMode ? bandIdParam : null;
+
   console.log('[SetlistPlayer] Params:', {
     setlistId,
     bandIdParam,
-    activeBandId,
+    isBandMode,
     resolvedBandId,
   });
+
   /**
-   * Los setlists de este player son los de la banda,
-   * no los setlists personales del AppContext.
+   * Los setlists de banda se cargan únicamente cuando
+   * estamos en Band Mode.
    */
   const {
     setlists: bandSetlists,
@@ -68,7 +77,10 @@ export default function SetlistPlayerScreen() {
   } = useBandSetlists(resolvedBandId);
 
   /**
-   * Director Mode
+   * Director Mode.
+   *
+   * En un setlist personal resolvedBandId es null,
+   * por lo que no se conecta a ninguna sesión de banda.
    */
   const {
     activeSession,
@@ -79,6 +91,17 @@ export default function SetlistPlayerScreen() {
 
   const isDirector = isDirectorOfSession;
 
+  /**
+   * Setlist de banda activo.
+   *
+   * En modo personal queda undefined.
+   */
+  const activeBandSetlist = isBandMode
+    ? bandSetlists.find(
+      item => item.id === setlistId
+    )
+    : undefined;
+
   const flatListRef = useRef<FlatList>(null);
 
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -86,50 +109,89 @@ export default function SetlistPlayerScreen() {
   const [ready, setReady] = useState(false);
 
   /**
-   * Busca el BandSetlist y arma las páginas del reproductor.
+   * Busca el setlist correspondiente al modo actual
+   * y arma las páginas del reproductor.
    */
   useEffect(() => {
     if (!setlistId) {
       return;
     }
 
-    if (bandSetlistsLoading) {
+    /**
+     * En modo banda esperamos a que Firestore termine
+     * de cargar los repertorios.
+     */
+    if (isBandMode && bandSetlistsLoading) {
       return;
     }
-    console.log('[SetlistPlayer] BandSetlists:', {
-      setlistId,
-      resolvedBandId,
-      bandSetlistsLoading,
-      bandSetlistsCount: bandSetlists.length,
-      bandSetlistIds: bandSetlists.map(item => item.id),
-    });
-    const setlist = bandSetlists.find(
-      (item) => item.id === setlistId
-    );
 
-    if (!setlist) {
-      console.warn(
-        '[SetlistPlayer] BandSetlist no encontrado:',
-        setlistId
+    let setlist;
+
+    if (isBandMode) {
+      /**
+       * Band Mode:
+       * buscamos el repertorio en Firestore.
+       */
+      setlist = bandSetlists.find(
+        item => item.id === setlistId
       );
 
-      if (bandSetlistsError) {
-        console.error(
-          '[SetlistPlayer] Error cargando BandSetlists:',
-          bandSetlistsError
-        );
-      }
+      console.log('[SetlistPlayer] BandSetlists:', {
+        setlistId,
+        resolvedBandId,
+        bandSetlistsLoading,
+        bandSetlistsCount: bandSetlists.length,
+        bandSetlistIds: bandSetlists.map(
+          item => item.id
+        ),
+      });
 
-      return;
+      if (!setlist) {
+        console.warn(
+          '[SetlistPlayer] BandSetlist no encontrado:',
+          setlistId
+        );
+
+        if (bandSetlistsError) {
+          console.error(
+            '[SetlistPlayer] Error cargando BandSetlists:',
+            bandSetlistsError
+          );
+        }
+
+        return;
+      }
+    } else {
+      /**
+       * Personal Mode:
+       * buscamos el setlist en los setlists locales
+       * del AppContext.
+       */
+      setlist = setlists.find(
+        item => item.id === setlistId
+      );
+
+      if (!setlist) {
+        console.warn(
+          '[SetlistPlayer] Setlist personal no encontrado:',
+          setlistId
+        );
+
+        return;
+      }
     }
 
     /**
-     * BandSetlist.songIds define el orden de las canciones.
-     * Las metadata reales de las canciones siguen viniendo
+     * Tanto Setlist como BandSetlist utilizan songIds
+     * para definir el orden de las canciones.
+     *
+     * La metadata real de las canciones sigue viniendo
      * del almacenamiento/local library.
      */
     const songsOfList = setlist.songIds
-      .map((id) => songs.find((song) => song.id === id))
+      .map((id) =>
+        songs.find((song) => song.id === id)
+      )
       .filter(Boolean) as SongMetadata[];
 
     if (songsOfList.length === 0) {
@@ -142,27 +204,32 @@ export default function SetlistPlayerScreen() {
       return;
     }
 
-    const initialPages: SongPage[] = songsOfList.map((song) => ({
-      song,
-      content: null,
-      settings: null,
-      loaded: false,
-    }));
+    const initialPages: SongPage[] = songsOfList.map(
+      (song) => ({
+        song,
+        content: null,
+        settings: null,
+        loaded: false,
+      })
+    );
 
     setPages(initialPages);
     setCurrentIndex(0);
     setReady(true);
 
     /**
-     * Mantiene sincronizado el listado de canciones que utiliza
-     * el resto de la aplicación / SongViewer.
+     * Mantiene sincronizado el listado de canciones
+     * utilizado por el resto de la aplicación / SongViewer.
      */
     setSetlistSongs(songsOfList);
   }, [
     setlistId,
+    isBandMode,
+    resolvedBandId,
     bandSetlists,
     bandSetlistsLoading,
     bandSetlistsError,
+    setlists,
     songs,
     setSetlistSongs,
   ]);
@@ -171,8 +238,14 @@ export default function SetlistPlayerScreen() {
    * Carga el contenido y configuración de una canción.
    */
   const loadPage = useCallback(
-    async (index: number, allPages: SongPage[]) => {
-      if (index < 0 || index >= allPages.length) {
+    async (
+      index: number,
+      allPages: SongPage[]
+    ) => {
+      if (
+        index < 0 ||
+        index >= allPages.length
+      ) {
         return;
       }
 
@@ -183,25 +256,36 @@ export default function SetlistPlayerScreen() {
       const { song } = allPages[index];
 
       try {
-        const content = await FileSystemService.getSongContent(song.id);
+        const content =
+          await FileSystemService.getSongContent(
+            song.id
+          );
 
-        const libId = activeLibrary?.id || 'default';
+        const libId =
+          activeLibrary?.id || 'default';
 
-        let settings = await StorageService.getSetting(
-          `song_settings_${libId}_${song.id}`
-        );
+        let settings =
+          await StorageService.getSetting(
+            `song_settings_${libId}_${song.id}`
+          );
 
         /**
          * Compatibilidad con configuraciones antiguas
          * almacenadas sin libraryId.
          */
-        if (!settings && libId === 'default') {
-          settings = await StorageService.getSetting(
-            `song_settings_${song.id}`
-          );
+        if (
+          !settings &&
+          libId === 'default'
+        ) {
+          settings =
+            await StorageService.getSetting(
+              `song_settings_${song.id}`
+            );
         }
 
-        await StorageService.incrementSongViewCount(song.id);
+        await StorageService.incrementSongViewCount(
+          song.id
+        );
 
         setPages((prev) => {
           const updated = [...prev];
@@ -234,14 +318,33 @@ export default function SetlistPlayerScreen() {
    * Precarga la canción actual, siguiente y anterior.
    */
   useEffect(() => {
-    if (!ready || pages.length === 0) {
+    if (
+      !ready ||
+      pages.length === 0
+    ) {
       return;
     }
 
-    loadPage(currentIndex, pages);
-    loadPage(currentIndex + 1, pages);
-    loadPage(currentIndex - 1, pages);
-  }, [currentIndex, ready, pages.length, loadPage]);
+    loadPage(
+      currentIndex,
+      pages
+    );
+
+    loadPage(
+      currentIndex + 1,
+      pages
+    );
+
+    loadPage(
+      currentIndex - 1,
+      pages
+    );
+  }, [
+    currentIndex,
+    ready,
+    pages.length,
+    loadPage,
+  ]);
 
   /**
    * Cierra el player.
@@ -255,8 +358,12 @@ export default function SetlistPlayerScreen() {
    * Avanza a la siguiente canción.
    */
   const handleNext = useCallback(() => {
-    if (currentIndex < pages.length - 1) {
-      const nextIndex = currentIndex + 1;
+    if (
+      currentIndex <
+      pages.length - 1
+    ) {
+      const nextIndex =
+        currentIndex + 1;
 
       flatListRef.current?.scrollToIndex({
         index: nextIndex,
@@ -265,14 +372,18 @@ export default function SetlistPlayerScreen() {
 
       setCurrentIndex(nextIndex);
     }
-  }, [currentIndex, pages.length]);
+  }, [
+    currentIndex,
+    pages.length,
+  ]);
 
   /**
    * Retrocede a la canción anterior.
    */
   const handlePrev = useCallback(() => {
     if (currentIndex > 0) {
-      const prevIndex = currentIndex - 1;
+      const prevIndex =
+        currentIndex - 1;
 
       flatListRef.current?.scrollToIndex({
         index: prevIndex,
@@ -287,59 +398,72 @@ export default function SetlistPlayerScreen() {
    * Cambio de canción recibido por Director Mode.
    *
    * Esto se utiliza en los followers:
-   * cuando llega SONG_CHANGED, buscamos la canción dentro
-   * del setlist y desplazamos el FlatList hasta ella.
+   * cuando llega SONG_CHANGED, buscamos la canción
+   * dentro del setlist y desplazamos el FlatList hasta ella.
    */
-  const handleFollowSongChangeLocal = useCallback(
-    async (newSongId: string) => {
-      await handleFollowSongChange(newSongId);
+  const handleFollowSongChangeLocal =
+    useCallback(
+      async (newSongId: string) => {
+        await handleFollowSongChange(
+          newSongId
+        );
 
-      const idx = pages.findIndex(
-        (page) => page.song.id === newSongId
-      );
+        const idx =
+          pages.findIndex(
+            (page) =>
+              page.song.id === newSongId
+          );
 
-      if (idx >= 0 && idx !== currentIndex) {
-        flatListRef.current?.scrollToIndex({
-          index: idx,
-          animated: true,
-        });
+        if (
+          idx >= 0 &&
+          idx !== currentIndex
+        ) {
+          flatListRef.current?.scrollToIndex({
+            index: idx,
+            animated: true,
+          });
 
-        setCurrentIndex(idx);
-      }
-    },
-    [
-      pages,
-      currentIndex,
-      handleFollowSongChange,
-    ]
-  );
+          setCurrentIndex(idx);
+        }
+      },
+      [
+        pages,
+        currentIndex,
+        handleFollowSongChange,
+      ]
+    );
 
   /**
    * Guarda la configuración de una canción.
    */
-  const handleSaveSettings = useCallback(
-    (data: any) => {
-      handleSaveSongSettings(data);
+  const handleSaveSettings =
+    useCallback(
+      (data: any) => {
+        handleSaveSongSettings(data);
 
-      setPages((prev) => {
-        const updated = [...prev];
+        setPages((prev) => {
+          const updated = [...prev];
 
-        const idx = updated.findIndex(
-          (page) => page.song.id === data.songId
-        );
+          const idx =
+            updated.findIndex(
+              (page) =>
+                page.song.id ===
+                data.songId
+            );
 
-        if (idx >= 0) {
-          updated[idx] = {
-            ...updated[idx],
-            settings: data.settings,
-          };
-        }
+          if (idx >= 0) {
+            updated[idx] = {
+              ...updated[idx],
+              settings:
+                data.settings,
+            };
+          }
 
-        return updated;
-      });
-    },
-    [handleSaveSongSettings]
-  );
+          return updated;
+        });
+      },
+      [handleSaveSongSettings]
+    );
 
   /**
    * Render de cada canción.
@@ -350,16 +474,27 @@ export default function SetlistPlayerScreen() {
     item: SongPage;
     index: number;
   }) => {
-    if (!item.loaded || !item.content) {
+    if (
+      !item.loaded ||
+      !item.content
+    ) {
       return (
         <View style={styles.pageContainer}>
-          <View style={styles.loadingContainer}>
+          <View
+            style={
+              styles.loadingContainer
+            }
+          >
             <ActivityIndicator
               size="large"
               color={COLORS.accent}
             />
 
-            <Text style={styles.loadingText}>
+            <Text
+              style={
+                styles.loadingText
+              }
+            >
               {item.song.name}
             </Text>
           </View>
@@ -368,22 +503,50 @@ export default function SetlistPlayerScreen() {
     }
 
     return (
-      <View style={styles.pageContainer}>
+      <View
+        style={
+          styles.pageContainer
+        }
+      >
         <SongViewer
           title={item.song.name}
           songId={item.song.id}
           content={item.content}
           onClose={handleClose}
           initialSettings={item.settings}
-          onSaveSettings={handleSaveSettings}
+          onSaveSettings={
+            handleSaveSettings
+          }
           globalTheme={globalTheme}
-          onSaveGlobalTheme={handleSaveGlobalTheme}
+          onSaveGlobalTheme={
+            handleSaveGlobalTheme
+          }
+
+          /**
+           * Notas del repertorio.
+           *
+           * En modo personal quedan undefined
+           * y SongViewer utiliza el activeSetlist
+           * personal como fallback.
+           */
+          setlistNotes={
+            activeBandSetlist?.notes
+          }
+          songNote={
+            activeBandSetlist
+              ?.songNotes?.[
+            item.song.id
+            ]
+          }
 
           /**
            * Director Mode
            */
           isDirector={isDirector}
-          isFollower={!isDirector && !!activeSession}
+          isFollower={
+            !isDirector &&
+            !!activeSession
+          }
 
           onSendDirectorEvent={
             isDirector
@@ -429,26 +592,45 @@ export default function SetlistPlayerScreen() {
   /**
    * Detecta el cambio de página del FlatList.
    */
-  const onMomentumScrollEnd = useCallback(
-    (e: any) => {
-      const newIndex = Math.round(
-        e.nativeEvent.contentOffset.x / SCREEN_WIDTH
-      );
+  const onMomentumScrollEnd =
+    useCallback(
+      (e: any) => {
+        const newIndex =
+          Math.round(
+            e.nativeEvent.contentOffset.x /
+            SCREEN_WIDTH
+          );
 
-      if (newIndex !== currentIndex) {
-        setCurrentIndex(newIndex);
-      }
-    },
-    [currentIndex]
-  );
+        if (
+          newIndex !== currentIndex
+        ) {
+          setCurrentIndex(
+            newIndex
+          );
+        }
+      },
+      [currentIndex]
+    );
 
   /**
-   * Mientras cargamos los BandSetlists todavía no podemos
-   * determinar qué canciones contiene el setlist.
+   * Mientras cargamos los BandSetlists
+   * todavía no podemos determinar qué
+   * canciones contiene el repertorio.
+   *
+   * En modo personal no esperamos
+   * bandSetlistsLoading.
    */
-  if (bandSetlistsLoading || !ready) {
+  if (
+    (isBandMode &&
+      bandSetlistsLoading) ||
+    !ready
+  ) {
     return (
-      <View style={styles.loadingContainer}>
+      <View
+        style={
+          styles.loadingContainer
+        }
+      >
         <ActivityIndicator
           size="large"
           color={COLORS.accent}
@@ -458,13 +640,24 @@ export default function SetlistPlayerScreen() {
   }
 
   /**
-   * Si terminó de cargar pero no encontramos el setlist,
-   * mostramos un mensaje en lugar de dejar un spinner infinito.
+   * Los errores de BandSetlists solamente
+   * aplican al modo banda.
    */
-  if (bandSetlistsError) {
+  if (
+    isBandMode &&
+    bandSetlistsError
+  ) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>
+      <View
+        style={
+          styles.loadingContainer
+        }
+      >
+        <Text
+          style={
+            styles.errorText
+          }
+        >
           No se pudo cargar el repertorio.
         </Text>
       </View>
@@ -473,8 +666,16 @@ export default function SetlistPlayerScreen() {
 
   if (pages.length === 0) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.errorText}>
+      <View
+        style={
+          styles.loadingContainer
+        }
+      >
+        <Text
+          style={
+            styles.errorText
+          }
+        >
           No se encontraron canciones en este repertorio.
         </Text>
       </View>
@@ -486,14 +687,21 @@ export default function SetlistPlayerScreen() {
       ref={flatListRef}
       data={pages}
       renderItem={renderPage}
-      keyExtractor={(item) => item.song.id}
+      keyExtractor={(item) =>
+        item.song.id
+      }
       horizontal
       pagingEnabled
-      showsHorizontalScrollIndicator={false}
-      onMomentumScrollEnd={onMomentumScrollEnd}
+      showsHorizontalScrollIndicator={
+        false
+      }
+      onMomentumScrollEnd={
+        onMomentumScrollEnd
+      }
       getItemLayout={(_, index) => ({
         length: SCREEN_WIDTH,
-        offset: SCREEN_WIDTH * index,
+        offset:
+          SCREEN_WIDTH * index,
         index,
       })}
       initialNumToRender={1}
@@ -511,19 +719,22 @@ const styles = StyleSheet.create({
 
   loadingContainer: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor:
+      COLORS.background,
     justifyContent: 'center',
     alignItems: 'center',
     gap: 12,
   },
 
   loadingText: {
-    color: COLORS.mutedForeground,
+    color:
+      COLORS.mutedForeground,
     fontSize: 14,
   },
 
   errorText: {
-    color: COLORS.mutedForeground,
+    color:
+      COLORS.mutedForeground,
     fontSize: 15,
     textAlign: 'center',
     paddingHorizontal: 32,

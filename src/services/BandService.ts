@@ -136,59 +136,123 @@ export class BandService {
 
     let cancelled = false;
 
+    // Listeners de cada documento bands/{bandId}
+    const bandUnsubscribes = new Map<string, () => void>();
+
+    // Estado actual de las membresías del usuario
+    const memberships = new Map<
+      string,
+      {
+        bandId: string;
+        role: 'owner' | 'director' | 'member';
+      }
+    >();
+
+    // Estado actual de cada banda
+    const bands = new Map<string, Band>();
+
+    const emitUpdate = () => {
+      if (cancelled) return;
+
+      const result: UserBandInfo[] = [];
+
+      memberships.forEach(({ bandId, role }) => {
+        const band = bands.get(bandId);
+
+        if (!band) return;
+
+        result.push({
+          band,
+          role,
+        });
+      });
+
+      onUpdate(result);
+    };
+
     const membersQuery = firestore()
       .collectionGroup('members')
       .where('userId', '==', userId);
 
-    const unsubscribe = membersQuery.onSnapshot(
-      async snapshot => {
+    const unsubscribeMembers = membersQuery.onSnapshot(
+      snapshot => {
         if (cancelled) return;
 
-        try {
-          const bandsInfo: UserBandInfo[] = [];
+        const currentBandIds = new Set<string>();
 
-          for (const doc of snapshot.docs) {
-            const memberData = doc.data() as BandMember;
-            const bandRef = doc.ref.parent.parent;
+        snapshot.docs.forEach(doc => {
+          const memberData = doc.data() as BandMember;
+          const bandRef = doc.ref.parent.parent;
 
-            if (!bandRef) {
-              continue;
-            }
+          if (!bandRef) return;
 
-            const bandSnap = await bandRef.get();
+          const bandId = bandRef.id;
 
-            if (!bandSnap.exists) {
-              continue;
-            }
+          currentBandIds.add(bandId);
 
-            bandsInfo.push({
-              band: {
-                id: bandSnap.id,
-                ...bandSnap.data(),
-              } as Band,
-              role: memberData.role,
-            });
-          }
+          memberships.set(bandId, {
+            bandId,
+            role: memberData.role,
+          });
 
-          if (cancelled) return;
+          // Si todavía no tenemos listener para esta banda,
+          // creamos uno.
+          if (!bandUnsubscribes.has(bandId)) {
+            const unsubscribeBand = bandRef.onSnapshot(
+              bandSnapshot => {
+                if (cancelled) return;
 
-          onUpdate(bandsInfo);
-        } catch (error: any) {
-          if (cancelled) return;
+                if (!bandSnapshot.exists) {
+                  bands.delete(bandId);
+                  emitUpdate();
+                  return;
+                }
 
-          console.warn(
-            '[BandService] Error procesando bandas del usuario:',
-            error
-          );
+                bands.set(bandId, {
+                  id: bandSnapshot.id,
+                  ...bandSnapshot.data(),
+                } as Band);
 
-          if (onError) {
-            onError(
-              error instanceof Error
-                ? error
-                : new Error('No se pudieron cargar las bandas.')
+                emitUpdate();
+              },
+              error => {
+                if (cancelled) return;
+
+                console.warn(
+                  `[BandService] Error escuchando banda ${bandId}:`,
+                  error
+                );
+
+                if (onError) {
+                  onError(
+                    error instanceof Error
+                      ? error
+                      : new Error('No se pudo sincronizar una banda.')
+                  );
+                }
+              }
             );
+
+            bandUnsubscribes.set(bandId, unsubscribeBand);
+          }
+        });
+
+        // Detectar bandas que el usuario ya no tiene.
+        for (const bandId of Array.from(memberships.keys())) {
+          if (!currentBandIds.has(bandId)) {
+            memberships.delete(bandId);
+            bands.delete(bandId);
+
+            const unsubscribeBand = bandUnsubscribes.get(bandId);
+
+            if (unsubscribeBand) {
+              unsubscribeBand();
+              bandUnsubscribes.delete(bandId);
+            }
           }
         }
+
+        emitUpdate();
       },
       error => {
         if (cancelled) return;
@@ -210,7 +274,16 @@ export class BandService {
 
     return () => {
       cancelled = true;
-      unsubscribe();
+
+      unsubscribeMembers();
+
+      bandUnsubscribes.forEach(unsubscribe => {
+        unsubscribe();
+      });
+
+      bandUnsubscribes.clear();
+      memberships.clear();
+      bands.clear();
     };
   }
 

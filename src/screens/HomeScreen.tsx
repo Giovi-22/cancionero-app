@@ -7,6 +7,7 @@ import { COLORS } from '../constants/theme';
 import { AppHeader } from '../components/layout/AppHeader';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
+import { ActiveDirectorSessionsBanner } from '../components/band/ActiveDirectorSessionsBanner';
 
 export const HomeScreen = () => {
   const {
@@ -24,7 +25,7 @@ export const HomeScreen = () => {
     loadingActions
   } = useAppContext();
 
-  const { selectedBand } = useBands();
+  const { bands } = useBands();
 
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
@@ -92,7 +93,7 @@ export const HomeScreen = () => {
         )}
       </LinearGradient>
 
-
+      <ActiveDirectorSessionsBanner bands={bands} />
       {/* ESTADÍSTICAS RÁPIDAS */}
       <View style={styles.statsRow}>
         <TouchableOpacity style={styles.statCard} onPress={() => router.push('/(tabs)/songs')}>
