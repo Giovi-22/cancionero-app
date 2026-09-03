@@ -6,6 +6,7 @@ import {
     useState,
 } from 'react';
 import {
+    LayoutChangeEvent,
     ScrollView,
     View,
 } from 'react-native';
@@ -13,95 +14,71 @@ import {
 interface UseSongScrollParams {
     scrollRef: RefObject<ScrollView | null>;
     scrollAreaRef: RefObject<View | null>;
-
-    /**
-     * Velocidad del auto-scroll.
-     */
     scrollSpeed: number;
-
-    /**
-     * Velocidad del pedal.
-     */
     pedalSpeed: number;
+    isScrolling: boolean;
 
     /**
-     * Si el auto-scroll está activo.
+     * Notifica cambios de posición del scroll.
+     *
+     * El valor recibido está normalizado entre 0 y 1:
+     * 0 = principio
+     * 1 = final
+     *
+     * Se utiliza principalmente para Director Mode.
      */
-    isScrolling: boolean;
+    onScrollPositionChange?: (
+        progress: number
+    ) => void;
 }
 
 export interface UseSongScrollReturn {
-    /**
-     * Posición actual del scroll.
-     */
     scrollPosRef: React.MutableRefObject<number>;
+    viewportHeightRef: React.MutableRefObject<number>;
+    contentHeightRef: React.MutableRefObject<number>;
 
-    /**
-     * Permite habilitar/deshabilitar el ScrollView.
-     * Se usa especialmente mientras se arrastra una nota.
-     */
     isScrollEnabled: boolean;
     setIsScrollEnabled: React.Dispatch<
         React.SetStateAction<boolean>
     >;
 
-    /**
-     * Referencia al RAF utilizado por el pedal.
-     */
     pedalRafRef: React.MutableRefObject<number | null>;
-
-    /**
-     * Referencia a la dirección actual del pedal.
-     */
     pedalScrollDirRef: React.MutableRefObject<
         'up' | 'down' | null
     >;
 
-    /**
-     * Inicia el desplazamiento progresivo del pedal.
-     */
     startPedalScroll: (
         direction: 'up' | 'down'
     ) => void;
 
-    /**
-     * Detiene progresivamente el desplazamiento del pedal.
-     */
     stopPedalScroll: () => void;
 
-    /**
-     * Handler para pedal hacia arriba.
-     */
     handlePedalScrollUp: () => void;
-
-    /**
-     * Handler para pedal hacia abajo.
-     */
     handlePedalScrollDown: () => void;
 
-    /**
-     * Handler para actualizar la posición cuando
-     * el usuario desplaza manualmente la canción.
-     */
     handleScroll: (
         offsetY: number
     ) => void;
 
-    /**
-     * Posición absoluta del área de scroll en pantalla.
-     *
-     * Esto será utilizado en la siguiente etapa para
-     * calcular la posición de la canción respecto
-     * al viewport.
-     */
-    scrollAreaPageY: React.MutableRefObject<number>;
+    handleScrollAreaLayout: (
+        event: LayoutChangeEvent
+    ) => void;
 
+    handleContentSizeChange: (
+        width: number,
+        height: number
+    ) => void;
+
+    getScrollProgress: () => number;
+
+    scrollToProgress: (
+        progress: number,
+        animated?: boolean
+    ) => void;
+
+    scrollAreaPageY: React.MutableRefObject<number>;
     scrollAreaPageX: React.MutableRefObject<number>;
 
-    /**
-     * Mide la posición del área de canción respecto
-     * a la pantalla.
-     */
     measureScrollArea: () => void;
 }
 
@@ -109,76 +86,242 @@ const ACCEL_RATE = 0.008;
 const DECEL_RATE = 0.012;
 const MIN_VELOCITY = 0.005;
 
+/**
+ * Frecuencia máxima con la que notificamos
+ * cambios de posición.
+ *
+ * No queremos generar un evento de Firestore
+ * por cada frame (~60 por segundo).
+ */
+const POSITION_NOTIFY_INTERVAL = 100;
+
 export const useSongScroll = ({
     scrollRef,
     scrollAreaRef,
     scrollSpeed,
     pedalSpeed,
     isScrolling,
+    onScrollPositionChange,
 }: UseSongScrollParams): UseSongScrollReturn => {
-    // ─────────────────────────────────────────────
-    // Estado / refs principales
-    // ─────────────────────────────────────────────
+    const [
+        isScrollEnabled,
+        setIsScrollEnabled,
+    ] = useState(true);
 
-    const [isScrollEnabled, setIsScrollEnabled] =
-        useState(true);
+    const scrollPosRef =
+        useRef(0);
 
-    /**
-     * Posición persistente del ScrollView.
-     *
-     * No usamos state porque esta posición cambia
-     * constantemente durante el scroll.
-     */
-    const scrollPosRef = useRef(0);
-
-    /**
-     * Intervalo utilizado por auto-scroll.
-     */
     const scrollIntervalRef =
         useRef<ReturnType<typeof setInterval> | null>(
             null
         );
 
-    // ─────────────────────────────────────────────
-    // Medición del viewport
-    // ─────────────────────────────────────────────
+    const viewportHeightRef =
+        useRef(0);
 
-    const scrollAreaPageY = useRef(0);
-    const scrollAreaPageX = useRef(0);
+    const contentHeightRef =
+        useRef(0);
+
+    const scrollAreaPageY =
+        useRef(0);
+
+    const scrollAreaPageX =
+        useRef(0);
 
     /**
-     * Obtiene la posición absoluta del área de
-     * contenido respecto de la pantalla.
-     *
-     * Actualmente solamente guardamos pageX/pageY.
-     *
-     * En la siguiente etapa agregaremos:
-     *
-     * - width
-     * - height
-     * - contentHeight
-     * - posición de cada línea
-     * - posición relativa dentro del viewport
+     * Último momento en el que notificamos
+     * un cambio de posición.
      */
-    const measureScrollArea = useCallback(() => {
-        scrollAreaRef.current?.measure(
-            (
-                _x,
-                _y,
-                _width,
-                _height,
-                pageX,
-                pageY
-            ) => {
-                scrollAreaPageX.current = pageX;
-                scrollAreaPageY.current = pageY;
-            }
-        );
-    }, [scrollAreaRef]);
+    const lastPositionNotifyRef =
+        useRef(0);
 
-    // ─────────────────────────────────────────────
-    // Pedal
-    // ─────────────────────────────────────────────
+    /**
+     * Último progress pendiente de notificar.
+     *
+     * Sirve para coalescer cambios rápidos.
+     */
+    const pendingProgressRef =
+        useRef<number | null>(null);
+
+    const notifyProgress =
+        useCallback(
+            (
+                progress: number,
+                force = false
+            ) => {
+                if (
+                    !onScrollPositionChange
+                ) {
+                    return;
+                }
+
+                const safeProgress =
+                    Math.min(
+                        1,
+                        Math.max(
+                            0,
+                            progress
+                        )
+                    );
+
+                const now =
+                    Date.now();
+
+                pendingProgressRef.current =
+                    safeProgress;
+
+                if (
+                    !force &&
+                    now -
+                    lastPositionNotifyRef.current <
+                    POSITION_NOTIFY_INTERVAL
+                ) {
+                    return;
+                }
+
+                lastPositionNotifyRef.current =
+                    now;
+
+                const value =
+                    pendingProgressRef.current;
+
+                pendingProgressRef.current =
+                    null;
+
+                if (
+                    value !== null
+                ) {
+                    onScrollPositionChange(
+                        value
+                    );
+                }
+            },
+            [
+                onScrollPositionChange,
+            ]
+        );
+
+    const measureScrollArea =
+        useCallback(() => {
+            scrollAreaRef.current?.measure(
+                (
+                    _x,
+                    _y,
+                    _width,
+                    _height,
+                    pageX,
+                    pageY
+                ) => {
+                    scrollAreaPageX.current =
+                        pageX;
+
+                    scrollAreaPageY.current =
+                        pageY;
+                }
+            );
+        }, [scrollAreaRef]);
+
+    const handleScrollAreaLayout =
+        useCallback(
+            (
+                event: LayoutChangeEvent
+            ) => {
+                viewportHeightRef.current =
+                    event.nativeEvent.layout.height;
+
+                measureScrollArea();
+            },
+            [measureScrollArea]
+        );
+
+    const handleContentSizeChange =
+        useCallback(
+            (
+                _width: number,
+                height: number
+            ) => {
+                contentHeightRef.current =
+                    height;
+            },
+            []
+        );
+
+    const getMaxScroll =
+        useCallback(() => {
+            return Math.max(
+                0,
+                contentHeightRef.current -
+                viewportHeightRef.current
+            );
+        }, []);
+
+    /**
+     * Convierte la posición absoluta actual
+     * en un porcentaje normalizado 0..1.
+     */
+    const getScrollProgress =
+        useCallback(() => {
+            const maxScroll =
+                getMaxScroll();
+
+            if (
+                maxScroll <= 0
+            ) {
+                return 0;
+            }
+
+            return Math.min(
+                1,
+                Math.max(
+                    0,
+                    scrollPosRef.current /
+                    maxScroll
+                )
+            );
+        }, [getMaxScroll]);
+
+    /**
+     * Lleva el scroll a una posición normalizada.
+     *
+     * Cada dispositivo calcula su propio maxScroll,
+     * por lo que funciona aunque los tamaños de pantalla
+     * o el contenido sean diferentes.
+     */
+    const scrollToProgress =
+        useCallback(
+            (
+                progress: number,
+                animated = true
+            ) => {
+                const maxScroll =
+                    getMaxScroll();
+
+                const safeProgress =
+                    Math.min(
+                        1,
+                        Math.max(
+                            0,
+                            progress
+                        )
+                    );
+
+                const targetY =
+                    safeProgress *
+                    maxScroll;
+
+                scrollPosRef.current =
+                    targetY;
+
+                scrollRef.current?.scrollTo({
+                    y: targetY,
+                    animated,
+                });
+            },
+            [
+                getMaxScroll,
+                scrollRef,
+            ]
+        );
 
     const pedalRafRef =
         useRef<number | null>(null);
@@ -187,10 +330,14 @@ export const useSongScroll = ({
         useRef<number>(0);
 
     const pedalSpeedRef =
-        useRef<number>(pedalSpeed);
+        useRef<number>(
+            pedalSpeed
+        );
 
     const pedalScrollDirRef =
-        useRef<'up' | 'down' | null>(null);
+        useRef<
+            'up' | 'down' | null
+        >(null);
 
     const pedalVelocityRef =
         useRef<number>(0);
@@ -198,196 +345,190 @@ export const useSongScroll = ({
     const pedalTargetVelRef =
         useRef<number>(0);
 
-    /**
-     * Mantenemos la velocidad del pedal en un ref
-     * para que el loop de requestAnimationFrame
-     * siempre utilice el valor actual sin tener que
-     * recrearse.
-     */
     useEffect(() => {
-        pedalSpeedRef.current = pedalSpeed;
+        pedalSpeedRef.current =
+            pedalSpeed;
     }, [pedalSpeed]);
 
-    /**
-     * Inicia el scroll progresivo del pedal.
-     *
-     * Conservamos la lógica actual del SongViewer:
-     *
-     * - aceleración progresiva;
-     * - velocidad objetivo;
-     * - desaceleración;
-     * - requestAnimationFrame;
-     * - desplazamiento independiente del render.
-     */
-    const startPedalScroll = useCallback(
-        (
-            direction: 'up' | 'down'
-        ) => {
-            pedalScrollDirRef.current =
-                direction;
-
-            pedalTargetVelRef.current =
-                pedalSpeedRef.current * 0.3;
-
-            /**
-             * Si ya existe un RAF corriendo,
-             * solamente actualizamos dirección y
-             * velocidad objetivo.
-             */
-            if (
-                pedalRafRef.current !== null
-            ) {
-                return;
-            }
-
-            pedalLastTickRef.current = 0;
-
-            const tick = (
-                timestamp: number
+    const startPedalScroll =
+        useCallback(
+            (
+                direction:
+                    | 'up'
+                    | 'down'
             ) => {
-                /**
-                 * Primer frame: inicializamos el reloj.
-                 */
+                pedalScrollDirRef.current =
+                    direction;
+
+                pedalTargetVelRef.current =
+                    pedalSpeedRef.current *
+                    0.3;
+
                 if (
-                    pedalLastTickRef.current === 0
+                    pedalRafRef.current !==
+                    null
                 ) {
-                    pedalLastTickRef.current =
-                        timestamp;
-
-                    pedalRafRef.current =
-                        requestAnimationFrame(
-                            tick
-                        );
-
                     return;
                 }
 
-                /**
-                 * Limitar dt evita saltos grandes si la
-                 * aplicación pierde temporalmente frames.
-                 */
-                const dt = Math.min(
-                    timestamp -
-                    pedalLastTickRef.current,
-                    50
-                );
-
                 pedalLastTickRef.current =
-                    timestamp;
+                    0;
 
-                const target =
-                    pedalTargetVelRef.current;
+                const tick = (
+                    timestamp: number
+                ) => {
+                    if (
+                        pedalLastTickRef.current ===
+                        0
+                    ) {
+                        pedalLastTickRef.current =
+                            timestamp;
 
-                let velocity =
-                    pedalVelocityRef.current;
+                        pedalRafRef.current =
+                            requestAnimationFrame(
+                                tick
+                            );
 
-                /**
-                 * Aceleración.
-                 */
-                if (target > 0) {
-                    velocity = Math.min(
-                        target,
-                        velocity +
-                        ACCEL_RATE * dt
-                    );
-                } else {
-                    /**
-                     * Desaceleración.
-                     */
-                    velocity = Math.max(
-                        0,
-                        velocity -
-                        DECEL_RATE * dt
-                    );
-                }
+                        return;
+                    }
 
-                pedalVelocityRef.current =
-                    velocity;
-
-                /**
-                 * Mientras exista dirección y velocidad
-                 * suficiente, desplazamos el ScrollView.
-                 */
-                if (
-                    velocity >
-                    MIN_VELOCITY &&
-                    pedalScrollDirRef.current !==
-                    null
-                ) {
-                    const delta =
-                        velocity *
-                        dt *
-                        (
-                            pedalScrollDirRef.current ===
-                                'down'
-                                ? 1
-                                : -1
+                    const dt =
+                        Math.min(
+                            timestamp -
+                            pedalLastTickRef.current,
+                            50
                         );
-
-                    scrollPosRef.current =
-                        Math.max(
-                            0,
-                            scrollPosRef.current +
-                            delta
-                        );
-
-                    scrollRef.current?.scrollTo({
-                        y: scrollPosRef.current,
-                        animated: false,
-                    });
-
-                    pedalRafRef.current =
-                        requestAnimationFrame(
-                            tick
-                        );
-                } else {
-                    /**
-                     * Terminamos completamente el loop.
-                     */
-                    pedalRafRef.current =
-                        null;
-
-                    pedalVelocityRef.current =
-                        0;
-
-                    pedalScrollDirRef.current =
-                        null;
 
                     pedalLastTickRef.current =
-                        0;
-                }
-            };
+                        timestamp;
 
-            pedalRafRef.current =
-                requestAnimationFrame(tick);
-        },
-        [scrollRef]
-    );
+                    const target =
+                        pedalTargetVelRef.current;
 
-    /**
-     * Detiene el pedal.
-     *
-     * No cancelamos inmediatamente el RAF:
-     * dejamos que la velocidad llegue a cero de
-     * forma progresiva.
-     */
-    const stopPedalScroll = useCallback(() => {
-        pedalTargetVelRef.current = 0;
-    }, []);
+                    let velocity =
+                        pedalVelocityRef.current;
 
-    // ─────────────────────────────────────────────
-    // Auto-scroll
-    // ─────────────────────────────────────────────
+                    if (
+                        target > 0
+                    ) {
+                        velocity =
+                            Math.min(
+                                target,
+                                velocity +
+                                ACCEL_RATE *
+                                dt
+                            );
+                    } else {
+                        velocity =
+                            Math.max(
+                                0,
+                                velocity -
+                                DECEL_RATE *
+                                dt
+                            );
+                    }
+
+                    pedalVelocityRef.current =
+                        velocity;
+
+                    if (
+                        velocity >
+                        MIN_VELOCITY &&
+                        pedalScrollDirRef.current !==
+                        null
+                    ) {
+                        const delta =
+                            velocity *
+                            dt *
+                            (
+                                pedalScrollDirRef.current ===
+                                    'down'
+                                    ? 1
+                                    : -1
+                            );
+
+                        const maxScroll =
+                            getMaxScroll();
+
+                        scrollPosRef.current =
+                            Math.max(
+                                0,
+                                Math.min(
+                                    maxScroll,
+                                    scrollPosRef.current +
+                                    delta
+                                )
+                            );
+
+                        scrollRef.current?.scrollTo(
+                            {
+                                y:
+                                    scrollPosRef.current,
+                                animated: false,
+                            }
+                        );
+
+                        /**
+                         * Notificamos la posición
+                         * normalizada para Director Mode.
+                         */
+                        notifyProgress(
+                            getScrollProgress()
+                        );
+
+                        pedalRafRef.current =
+                            requestAnimationFrame(
+                                tick
+                            );
+                    } else {
+                        /**
+                         * Al terminar el movimiento
+                         * enviamos una última posición
+                         * exacta.
+                         */
+                        notifyProgress(
+                            getScrollProgress(),
+                            true
+                        );
+
+                        pedalRafRef.current =
+                            null;
+
+                        pedalVelocityRef.current =
+                            0;
+
+                        pedalScrollDirRef.current =
+                            null;
+
+                        pedalLastTickRef.current =
+                            0;
+                    }
+                };
+
+                pedalRafRef.current =
+                    requestAnimationFrame(
+                        tick
+                    );
+            },
+            [
+                getMaxScroll,
+                getScrollProgress,
+                notifyProgress,
+                scrollRef,
+            ]
+        );
+
+    const stopPedalScroll =
+        useCallback(() => {
+            pedalTargetVelRef.current =
+                0;
+        }, []);
 
     useEffect(() => {
-        /**
-         * Si el auto-scroll no está activo,
-         * aseguramos que no quede un intervalo
-         * anterior ejecutándose.
-         */
         if (!isScrolling) {
             if (
-                scrollIntervalRef.current !== null
+                scrollIntervalRef.current !==
+                null
             ) {
                 clearInterval(
                     scrollIntervalRef.current
@@ -400,29 +541,43 @@ export const useSongScroll = ({
             return;
         }
 
-        /**
-         * Evitamos crear más de un intervalo.
-         */
         if (
-            scrollIntervalRef.current !== null
+            scrollIntervalRef.current !==
+            null
         ) {
             return;
         }
 
         scrollIntervalRef.current =
             setInterval(() => {
-                scrollPosRef.current +=
-                    scrollSpeed * 0.5;
+                const maxScroll =
+                    getMaxScroll();
 
-                scrollRef.current?.scrollTo({
-                    y: scrollPosRef.current,
-                    animated: false,
-                });
+                scrollPosRef.current =
+                    Math.min(
+                        maxScroll,
+                        scrollPosRef.current +
+                        scrollSpeed *
+                        0.5
+                    );
+
+                scrollRef.current?.scrollTo(
+                    {
+                        y:
+                            scrollPosRef.current,
+                        animated: false,
+                    }
+                );
+
+                notifyProgress(
+                    getScrollProgress()
+                );
             }, 16);
 
         return () => {
             if (
-                scrollIntervalRef.current !== null
+                scrollIntervalRef.current !==
+                null
             ) {
                 clearInterval(
                     scrollIntervalRef.current
@@ -436,71 +591,64 @@ export const useSongScroll = ({
         isScrolling,
         scrollSpeed,
         scrollRef,
+        getMaxScroll,
+        getScrollProgress,
+        notifyProgress,
     ]);
 
-    // ─────────────────────────────────────────────
-    // Scroll manual
-    // ─────────────────────────────────────────────
+    const handleScroll =
+        useCallback(
+            (offsetY: number) => {
+                if (
+                    !isScrolling &&
+                    pedalScrollDirRef.current ===
+                    null
+                ) {
+                    scrollPosRef.current =
+                        offsetY;
 
-    /**
-     * Actualiza nuestra posición interna cuando
-     * el usuario mueve manualmente el ScrollView.
-     *
-     * Mientras el pedal está moviéndose no usamos
-     * este valor porque el propio pedal ya modifica
-     * scrollPosRef.
-     */
-    const handleScroll = useCallback(
-        (offsetY: number) => {
-            if (
-                !isScrolling &&
-                pedalScrollDirRef.current ===
-                null
-            ) {
-                scrollPosRef.current =
-                    offsetY;
-            }
-        },
-        [isScrolling]
-    );
+                    /**
+                     * Manual scrolling también
+                     * actualiza el progress.
+                     */
+                    notifyProgress(
+                        getScrollProgress()
+                    );
+                }
+            },
+            [
+                isScrolling,
+                getScrollProgress,
+                notifyProgress,
+            ]
+        );
 
-    // ─────────────────────────────────────────────
-    // Pedal handlers
-    // ─────────────────────────────────────────────
-
-    /**
-     * Handler público para pedal UP.
-     *
-     * Importante:
-     * El hook NO sabe nada de Director Mode.
-     *
-     * Director/Follower será responsabilidad de
-     * otro hook/componente.
-     */
     const handlePedalScrollUp =
         useCallback(() => {
-            startPedalScroll('up');
-        }, [startPedalScroll]);
+            startPedalScroll(
+                'up'
+            );
+        }, [
+            startPedalScroll,
+        ]);
 
-    /**
-     * Handler público para pedal DOWN.
-     */
     const handlePedalScrollDown =
         useCallback(() => {
-            startPedalScroll('down');
-        }, [startPedalScroll]);
+            startPedalScroll(
+                'down'
+            );
+        }, [
+            startPedalScroll,
+        ]);
 
-    // ─────────────────────────────────────────────
-    // Cleanup
-    // ─────────────────────────────────────────────
-
+    /**
+     * Limpieza al desmontar.
+     */
     useEffect(() => {
         return () => {
-            /**
-             * Auto-scroll.
-             */
             if (
-                scrollIntervalRef.current !== null
+                scrollIntervalRef.current !==
+                null
             ) {
                 clearInterval(
                     scrollIntervalRef.current
@@ -510,28 +658,40 @@ export const useSongScroll = ({
                     null;
             }
 
-            /**
-             * Pedal RAF.
-             */
             if (
-                pedalRafRef.current !== null
+                pedalRafRef.current !==
+                null
             ) {
                 cancelAnimationFrame(
                     pedalRafRef.current
                 );
 
-                pedalRafRef.current = null;
+                pedalRafRef.current =
+                    null;
             }
 
-            pedalVelocityRef.current = 0;
-            pedalTargetVelRef.current = 0;
-            pedalScrollDirRef.current = null;
-            pedalLastTickRef.current = 0;
+            pedalVelocityRef.current =
+                0;
+
+            pedalTargetVelRef.current =
+                0;
+
+            pedalScrollDirRef.current =
+                null;
+
+            pedalLastTickRef.current =
+                0;
+
+            pendingProgressRef.current =
+                null;
         };
     }, []);
 
     return {
         scrollPosRef,
+
+        viewportHeightRef,
+        contentHeightRef,
 
         isScrollEnabled,
         setIsScrollEnabled,
@@ -546,6 +706,12 @@ export const useSongScroll = ({
         handlePedalScrollDown,
 
         handleScroll,
+
+        handleScrollAreaLayout,
+        handleContentSizeChange,
+
+        getScrollProgress,
+        scrollToProgress,
 
         scrollAreaPageY,
         scrollAreaPageX,

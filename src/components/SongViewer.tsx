@@ -11,16 +11,10 @@ import {
   View,
   ScrollView,
   TouchableOpacity,
-  Platform,
   Alert,
   Switch,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-import {
-  parseChordPro,
-  rebuildChordProFromParsedLines,
-} from '../utils/chordpro';
 
 import { SongMetadata } from '../types';
 
@@ -30,7 +24,6 @@ import {
 } from '../types/band';
 
 import { PdfService } from '../services/PdfService';
-import { FileSystemService } from '../services/FileSystemService';
 import { PedalHandler } from './PedalHandler';
 
 // Hooks
@@ -38,6 +31,8 @@ import { useSongScroll } from '../hooks/useSongScroll';
 import { useSongContent } from '../hooks/useSongContent';
 import { useSongSettings } from '../hooks/useSongSettings';
 import { useSongMetronome } from '../hooks/useSongMetronome';
+import { useSongNotes } from '../hooks/useSongNotes';
+import { useSongEditor } from '../hooks/useSongEditor';
 
 // Sub-componentes
 import { DraggableNote } from './songViewer/DraggableNote';
@@ -51,6 +46,7 @@ import { SongViewerInfoBar } from './songViewer/SongViewerInfoBar';
 import { SongViewerHeader } from './songViewer/SongViewerHeader';
 import { SetlistNavSubHeader } from './songViewer/SetlistNavSubHeader';
 import { SettingsModal } from './SettingsModal';
+import { SongContent } from './songViewer/SongContent';
 
 const COLORS = {
   background: '#0a0a0a',
@@ -195,7 +191,6 @@ export const SongViewer: React.FC<
       setIsMetronomeActive,
 
       beat,
-      beatCount,
 
       metronomeMuted,
       setMetronomeMuted,
@@ -241,18 +236,6 @@ export const SongViewer: React.FC<
     ] = useState(false);
 
     // ─────────────────────────────────────────────
-    // Editor de notas
-    // ─────────────────────────────────────────────
-
-    const [
-      editingNote,
-      setEditingNote,
-    ] = useState<{
-      id: string;
-      text: string;
-    } | null>(null);
-
-    // ─────────────────────────────────────────────
     // Editor ChordPro
     // ─────────────────────────────────────────────
 
@@ -265,26 +248,6 @@ export const SongViewer: React.FC<
       isEditToolActive,
       setIsEditToolActive,
     ] = useState(false);
-
-    const [
-      editingLineIndex,
-      setEditingLineIndex,
-    ] = useState<number | null>(
-      null
-    );
-
-    const [
-      editingLineText,
-      setEditingLineText,
-    ] = useState('');
-
-    const [
-      inputSelection,
-      setInputSelection,
-    ] = useState({
-      start: 0,
-      end: 0,
-    });
 
     // ─────────────────────────────────────────────
     // Contenido local
@@ -349,7 +312,17 @@ export const SongViewer: React.FC<
 
       scrollAreaPageY,
       scrollAreaPageX,
+
       measureScrollArea,
+
+      viewportHeightRef,
+      contentHeightRef,
+
+      handleScrollAreaLayout,
+      handleContentSizeChange,
+
+      getScrollProgress,
+      scrollToProgress,
     } = useSongScroll({
       scrollRef,
       scrollAreaRef,
@@ -359,6 +332,57 @@ export const SongViewer: React.FC<
     });
 
     void scrollAreaPageX;
+    void viewportHeightRef;
+    void contentHeightRef;
+    void getScrollProgress;
+    void scrollToProgress;
+    void measureScrollArea;
+
+    // ─────────────────────────────────────────────
+    // Editor de notas
+    // ─────────────────────────────────────────────
+
+    const {
+      editingNote,
+      setEditingNote,
+
+      addFloatingNoteAtLine,
+      handleSaveNote,
+      handleCancelNote,
+      handleDeleteNote,
+      handleUpdateNote,
+    } = useSongNotes({
+      isStageMode,
+      scrollAreaPageY,
+      scrollPosRef,
+      musicianNotes,
+      setMusicianNotes,
+    });
+
+    // ─────────────────────────────────────────────
+    // Editor de líneas
+    // ─────────────────────────────────────────────
+
+    const {
+      editingLineIndex,
+      setEditingLineIndex,
+
+      editingLineText,
+      setEditingLineText,
+
+      inputSelection,
+      setInputSelection,
+
+      insertAtCursor,
+      openLineEditModal,
+      handleSaveEditedLine,
+    } = useSongEditor({
+      parsedLines,
+      songId,
+      currentContent,
+      setCurrentContent,
+      onContentUpdated,
+    });
 
     // ─────────────────────────────────────────────
     // Pedal + Director
@@ -441,173 +465,6 @@ export const SongViewer: React.FC<
     }, [theme.background]);
 
     // ─────────────────────────────────────────────
-    // Edición de línea
-    // ─────────────────────────────────────────────
-
-    const insertAtCursor = (
-      textToInsert: string
-    ) => {
-      const start =
-        inputSelection.start;
-
-      const end =
-        inputSelection.end;
-
-      const newText =
-        editingLineText.slice(
-          0,
-          start
-        ) +
-        textToInsert +
-        editingLineText.slice(end);
-
-      setEditingLineText(
-        newText
-      );
-
-      const newPos =
-        start +
-        textToInsert.length;
-
-      setInputSelection({
-        start: newPos,
-        end: newPos,
-      });
-    };
-
-    const openLineEditModal = (
-      lineIndex: number
-    ) => {
-      const line =
-        parsedLines[lineIndex];
-
-      if (!line) return;
-
-      let lineText = '';
-
-      if (line.type === 'section') {
-        lineText = line.blocks
-          .map(b => b.text)
-          .join('');
-      } else {
-        lineText = line.blocks
-          .map(
-            b =>
-              (b.chord
-                ? `[${b.chord}]`
-                : '') +
-              (b.text || '')
-          )
-          .join('');
-      }
-
-      setEditingLineText(
-        lineText
-      );
-
-      setInputSelection({
-        start: lineText.length,
-        end: lineText.length,
-      });
-
-      setEditingLineIndex(
-        lineIndex
-      );
-    };
-
-    const handleSaveEditedLine =
-      async () => {
-        if (
-          editingLineIndex === null
-        ) {
-          return;
-        }
-
-        const newParsedLines =
-          [...parsedLines];
-
-        const rawLine =
-          editingLineText.trim();
-
-        if (
-          rawLine.startsWith('[') &&
-          rawLine.endsWith(']') &&
-          !rawLine
-            .slice(1, -1)
-            .includes(']')
-        ) {
-          newParsedLines[
-            editingLineIndex
-          ] = {
-            type: 'section',
-            blocks: [
-              {
-                text: rawLine,
-              },
-            ],
-          };
-        } else {
-          const parsedSingleLine =
-            parseChordPro(
-              editingLineText
-            );
-
-          const firstLine =
-            Array.isArray(
-              parsedSingleLine
-            ) &&
-              parsedSingleLine.length > 0
-              ? parsedSingleLine[0]
-              : null;
-
-          if (firstLine) {
-            newParsedLines[
-              editingLineIndex
-            ] = firstLine;
-          } else {
-            newParsedLines[
-              editingLineIndex
-            ] = {
-              type: 'chords-lyrics',
-              isMetadata: false,
-              blocks: [
-                {
-                  text: editingLineText,
-                },
-              ],
-            };
-          }
-        }
-
-        const updatedChordPro =
-          rebuildChordProFromParsedLines(
-            newParsedLines
-          );
-
-        setCurrentContent(
-          updatedChordPro
-        );
-
-        try {
-          await FileSystemService.saveSongContent(
-            songId,
-            updatedChordPro
-          );
-
-          onContentUpdated?.(
-            updatedChordPro
-          );
-        } catch (e) {
-          console.error(
-            'Error guardando línea editada:',
-            e
-          );
-        }
-
-        setEditingLineIndex(null);
-      };
-
-    // ─────────────────────────────────────────────
     // Director / Follower
     // ─────────────────────────────────────────────
 
@@ -628,6 +485,12 @@ export const SongViewer: React.FC<
         return;
       }
 
+      /**
+       * TEMPORAL:
+       * Esta lógica será reemplazada por
+       * SCROLL_POSITION una vez que probemos
+       * correctamente el cálculo proporcional.
+       */
       if (
         incomingDirectorEvent.type ===
         'SCROLL_DOWN'
@@ -711,328 +574,6 @@ export const SongViewer: React.FC<
           );
         }
       };
-
-    // ─────────────────────────────────────────────
-    // Notas flotantes
-    // ─────────────────────────────────────────────
-
-    const addFloatingNoteAtLine =
-      (
-        _pageX: number,
-        pageY: number
-      ) => {
-        if (isStageMode) {
-          return;
-        }
-
-        const contentY =
-          pageY -
-          scrollAreaPageY.current +
-          scrollPosRef.current;
-
-        const noteId =
-          `note_${Date.now()}`;
-
-        const newY =
-          Math.max(
-            10,
-            Math.round(
-              contentY - 20
-            )
-          );
-
-        setEditingNote({
-          id: noteId,
-          text: '',
-        });
-
-        setMusicianNotes(
-          (prev: any) => ({
-            ...prev,
-            [noteId]: {
-              text: '',
-              x: 20,
-              y: newY,
-            },
-          })
-        );
-      };
-
-    const handleSaveNote =
-      () => {
-        if (!editingNote) {
-          return;
-        }
-
-        const trimmed =
-          editingNote.text.trim();
-
-        if (!trimmed) {
-          setMusicianNotes(
-            (prev: any) => {
-              const next = {
-                ...prev,
-              };
-
-              delete next[
-                editingNote.id
-              ];
-
-              return next;
-            }
-          );
-        } else {
-          setMusicianNotes(
-            (prev: any) => ({
-              ...prev,
-              [editingNote.id]: {
-                ...(prev[
-                  editingNote.id
-                ] || {
-                  x: 20,
-                  y: 100,
-                }),
-                text: trimmed,
-              },
-            })
-          );
-        }
-
-        setEditingNote(null);
-      };
-
-    const handleCancelNote =
-      () => {
-        if (!editingNote) {
-          return;
-        }
-
-        const existing =
-          musicianNotes[
-          editingNote.id
-          ];
-
-        if (
-          !existing ||
-          !existing.text
-        ) {
-          setMusicianNotes(
-            (prev: any) => {
-              const next = {
-                ...prev,
-              };
-
-              delete next[
-                editingNote.id
-              ];
-
-              return next;
-            }
-          );
-        }
-
-        setEditingNote(null);
-      };
-
-    const handleDeleteNote =
-      (noteId: string) => {
-        setMusicianNotes(
-          (prev: any) => {
-            const next = {
-              ...prev,
-            };
-
-            delete next[noteId];
-
-            return next;
-          }
-        );
-      };
-
-    const handleUpdateNote =
-      (
-        noteId: string,
-        text: string,
-        x: number,
-        y: number
-      ) => {
-        setMusicianNotes(
-          (prev: any) => ({
-            ...prev,
-            [noteId]: {
-              text,
-              x,
-              y,
-            },
-          })
-        );
-      };
-
-    // ─────────────────────────────────────────────
-    // Render de bloques
-    // ─────────────────────────────────────────────
-
-    const getRenderItems =
-      useCallback(
-        (
-          blocks: any[],
-          isTitle: boolean
-        ) => {
-          if (isTitle) {
-            return blocks.map(
-              b => ({
-                chord:
-                  undefined as
-                  | string
-                  | undefined,
-                text: b.text
-                  .replace(
-                    /\[TITULO\]/i,
-                    ''
-                  )
-                  .trim(),
-              })
-            );
-          }
-
-          const items: {
-            chord?: string;
-            text: string;
-          }[] = [];
-
-          for (
-            let i = 0;
-            i < blocks.length;
-            i++
-          ) {
-            const block =
-              blocks[i];
-
-            const rawText =
-              block.text || '';
-
-            const words =
-              rawText.match(
-                /^\s+|\S+\s*/g
-              ) || [];
-
-            if (
-              words.length === 0
-            ) {
-              if (block.chord) {
-                items.push({
-                  chord:
-                    block.chord,
-                  text: '',
-                });
-              }
-
-              continue;
-            }
-
-            if (block.chord) {
-              items.push({
-                chord:
-                  block.chord,
-                text: words[0],
-              });
-
-              for (
-                let w = 1;
-                w < words.length;
-                w++
-              ) {
-                items.push({
-                  text: words[w],
-                });
-              }
-            } else {
-              for (
-                let w = 0;
-                w < words.length;
-                w++
-              ) {
-                items.push({
-                  text: words[w],
-                });
-              }
-            }
-          }
-
-          return items;
-        },
-        []
-      );
-
-    const renderChordOnlyLine =
-      useCallback(
-        (blocks: any[]) => {
-          return (
-            <Text
-              style={[
-                styles.lyricText,
-                {
-                  fontSize,
-                  color: theme.lyrics,
-                  lineHeight:
-                    fontSize * 1.4,
-                },
-              ]}
-            >
-              {blocks.map(
-                (
-                  block,
-                  index
-                ) => (
-                  <React.Fragment
-                    key={`chord-only-${index}`}
-                  >
-                    {block.chord && (
-                      <Text
-                        style={[
-                          styles.chordText,
-                          {
-                            fontSize,
-                            color:
-                              theme.chords,
-                          },
-                        ]}
-                      >
-                        {
-                          block.chord
-                        }
-                      </Text>
-                    )}
-
-                    {block.text && (
-                      <Text
-                        style={[
-                          styles.lyricText,
-                          {
-                            fontSize,
-                            color:
-                              theme.lyrics,
-                          },
-                        ]}
-                      >
-                        {block.text.replace(
-                          / /g,
-                          '\u00A0'
-                        )}
-                      </Text>
-                    )}
-                  </React.Fragment>
-                )
-              )}
-            </Text>
-          );
-        },
-        [
-          fontSize,
-          theme.chords,
-          theme.lyrics,
-        ]
-      );
 
     const insets =
       useSafeAreaInsets();
@@ -1185,7 +726,9 @@ export const SongViewer: React.FC<
             </View>
 
             <Switch
-              value={followDirector}
+              value={
+                followDirector
+              }
               onValueChange={
                 onFollowDirectorChange
               }
@@ -1205,7 +748,7 @@ export const SongViewer: React.FC<
             flex: 1,
           }}
           onLayout={
-            measureScrollArea
+            handleScrollAreaLayout
           }
         >
           <ScrollView
@@ -1213,6 +756,9 @@ export const SongViewer: React.FC<
             style={styles.scroll}
             contentContainerStyle={
               styles.scrollContent
+            }
+            onContentSizeChange={
+              handleContentSizeChange
             }
             onScroll={e => {
               handleScroll(
@@ -1225,437 +771,45 @@ export const SongViewer: React.FC<
               isScrollEnabled
             }
           >
-            <View
-              style={
-                styles.songContainer
+            <SongContent
+              parsedLines={
+                parsedLines
               }
-            >
-              {parsedLines.map(
-                (
-                  line,
-                  lIndex
-                ) => {
-                  const isTitle =
-                    line.type ===
-                    'section' &&
-                    line.blocks[0]?.text
-                      .toUpperCase()
-                      .includes(
-                        'TITULO'
-                      );
-
-                  const sectionColor =
-                    isStageMode
-                      ? '#fbbf24'
-                      : theme.chords;
-
-                  const fullLineText =
-                    line.blocks
-                      .map(
-                        b =>
-                          b.text
-                      )
-                      .join('');
-
-                  const isNonPlayableMetadata =
-                    line.isMetadata &&
-                    /^(NOTA|TONO|KEY|BPM|TEMPO|CAPO|COMP[ÁA]S):/i.test(
-                      fullLineText
-                    );
-
-                  const isChordOnlyLine =
-                    line.type !==
-                    'section' &&
-                    !line.isMetadata &&
-                    line.blocks.some(
-                      b =>
-                        !!b.chord
-                    ) &&
-                    !/\p{L}{2,}/u.test(
-                      fullLineText
-                    );
-
-                  return (
-                    <View
-                      key={lIndex}
-                    >
-                      <TouchableOpacity
-                        activeOpacity={
-                          0.7
-                        }
-                        onPress={e => {
-                          if (
-                            isEditToolActive
-                          ) {
-                            openLineEditModal(
-                              lIndex
-                            );
-                          } else {
-                            addFloatingNoteAtLine(
-                              e.nativeEvent
-                                .pageX,
-                              e.nativeEvent
-                                .pageY
-                            );
-                          }
-                        }}
-                        style={[
-                          styles.lineWrapper,
-                          line.type ===
-                          'section' &&
-                          (isTitle
-                            ? styles.titleLine
-                            : styles.sectionLine),
-                          isEditToolActive && {
-                            borderWidth: 1,
-                            borderColor:
-                              'rgba(59, 130, 246, 0.5)',
-                            borderRadius: 4,
-                            marginVertical: 2,
-                            padding: 3,
-                          },
-                        ]}
-                      >
-                        <View
-                          style={[
-                            styles.blocksContainer,
-                            isTitle && {
-                              justifyContent:
-                                'center',
-                              width:
-                                '100%',
-                            },
-                            isDebugMode && {
-                              borderWidth: 1,
-                              borderColor:
-                                '#3b82f6',
-                              borderStyle:
-                                'dashed',
-                            },
-                          ]}
-                        >
-                          {isChordOnlyLine
-                            ? renderChordOnlyLine(
-                              line.blocks
-                            )
-                            : getRenderItems(
-                              line.blocks,
-                              isTitle
-                            ).map(
-                              (
-                                item,
-                                bIndex
-                              ) => {
-                                if (
-                                  isTitle
-                                ) {
-                                  return (
-                                    <View
-                                      key={
-                                        bIndex
-                                      }
-                                      style={[
-                                        styles.block,
-                                        {
-                                          width:
-                                            '100%',
-                                          alignItems:
-                                            'center',
-                                        },
-                                      ]}
-                                    >
-                                      <Text
-                                        style={[
-                                          styles.lyricText,
-                                          {
-                                            fontSize:
-                                              fontSize *
-                                              1.5,
-                                            textAlign:
-                                              'center',
-                                            fontWeight:
-                                              'bold',
-                                            lineHeight:
-                                              fontSize *
-                                              1.5 *
-                                              1.25,
-                                            color:
-                                              theme.lyrics,
-                                          },
-                                          isDebugMode && {
-                                            backgroundColor:
-                                              'rgba(59, 130, 246, 0.15)',
-                                          },
-                                        ]}
-                                      >
-                                        {
-                                          item.text
-                                        }
-                                      </Text>
-                                    </View>
-                                  );
-                                }
-
-                                const hasChord =
-                                  !!item.chord;
-
-                                if (
-                                  !hasChord &&
-                                  (!item.text ||
-                                    /^\s+$/.test(
-                                      item.text
-                                    ))
-                                ) {
-                                  return (
-                                    <Text
-                                      key={`item-${bIndex}`}
-                                      style={[
-                                        styles.lyricText,
-                                        {
-                                          fontSize,
-                                          color:
-                                            theme.lyrics,
-                                        },
-                                        line.type ===
-                                        'section' && {
-                                          color:
-                                            sectionColor,
-                                          fontWeight:
-                                            'bold',
-                                        },
-                                      ]}
-                                    >
-                                      {(
-                                        item.text ||
-                                        ' '
-                                      ).replace(
-                                        / /g,
-                                        '\u00A0'
-                                      )}
-                                    </Text>
-                                  );
-                                }
-
-                                const displayText =
-                                  (
-                                    item.text ||
-                                    ''
-                                  ).replace(
-                                    / /g,
-                                    '\u00A0'
-                                  );
-
-                                const isSpaceOnly =
-                                  /^\s+$/.test(
-                                    item.text ||
-                                    ''
-                                  );
-
-                                return (
-                                  <View
-                                    key={`item-${bIndex}`}
-                                    style={[
-                                      styles.block,
-                                      line.isMetadata && {
-                                        flexDirection:
-                                          'row',
-                                        alignItems:
-                                          'baseline',
-                                      },
-                                      isSpaceOnly &&
-                                      item
-                                        .text
-                                        .length >
-                                      1 && {
-                                        minWidth:
-                                          Math.max(
-                                            fontSize,
-                                            item
-                                              .text
-                                              .length *
-                                            (fontSize *
-                                              0.45)
-                                          ),
-                                      },
-                                      isChordOnlyLine &&
-                                      hasChord && {
-                                        marginRight:
-                                          Math.max(
-                                            6,
-                                            fontSize *
-                                            0.4
-                                          ),
-                                      },
-                                      isDebugMode && {
-                                        borderWidth: 1,
-                                        borderColor:
-                                          hasChord
-                                            ? '#ef4444'
-                                            : '#3b82f6',
-                                        borderStyle:
-                                          hasChord
-                                            ? 'solid'
-                                            : 'dotted',
-                                        padding: 1,
-                                      },
-                                    ]}
-                                  >
-                                    {viewMode !==
-                                      'lyrics' &&
-                                      (hasChord ? (
-                                        <Text
-                                          style={[
-                                            styles.chordText,
-                                            {
-                                              fontSize,
-                                              color:
-                                                theme.chords,
-                                            },
-                                            line.isMetadata && {
-                                              marginRight:
-                                                4,
-                                            },
-                                            isNonPlayableMetadata && {
-                                              color:
-                                                theme.lyrics,
-                                              fontWeight:
-                                                'normal',
-                                            },
-                                            isDebugMode && {
-                                              backgroundColor:
-                                                'rgba(239, 68, 68, 0.15)',
-                                            },
-                                          ]}
-                                        >
-                                          {
-                                            item.chord
-                                          }
-                                        </Text>
-                                      ) : (
-                                        <Text
-                                          style={[
-                                            styles.chordText,
-                                            {
-                                              fontSize,
-                                              opacity: 0,
-                                            },
-                                          ]}
-                                          numberOfLines={
-                                            1
-                                          }
-                                        >
-                                          X
-                                        </Text>
-                                      ))}
-
-                                    <Text
-                                      style={[
-                                        styles.lyricText,
-                                        {
-                                          fontSize,
-                                          color:
-                                            theme.lyrics,
-                                        },
-                                        line.type ===
-                                        'section' && {
-                                          color:
-                                            sectionColor,
-                                          fontWeight:
-                                            'bold',
-                                        },
-                                        isDebugMode && {
-                                          backgroundColor:
-                                            hasChord
-                                              ? 'rgba(239, 68, 68, 0.05)'
-                                              : 'rgba(59, 130, 246, 0.15)',
-                                        },
-                                      ]}
-                                    >
-                                      {displayText ||
-                                        '\u00A0'}
-                                    </Text>
-                                  </View>
-                                );
-                              }
-                            )}
-                        </View>
-                      </TouchableOpacity>
-                    </View>
+              fontSize={
+                fontSize
+              }
+              viewMode={
+                viewMode
+              }
+              theme={theme}
+              isStageMode={
+                isStageMode
+              }
+              isDebugMode={
+                isDebugMode
+              }
+              isEditToolActive={
+                isEditToolActive
+              }
+              onLinePress={(
+                lineIndex,
+                pageX,
+                pageY
+              ) => {
+                if (
+                  isEditToolActive
+                ) {
+                  openLineEditModal(
+                    lineIndex
+                  );
+                } else {
+                  addFloatingNoteAtLine(
+                    pageX,
+                    pageY
                   );
                 }
-              )}
-
-              {/* Notas flotantes */}
-              {Object.entries(
-                musicianNotes
-              ).map(
-                ([
-                  id,
-                  note,
-                ]: [
-                    string,
-                    any
-                  ]) => (
-                  <DraggableNote
-                    key={id}
-                    id={id}
-                    initialText={
-                      note.text
-                    }
-                    initialX={
-                      note.x || 20
-                    }
-                    initialY={
-                      note.y || 100
-                    }
-                    isStageMode={
-                      isStageMode
-                    }
-                    onRequestEdit={(
-                      noteId: string,
-                      text: string
-                    ) =>
-                      setEditingNote({
-                        id: noteId,
-                        text,
-                      })
-                    }
-                    onUpdate={
-                      handleUpdateNote
-                    }
-                    onDelete={
-                      handleDeleteNote
-                    }
-                    setScrollEnabled={
-                      setIsScrollEnabled
-                    }
-                  />
-                )
-              )}
-
-              {/* Footer */}
-              <View
-                style={
-                  styles.footerContainer
-                }
-              >
-                <View
-                  style={
-                    styles.footerLine
-                  }
-                />
-
-                <Text
-                  style={
-                    styles.footerText
-                  }
-                >
-                  {
-                    DISPLAY_FOOTER_TEXT
-                  }
-                </Text>
-              </View>
-            </View>
+              }}
+            />
           </ScrollView>
         </View>
 
@@ -1723,6 +877,7 @@ export const SongViewer: React.FC<
           }
           bpm={bpm}
           setBpm={setBpm}
+
           timeSignature={
             timeSignature
           }
@@ -1735,7 +890,9 @@ export const SongViewer: React.FC<
           setMetronomeMuted={
             setMetronomeMuted
           }
-          fontSize={fontSize}
+          fontSize={
+            fontSize
+          }
           setFontSize={
             setFontSize
           }
@@ -1757,7 +914,9 @@ export const SongViewer: React.FC<
               true
             )
           }
-          viewMode={viewMode}
+          viewMode={
+            viewMode
+          }
           setViewMode={
             setViewMode
           }
@@ -1890,84 +1049,6 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     paddingBottom: 200,
-  },
-
-  songContainer: {
-    padding: 20,
-  },
-
-  lineWrapper: {
-    marginBottom: 5,
-    paddingHorizontal: 5,
-    borderRadius: 5,
-  },
-
-  titleLine: {
-    marginTop: 20,
-    marginBottom: 20,
-  },
-
-  sectionLine: {
-    marginTop: 15,
-    marginBottom: 5,
-    borderBottomWidth: 1,
-    borderBottomColor:
-      'rgba(255,255,255,0.1)',
-    paddingBottom: 5,
-  },
-
-  blocksContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'flex-end',
-  },
-
-  block: {
-    minWidth: 10,
-  },
-
-  chordText: {
-    color: COLORS.accent,
-    fontWeight: 'bold',
-    fontFamily:
-      Platform.OS === 'ios'
-        ? 'Courier'
-        : 'monospace',
-  },
-
-  lyricText: {
-    color: COLORS.foreground,
-    fontFamily:
-      Platform.OS === 'ios'
-        ? 'Courier'
-        : 'monospace',
-    lineHeight: 22,
-  },
-
-  footerContainer: {
-    paddingBottom: 60,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-    width: '100%',
-  },
-
-  footerLine: {
-    width: '100%',
-    height: 1,
-    backgroundColor:
-      'rgba(255,255,255,0.1)',
-    marginBottom: 15,
-  },
-
-  footerText: {
-    color:
-      COLORS.mutedForeground,
-    fontSize: 12,
-    fontWeight: '500',
-    letterSpacing: 1,
-    textTransform:
-      'uppercase',
-    opacity: 0.6,
   },
 
   followDirectorBar: {
