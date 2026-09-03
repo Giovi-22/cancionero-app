@@ -1,4 +1,9 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, {
+  useState,
+  useRef,
+  useEffect,
+  useCallback,
+} from 'react';
 import {
   View,
   FlatList,
@@ -7,7 +12,10 @@ import {
   ActivityIndicator,
   Text,
 } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import {
+  useLocalSearchParams,
+  router,
+} from 'expo-router';
 
 import { useAppContext } from '../../src/context/AppContext';
 import { useDirectorSession } from '../../src/hooks/useDirectorSession';
@@ -20,7 +28,8 @@ import { StorageService } from '../../src/services/StorageService';
 import { SongMetadata } from '../../src/types';
 import { COLORS } from '../../src/constants/theme';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH } =
+  Dimensions.get('window');
 
 interface SongPage {
   song: SongMetadata;
@@ -30,7 +39,10 @@ interface SongPage {
 }
 
 export default function SetlistPlayerScreen() {
-  const { setlistId, bandId: bandIdParam } = useLocalSearchParams<{
+  const {
+    setlistId,
+    bandId: bandIdParam,
+  } = useLocalSearchParams<{
     setlistId: string;
     bandId?: string;
   }>();
@@ -51,62 +63,118 @@ export default function SetlistPlayerScreen() {
    *
    * Si viene bandId => Band Mode.
    * Si no viene bandId => Setlist personal.
-   *
-   * No usamos activeBandId como fallback porque puede haber
-   * una banda seleccionada globalmente mientras el usuario
-   * está abriendo un setlist personal.
    */
   const isBandMode = !!bandIdParam;
-  const resolvedBandId = isBandMode ? bandIdParam : null;
 
-  console.log('[SetlistPlayer] Params:', {
-    setlistId,
-    bandIdParam,
-    isBandMode,
-    resolvedBandId,
-  });
+  const resolvedBandId =
+    isBandMode ? bandIdParam : null;
 
-  /**
-   * Los setlists de banda se cargan únicamente cuando
-   * estamos en Band Mode.
-   */
+  console.log(
+    '[SetlistPlayer] Params:',
+    {
+      setlistId,
+      bandIdParam,
+      isBandMode,
+      resolvedBandId,
+    }
+  );
+
   const {
     setlists: bandSetlists,
     loading: bandSetlistsLoading,
     error: bandSetlistsError,
-  } = useBandSetlists(resolvedBandId);
+  } = useBandSetlists(
+    resolvedBandId
+  );
 
-  /**
-   * Director Mode.
-   *
-   * En un setlist personal resolvedBandId es null,
-   * por lo que no se conecta a ninguna sesión de banda.
-   */
   const {
     activeSession,
     isDirectorOfSession,
     latestEvent,
     sendEvent,
-  } = useDirectorSession(resolvedBandId);
+  } = useDirectorSession(
+    resolvedBandId
+  );
 
-  const isDirector = isDirectorOfSession;
+  const isDirector =
+    isDirectorOfSession;
 
   /**
-   * Setlist de banda activo.
+   * Control de seguimiento del Director.
    *
-   * En modo personal queda undefined.
+   * Solamente tiene efecto para followers.
+   *
+   * true  => recibe SONG_CHANGED + SCROLL
+   * false => control totalmente local
    */
-  const activeBandSetlist = isBandMode
-    ? bandSetlists.find(
-      item => item.id === setlistId
-    )
-    : undefined;
+  const [followDirector, setFollowDirector] =
+    useState(true);
 
-  const flatListRef = useRef<FlatList>(null);
+  const activeBandSetlist =
+    isBandMode
+      ? bandSetlists.find(
+        item =>
+          item.id === setlistId
+      )
+      : undefined;
 
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [pages, setPages] = useState<SongPage[]>([]);
-  const [ready, setReady] = useState(false);
+  const flatListRef =
+    useRef<FlatList>(null);
+
+  const [currentIndex, setCurrentIndex] =
+    useState(0);
+
+  const [pages, setPages] =
+    useState<SongPage[]>([]);
+
+  const [ready, setReady] =
+    useState(false);
+
+  /**
+   * ID del último evento de Director
+   * procesado por ESTE SetlistPlayer.
+   *
+   * Importante:
+   * este ref pertenece al player completo,
+   * no a cada SongViewer.
+   */
+  const lastProcessedEventIdRef =
+    useRef<string | null>(null);
+
+  /**
+   * ID de la última canción que el Director
+   * publicó mediante SONG_CHANGED.
+   *
+   * Esto evita publicar varias veces la misma
+   * canción aunque haya renders adicionales.
+   */
+  const lastSentSongIdRef =
+    useRef<string | null>(null);
+
+  /**
+   * Reinicia los controles de eventos solamente
+   * cuando realmente cambia el setlist o la sesión.
+   *
+   * NO lo hacemos en el efecto que construye
+   * las páginas porque ese efecto puede ejecutarse
+   * nuevamente cuando cambia la biblioteca local.
+   */
+  useEffect(() => {
+    lastProcessedEventIdRef.current =
+      null;
+
+    lastSentSongIdRef.current =
+      null;
+
+    /**
+     * Cada nueva sesión/setlist comienza
+     * siguiendo al Director.
+     */
+    setFollowDirector(true);
+  }, [
+    setlistId,
+    activeSession?.id,
+  ]);
 
   /**
    * Busca el setlist correspondiente al modo actual
@@ -117,34 +185,37 @@ export default function SetlistPlayerScreen() {
       return;
     }
 
-    /**
-     * En modo banda esperamos a que Firestore termine
-     * de cargar los repertorios.
-     */
-    if (isBandMode && bandSetlistsLoading) {
+    if (
+      isBandMode &&
+      bandSetlistsLoading
+    ) {
       return;
     }
 
     let setlist;
 
     if (isBandMode) {
-      /**
-       * Band Mode:
-       * buscamos el repertorio en Firestore.
-       */
-      setlist = bandSetlists.find(
-        item => item.id === setlistId
-      );
+      setlist =
+        bandSetlists.find(
+          item =>
+            item.id ===
+            setlistId
+        );
 
-      console.log('[SetlistPlayer] BandSetlists:', {
-        setlistId,
-        resolvedBandId,
-        bandSetlistsLoading,
-        bandSetlistsCount: bandSetlists.length,
-        bandSetlistIds: bandSetlists.map(
-          item => item.id
-        ),
-      });
+      console.log(
+        '[SetlistPlayer] BandSetlists:',
+        {
+          setlistId,
+          resolvedBandId,
+          bandSetlistsLoading,
+          bandSetlistsCount:
+            bandSetlists.length,
+          bandSetlistIds:
+            bandSetlists.map(
+              item => item.id
+            ),
+        }
+      );
 
       if (!setlist) {
         console.warn(
@@ -162,14 +233,12 @@ export default function SetlistPlayerScreen() {
         return;
       }
     } else {
-      /**
-       * Personal Mode:
-       * buscamos el setlist en los setlists locales
-       * del AppContext.
-       */
-      setlist = setlists.find(
-        item => item.id === setlistId
-      );
+      setlist =
+        setlists.find(
+          item =>
+            item.id ===
+            setlistId
+        );
 
       if (!setlist) {
         console.warn(
@@ -182,21 +251,64 @@ export default function SetlistPlayerScreen() {
     }
 
     /**
-     * Tanto Setlist como BandSetlist utilizan songIds
-     * para definir el orden de las canciones.
+     * setlist.songIds es la fuente de verdad
+     * del orden.
      *
-     * La metadata real de las canciones sigue viniendo
-     * del almacenamiento/local library.
+     * Conservamos todas las posiciones aunque
+     * una canción todavía no esté descargada
+     * localmente.
      */
-    const songsOfList = setlist.songIds
-      .map((id) =>
-        songs.find((song) => song.id === id)
-      )
-      .filter(Boolean) as SongMetadata[];
+    const songsOfList: SongMetadata[] =
+      setlist.songIds.map(
+        id => {
+          const localSong =
+            songs.find(
+              song =>
+                song.id === id
+            );
 
-    if (songsOfList.length === 0) {
+          if (localSong) {
+            return localSong;
+          }
+
+          return {
+            id,
+            name:
+              'Canción no disponible',
+            mimeType:
+              'text/plain',
+          };
+        }
+      );
+
+    console.log(
+      '[SetlistPlayer][SETLIST]',
+      isDirector
+        ? 'DIRECTOR'
+        : 'FOLLOWER',
+      {
+        setlistId,
+        songIds:
+          setlist.songIds,
+        songsOfList:
+          songsOfList.map(
+            (
+              song,
+              index
+            ) => ({
+              index,
+              id: song.id,
+              name: song.name,
+            })
+          ),
+      }
+    );
+
+    if (
+      songsOfList.length === 0
+    ) {
       console.warn(
-        '[SetlistPlayer] El setlist no contiene canciones disponibles:',
+        '[SetlistPlayer] El setlist no contiene canciones:',
         setlistId
       );
 
@@ -204,24 +316,28 @@ export default function SetlistPlayerScreen() {
       return;
     }
 
-    const initialPages: SongPage[] = songsOfList.map(
-      (song) => ({
-        song,
-        content: null,
-        settings: null,
-        loaded: false,
-      })
+    const initialPages:
+      SongPage[] =
+      songsOfList.map(
+        song => ({
+          song,
+          content: null,
+          settings: null,
+          loaded: false,
+        })
+      );
+
+    setPages(
+      initialPages
     );
 
-    setPages(initialPages);
     setCurrentIndex(0);
+
     setReady(true);
 
-    /**
-     * Mantiene sincronizado el listado de canciones
-     * utilizado por el resto de la aplicación / SongViewer.
-     */
-    setSetlistSongs(songsOfList);
+    setSetlistSongs(
+      songsOfList
+    );
   }, [
     setlistId,
     isBandMode,
@@ -232,90 +348,116 @@ export default function SetlistPlayerScreen() {
     setlists,
     songs,
     setSetlistSongs,
+    isDirector,
   ]);
 
   /**
-   * Carga el contenido y configuración de una canción.
+   * Carga el contenido y configuración
+   * de una canción.
    */
-  const loadPage = useCallback(
-    async (
-      index: number,
-      allPages: SongPage[]
-    ) => {
-      if (
-        index < 0 ||
-        index >= allPages.length
-      ) {
-        return;
-      }
+  const loadPage =
+    useCallback(
+      async (
+        index: number,
+        allPages: SongPage[]
+      ) => {
+        if (
+          index < 0 ||
+          index >=
+          allPages.length
+        ) {
+          return;
+        }
 
-      if (allPages[index].loaded) {
-        return;
-      }
+        if (
+          allPages[index].loaded
+        ) {
+          return;
+        }
 
-      const { song } = allPages[index];
+        const { song } =
+          allPages[index];
 
-      try {
-        const content =
-          await FileSystemService.getSongContent(
+        try {
+          const content =
+            await FileSystemService.getSongContent(
+              song.id
+            );
+
+          /**
+           * La canción puede existir en el
+           * repertorio pero no estar descargada
+           * localmente en este dispositivo.
+           *
+           * En ese caso mantenemos la posición
+           * del setlist pero no marcamos la página
+           * como cargada.
+           */
+          if (content === null) {
+            console.warn(
+              '[SetlistPlayer] Canción no disponible localmente:',
+              song.id
+            );
+
+            return;
+          }
+
+          const libId =
+            activeLibrary?.id ||
+            'default';
+
+          let settings =
+            await StorageService.getSetting(
+              `song_settings_${libId}_${song.id}`
+            );
+
+          if (
+            !settings &&
+            libId === 'default'
+          ) {
+            settings =
+              await StorageService.getSetting(
+                `song_settings_${song.id}`
+              );
+          }
+
+          await StorageService.incrementSongViewCount(
             song.id
           );
 
-        const libId =
-          activeLibrary?.id || 'default';
+          setPages(prev => {
+            const updated =
+              [...prev];
 
-        let settings =
-          await StorageService.getSetting(
-            `song_settings_${libId}_${song.id}`
+            if (
+              !updated[index]
+            ) {
+              return prev;
+            }
+
+            updated[index] = {
+              ...updated[index],
+              content,
+              settings,
+              loaded: true,
+            };
+
+            return updated;
+          });
+        } catch (error) {
+          console.error(
+            '[SetlistPlayer] Error cargando canción:',
+            song.id,
+            error
           );
-
-        /**
-         * Compatibilidad con configuraciones antiguas
-         * almacenadas sin libraryId.
-         */
-        if (
-          !settings &&
-          libId === 'default'
-        ) {
-          settings =
-            await StorageService.getSetting(
-              `song_settings_${song.id}`
-            );
         }
-
-        await StorageService.incrementSongViewCount(
-          song.id
-        );
-
-        setPages((prev) => {
-          const updated = [...prev];
-
-          if (!updated[index]) {
-            return prev;
-          }
-
-          updated[index] = {
-            ...updated[index],
-            content,
-            settings,
-            loaded: true,
-          };
-
-          return updated;
-        });
-      } catch (error) {
-        console.error(
-          '[SetlistPlayer] Error cargando canción:',
-          song.id,
-          error
-        );
-      }
-    },
-    [activeLibrary]
-  );
+      },
+      [activeLibrary]
+    );
 
   /**
-   * Precarga la canción actual, siguiente y anterior.
+   * Precarga la canción actual,
+   * siguiente y anterior.
    */
   useEffect(() => {
     if (
@@ -349,89 +491,473 @@ export default function SetlistPlayerScreen() {
   /**
    * Cierra el player.
    */
-  const handleClose = useCallback(() => {
-    setSetlistSongs([]);
-    router.back();
-  }, [setSetlistSongs]);
+  const handleClose =
+    useCallback(() => {
+      setSetlistSongs([]);
+      router.back();
+    }, [
+      setSetlistSongs,
+    ]);
 
   /**
    * Avanza a la siguiente canción.
+   *
+   * NO modificamos currentIndex acá.
+   *
+   * Esperamos a que FlatList confirme
+   * la página mediante onMomentumScrollEnd.
    */
-  const handleNext = useCallback(() => {
-    if (
-      currentIndex <
-      pages.length - 1
-    ) {
+  const handleNext =
+    useCallback(() => {
+      if (
+        currentIndex >=
+        pages.length - 1
+      ) {
+        return;
+      }
+
       const nextIndex =
         currentIndex + 1;
 
-      flatListRef.current?.scrollToIndex({
-        index: nextIndex,
-        animated: true,
-      });
+      console.log(
+        '[SetlistPlayer][NEXT]',
+        {
+          currentIndex,
+          nextIndex,
+          currentSongId:
+            pages[currentIndex]
+              ?.song.id,
+          nextSongId:
+            pages[nextIndex]
+              ?.song.id,
+          pages:
+            pages.map(
+              (
+                page,
+                index
+              ) => ({
+                index,
+                id: page.song.id,
+                name: page.song.name,
+              })
+            ),
+        }
+      );
 
-      setCurrentIndex(nextIndex);
-    }
-  }, [
-    currentIndex,
-    pages.length,
-  ]);
+      flatListRef.current?.scrollToIndex(
+        {
+          index: nextIndex,
+          animated: true,
+        }
+      );
+    }, [
+      currentIndex,
+      pages,
+    ]);
 
   /**
    * Retrocede a la canción anterior.
    */
-  const handlePrev = useCallback(() => {
-    if (currentIndex > 0) {
+  const handlePrev =
+    useCallback(() => {
+      if (
+        currentIndex <= 0
+      ) {
+        return;
+      }
+
       const prevIndex =
         currentIndex - 1;
 
-      flatListRef.current?.scrollToIndex({
-        index: prevIndex,
-        animated: true,
-      });
+      console.log(
+        '[SetlistPlayer][PREV]',
+        {
+          currentIndex,
+          prevIndex,
+          currentSongId:
+            pages[currentIndex]
+              ?.song.id,
+          prevSongId:
+            pages[prevIndex]
+              ?.song.id,
+        }
+      );
 
-      setCurrentIndex(prevIndex);
-    }
-  }, [currentIndex]);
+      flatListRef.current?.scrollToIndex(
+        {
+          index: prevIndex,
+          animated: true,
+        }
+      );
+    }, [
+      currentIndex,
+      pages,
+    ]);
 
   /**
-   * Cambio de canción recibido por Director Mode.
+   * Procesamiento CENTRALIZADO de SONG_CHANGED
+   * recibidos del Director.
    *
-   * Esto se utiliza en los followers:
-   * cuando llega SONG_CHANGED, buscamos la canción
-   * dentro del setlist y desplazamos el FlatList hasta ella.
+   * Hay una única instancia de este efecto
+   * para todo el SetlistPlayer.
+   *
+   * Los SongViewer individuales NO procesan
+   * SONG_CHANGED.
+   *
+   * IMPORTANTE:
+   * Si followDirector está OFF, el evento
+   * se ignora completamente.
    */
-  const handleFollowSongChangeLocal =
-    useCallback(
-      async (newSongId: string) => {
-        await handleFollowSongChange(
-          newSongId
-        );
+  useEffect(() => {
+    if (
+      isDirector ||
+      !activeSession ||
+      !followDirector ||
+      !latestEvent ||
+      pages.length === 0
+    ) {
+      return;
+    }
 
-        const idx =
-          pages.findIndex(
-            (page) =>
-              page.song.id === newSongId
+    /**
+     * Este efecto solamente procesa
+     * SONG_CHANGED.
+     *
+     * Los eventos SCROLL_UP/DOWN siguen
+     * siendo manejados por el SongViewer activo.
+     */
+    if (
+      latestEvent.type !==
+      'SONG_CHANGED'
+    ) {
+      return;
+    }
+
+    const eventId =
+      latestEvent.id ||
+      latestEvent.timestamp;
+
+    if (!eventId) {
+      return;
+    }
+
+    if (
+      lastProcessedEventIdRef.current ===
+      eventId
+    ) {
+      return;
+    }
+
+    const newSongId =
+      latestEvent.payload
+        ?.songId;
+
+    if (!newSongId) {
+      return;
+    }
+
+    /**
+     * Buscamos la canción usando el orden
+     * de pages, que viene directamente de
+     * setlist.songIds.
+     */
+    const idx =
+      pages.findIndex(
+        page =>
+          page.song.id ===
+          newSongId
+      );
+
+    console.log(
+      '[SetlistPlayer][FOLLOW_EVENT] RECIBIDO',
+      {
+        eventId,
+        type:
+          latestEvent.type,
+        currentIndex,
+        newSongId,
+        followDirector,
+        pages:
+          pages.map(
+            (
+              page,
+              index
+            ) => ({
+              index,
+              id: page.song.id,
+              name: page.song.name,
+            })
+          ),
+      }
+    );
+
+    console.log(
+      '[SetlistPlayer][FOLLOW_EVENT] RESUELTO',
+      {
+        eventId,
+        newSongId,
+        foundIndex: idx,
+        currentIndex,
+      }
+    );
+
+    /**
+     * Si todavía no encontramos la canción,
+     * NO marcamos el evento como procesado.
+     *
+     * Esto permite que el efecto vuelva a
+     * intentarlo cuando pages termine de cargar.
+     */
+    if (idx < 0) {
+      console.warn(
+        '[SetlistPlayer][FOLLOW_EVENT] Canción no encontrada en pages:',
+        newSongId
+      );
+
+      return;
+    }
+
+    /**
+     * Ahora sí marcamos el evento como procesado.
+     */
+    lastProcessedEventIdRef.current =
+      eventId;
+
+    /**
+     * Actualizamos el estado global de la
+     * aplicación.
+     */
+    handleFollowSongChange(
+      newSongId
+    );
+
+    /**
+     * Si ya estamos en esa canción no
+     * necesitamos mover el FlatList.
+     */
+    if (
+      idx === currentIndex
+    ) {
+      return;
+    }
+
+    flatListRef.current?.scrollToIndex(
+      {
+        index: idx,
+        animated: true,
+      }
+    );
+
+    /**
+     * Actualizamos inmediatamente el índice
+     * activo para que el SongViewer correcto
+     * pase a ser isActive.
+     */
+    setCurrentIndex(idx);
+  }, [
+    latestEvent,
+    activeSession,
+    isDirector,
+    followDirector,
+    pages,
+    currentIndex,
+    handleFollowSongChange,
+  ]);
+
+  /**
+   * Cuando el follower vuelve a activar
+   * "Seguir al director", sincronizamos
+   * inmediatamente con la canción que figura
+   * actualmente en la sesión.
+   *
+   * Esto es más robusto que depender de que
+   * el último evento recibido haya sido
+   * SONG_CHANGED.
+   */
+  useEffect(() => {
+    if (
+      isDirector ||
+      !activeSession ||
+      !followDirector ||
+      pages.length === 0 ||
+      !activeSession.currentSongId
+    ) {
+      return;
+    }
+
+    const directorSongId =
+      activeSession.currentSongId;
+
+    const idx =
+      pages.findIndex(
+        page =>
+          page.song.id ===
+          directorSongId
+      );
+
+    if (idx < 0) {
+      return;
+    }
+
+    if (idx === currentIndex) {
+      return;
+    }
+
+    console.log(
+      '[SetlistPlayer][FOLLOW_RESYNC]',
+      {
+        directorSongId,
+        currentIndex,
+        targetIndex: idx,
+      }
+    );
+
+    handleFollowSongChange(
+      directorSongId
+    );
+
+    flatListRef.current?.scrollToIndex(
+      {
+        index: idx,
+        animated: true,
+      }
+    );
+
+    setCurrentIndex(idx);
+  }, [
+    followDirector,
+    activeSession?.id,
+    activeSession?.currentSongId,
+    isDirector,
+    pages,
+    currentIndex,
+    handleFollowSongChange,
+  ]);
+
+  /**
+   * Detecta el cambio REAL de página.
+   *
+   * currentIndex es la fuente de verdad
+   * de qué canción está activa en el player.
+   */
+  const onMomentumScrollEnd =
+    useCallback(
+      (e: any) => {
+        const newIndex =
+          Math.round(
+            e.nativeEvent
+              .contentOffset.x /
+            SCREEN_WIDTH
           );
 
         if (
-          idx >= 0 &&
-          idx !== currentIndex
+          newIndex < 0 ||
+          newIndex >=
+          pages.length
         ) {
-          flatListRef.current?.scrollToIndex({
-            index: idx,
-            animated: true,
-          });
+          return;
+        }
 
-          setCurrentIndex(idx);
+        const previousIndex =
+          currentIndex;
+
+        if (
+          newIndex !==
+          previousIndex
+        ) {
+          console.log(
+            '[SetlistPlayer][PAGE_CHANGED]',
+            {
+              previousIndex,
+              newIndex,
+              previousSongId:
+                pages[
+                  previousIndex
+                ]?.song.id,
+              newSongId:
+                pages[
+                  newIndex
+                ]?.song.id,
+              isDirector,
+            }
+          );
+
+          setCurrentIndex(
+            newIndex
+          );
         }
       },
       [
-        pages,
         currentIndex,
-        handleFollowSongChange,
+        pages,
+        isDirector,
       ]
     );
+
+  /**
+   * El Director publica SONG_CHANGED
+   * basándose exclusivamente en currentIndex.
+   *
+   * Esto reemplaza:
+   *
+   * - el envío automático de SongViewer
+   * - el envío dentro de onMomentumScrollEnd
+   * - el envío especial de canción inicial
+   *
+   * De esta forma existe UN SOLO lugar
+   * responsable de publicar SONG_CHANGED.
+   */
+  useEffect(() => {
+    if (
+      !ready ||
+      !isDirector ||
+      pages.length === 0
+    ) {
+      return;
+    }
+
+    const songId =
+      pages[currentIndex]?.song.id;
+
+    if (!songId) {
+      return;
+    }
+
+    if (
+      lastSentSongIdRef.current ===
+      songId
+    ) {
+      return;
+    }
+
+    lastSentSongIdRef.current =
+      songId;
+
+    console.log(
+      '[SetlistPlayer][SEND_SONG_CHANGED]',
+      {
+        index:
+          currentIndex,
+        songId,
+        title:
+          pages[currentIndex]
+            ?.song.name,
+      }
+    );
+
+    sendEvent(
+      'SONG_CHANGED',
+      {
+        songId,
+      }
+    );
+  }, [
+    ready,
+    isDirector,
+    pages,
+    currentIndex,
+    sendEvent,
+  ]);
 
   /**
    * Guarda la configuración de una canción.
@@ -439,14 +965,17 @@ export default function SetlistPlayerScreen() {
   const handleSaveSettings =
     useCallback(
       (data: any) => {
-        handleSaveSongSettings(data);
+        handleSaveSongSettings(
+          data
+        );
 
-        setPages((prev) => {
-          const updated = [...prev];
+        setPages(prev => {
+          const updated =
+            [...prev];
 
           const idx =
             updated.findIndex(
-              (page) =>
+              page =>
                 page.song.id ===
                 data.songId
             );
@@ -462,14 +991,16 @@ export default function SetlistPlayerScreen() {
           return updated;
         });
       },
-      [handleSaveSongSettings]
-    );
+      [
+        handleSaveSongSettings,
+      ]);
 
   /**
    * Render de cada canción.
    */
   const renderPage = ({
     item,
+    index,
   }: {
     item: SongPage;
     index: number;
@@ -479,7 +1010,11 @@ export default function SetlistPlayerScreen() {
       !item.content
     ) {
       return (
-        <View style={styles.pageContainer}>
+        <View
+          style={
+            styles.pageContainer
+          }
+        >
           <View
             style={
               styles.loadingContainer
@@ -487,7 +1022,9 @@ export default function SetlistPlayerScreen() {
           >
             <ActivityIndicator
               size="large"
-              color={COLORS.accent}
+              color={
+                COLORS.accent
+              }
             />
 
             <Text
@@ -495,7 +1032,9 @@ export default function SetlistPlayerScreen() {
                 styles.loadingText
               }
             >
-              {item.song.name}
+              {
+                item.song.name
+              }
             </Text>
           </View>
         </View>
@@ -509,25 +1048,33 @@ export default function SetlistPlayerScreen() {
         }
       >
         <SongViewer
-          title={item.song.name}
-          songId={item.song.id}
-          content={item.content}
-          onClose={handleClose}
-          initialSettings={item.settings}
+          title={
+            item.song.name
+          }
+          songId={
+            item.song.id
+          }
+          content={
+            item.content
+          }
+          onClose={
+            handleClose
+          }
+          initialSettings={
+            item.settings
+          }
           onSaveSettings={
             handleSaveSettings
           }
-          globalTheme={globalTheme}
+          globalTheme={
+            globalTheme
+          }
           onSaveGlobalTheme={
             handleSaveGlobalTheme
           }
 
           /**
            * Notas del repertorio.
-           *
-           * En modo personal quedan undefined
-           * y SongViewer utiliza el activeSetlist
-           * personal como fallback.
            */
           setlistNotes={
             activeBandSetlist?.notes
@@ -540,38 +1087,82 @@ export default function SetlistPlayerScreen() {
           }
 
           /**
-           * Director Mode
+           * Director Mode.
            */
-          isDirector={isDirector}
+          isDirector={
+            isDirector
+          }
+
+          /**
+           * Solamente el SongViewer de la
+           * canción visible es considerado activo.
+           */
+          isActive={
+            index ===
+            currentIndex
+          }
+
           isFollower={
             !isDirector &&
             !!activeSession
           }
 
+          /**
+           * Control de seguimiento.
+           *
+           * El estado pertenece al SetlistPlayer
+           * para que sobreviva al cambio de canción.
+           */
+          followDirector={
+            followDirector
+          }
+
+          onFollowDirectorChange={
+            setFollowDirector
+          }
+
+          /**
+           * Solamente el Director puede
+           * enviar eventos.
+           *
+           * SongViewer utilizará esto únicamente
+           * para SCROLL_UP/DOWN.
+           */
           onSendDirectorEvent={
             isDirector
               ? sendEvent
               : undefined
           }
 
+          /**
+           * Los eventos siguen llegando al
+           * SongViewer para SCROLL_UP/DOWN.
+           *
+           * SONG_CHANGED NO se procesa allí.
+           */
           incomingDirectorEvent={
             !isDirector
               ? latestEvent
               : null
           }
 
+          /**
+           * SONG_CHANGED se procesa
+           * exclusivamente en este SetlistPlayer.
+           */
           onFollowSongChange={
-            !isDirector
-              ? handleFollowSongChangeLocal
-              : undefined
+            undefined
           }
 
           /**
-           * Setlist navigation
+           * Setlist navigation.
            */
-          setlistSongs={pages.map(
-            (page) => page.song
-          )}
+          setlistSongs={
+            pages.map(
+              page =>
+                page.song
+            )
+          }
 
           onDirectorNext={
             isDirector
@@ -590,35 +1181,9 @@ export default function SetlistPlayerScreen() {
   };
 
   /**
-   * Detecta el cambio de página del FlatList.
-   */
-  const onMomentumScrollEnd =
-    useCallback(
-      (e: any) => {
-        const newIndex =
-          Math.round(
-            e.nativeEvent.contentOffset.x /
-            SCREEN_WIDTH
-          );
-
-        if (
-          newIndex !== currentIndex
-        ) {
-          setCurrentIndex(
-            newIndex
-          );
-        }
-      },
-      [currentIndex]
-    );
-
-  /**
    * Mientras cargamos los BandSetlists
    * todavía no podemos determinar qué
    * canciones contiene el repertorio.
-   *
-   * En modo personal no esperamos
-   * bandSetlistsLoading.
    */
   if (
     (isBandMode &&
@@ -633,15 +1198,17 @@ export default function SetlistPlayerScreen() {
       >
         <ActivityIndicator
           size="large"
-          color={COLORS.accent}
+          color={
+            COLORS.accent
+          }
         />
       </View>
     );
   }
 
   /**
-   * Los errores de BandSetlists solamente
-   * aplican al modo banda.
+   * Los errores de BandSetlists
+   * solamente aplican al modo banda.
    */
   if (
     isBandMode &&
@@ -658,13 +1225,16 @@ export default function SetlistPlayerScreen() {
             styles.errorText
           }
         >
-          No se pudo cargar el repertorio.
+          No se pudo cargar
+          el repertorio.
         </Text>
       </View>
     );
   }
 
-  if (pages.length === 0) {
+  if (
+    pages.length === 0
+  ) {
     return (
       <View
         style={
@@ -676,7 +1246,9 @@ export default function SetlistPlayerScreen() {
             styles.errorText
           }
         >
-          No se encontraron canciones en este repertorio.
+          No se encontraron
+          canciones en este
+          repertorio.
         </Text>
       </View>
     );
@@ -686,9 +1258,12 @@ export default function SetlistPlayerScreen() {
     <FlatList
       ref={flatListRef}
       data={pages}
-      renderItem={renderPage}
-      keyExtractor={(item) =>
-        item.song.id
+      renderItem={
+        renderPage
+      }
+      keyExtractor={
+        item =>
+          item.song.id
       }
       horizontal
       pagingEnabled
@@ -698,10 +1273,15 @@ export default function SetlistPlayerScreen() {
       onMomentumScrollEnd={
         onMomentumScrollEnd
       }
-      getItemLayout={(_, index) => ({
-        length: SCREEN_WIDTH,
+      getItemLayout={(
+        _,
+        index
+      ) => ({
+        length:
+          SCREEN_WIDTH,
         offset:
-          SCREEN_WIDTH * index,
+          SCREEN_WIDTH *
+          index,
         index,
       })}
       initialNumToRender={1}
