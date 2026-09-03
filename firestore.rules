@@ -1,19 +1,19 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
+
     // =========================================================================
     // FUNCIONES AUXILIARES DE SEGURIDAD
     // =========================================================================
-    
+
     // 1. Comprobar si el usuario está autenticado
     function isSignedIn() {
       return request.auth != null;
     }
-    
+
     // 2. Comprobar si el usuario es miembro activo de una banda
     function isBandMember(bandId) {
-      return isSignedIn() && 
+      return isSignedIn() &&
         exists(
           /databases/$(database)/documents/bands/$(bandId)/members/$(request.auth.uid)
         );
@@ -25,7 +25,7 @@ service cloud.firestore {
         /databases/$(database)/documents/bands/$(bandId)/members/$(request.auth.uid)
       ).data;
     }
-    
+
     // 4. Comprobar si el usuario es OWNER de la banda
     function isBandOwner(bandId) {
       return isBandMember(bandId) &&
@@ -35,7 +35,7 @@ service cloud.firestore {
     // 5. Comprobar si el usuario es DIRECTOR u OWNER de la banda
     function isBandDirectorOrOwner(bandId) {
       return isBandMember(bandId) && (
-        getMemberData(bandId).role == 'owner' || 
+        getMemberData(bandId).role == 'owner' ||
         getMemberData(bandId).role == 'director'
       );
     }
@@ -46,7 +46,7 @@ service cloud.firestore {
       let invRef =
         /databases/$(database)/documents/invitations/$(request.resource.data.invitationId);
 
-      return existsAfter(invRef) 
+      return existsAfter(invRef)
         && getAfter(invRef).data.bandId == bandId
         && (
           getAfter(invRef).data.invitedEmail == request.auth.token.email ||
@@ -61,16 +61,16 @@ service cloud.firestore {
     // =========================================================================
     // PERFILES DE USUARIO (users/{userId})
     // =========================================================================
-    
+
     match /users/{userId} {
       // Lectura: cualquier usuario autenticado puede leer perfiles
       allow read: if isSignedIn();
-      
+
       // Creación/Edición: solamente el propio usuario.
       // El ID del documento y el campo uid deben coincidir con request.auth.uid.
       // Se restringen los campos permitidos.
-      allow create, update: if isSignedIn() 
-        && request.auth.uid == userId 
+      allow create, update: if isSignedIn()
+        && request.auth.uid == userId
         && request.resource.data.uid == userId
         && request.resource.data.keys().hasOnly([
           'uid',
@@ -80,7 +80,7 @@ service cloud.firestore {
           'createdAt',
           'updatedAt'
         ]);
-        
+
       // Los perfiles no se eliminan directamente desde el cliente
       allow delete: if false;
     }
@@ -88,21 +88,21 @@ service cloud.firestore {
     // =========================================================================
     // BANDAS (bands/{bandId})
     // =========================================================================
-    
+
     match /bands/{bandId} {
-      
+
       // Lectura: solamente miembros de la banda
       allow read: if isBandMember(bandId);
-      
+
       // Creación: cualquier usuario autenticado puede crear una banda
       // siempre que se asigne a sí mismo como ownerId.
-      allow create: if isSignedIn() 
+      allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid;
-        
+
       // Edición: el OWNER para metadatos generales, o Director/Owner para actualizar activeSessionId.
       // ownerId debe permanecer inmutable.
-      allow update: if isBandOwner(bandId) 
-        && request.resource.data.ownerId == resource.data.ownerId 
+      allow update: if isBandOwner(bandId)
+        && request.resource.data.ownerId == resource.data.ownerId
         && request.resource.data.get('activeSessionId', null) == resource.data.get('activeSessionId', null)
         || (
           isBandDirectorOrOwner(bandId)
@@ -111,32 +111,33 @@ service cloud.firestore {
           && (
             // Iniciar sesión: activeSessionId pasa a ser sessionId
             (
-              request.resource.data.get('activeSessionId', null) != null &&
-              existsAfter(
+              request.resource.data.get('activeSessionId', null) != null
+              && existsAfter(
                 /databases/$(database)/documents/bands/$(bandId)/sessions/$(request.resource.data.activeSessionId)
-              ) &&
-              getAfter(
+              )
+              && getAfter(
                 /databases/$(database)/documents/bands/$(bandId)/sessions/$(request.resource.data.activeSessionId)
-              ).data.status == 'active' &&
-              getAfter(
+              ).data.status == 'active'
+              && getAfter(
                 /databases/$(database)/documents/bands/$(bandId)/sessions/$(request.resource.data.activeSessionId)
               ).data.directorId == request.auth.uid
-            ) ||
-            // Finalizar sesión: activeSessionId pasa a ser null
+            )
+            ||
+            // Finalizar sesión: activeSessionId pasa a null
             (
-              request.resource.data.get('activeSessionId', null) == null &&
-              resource.data.get('activeSessionId', null) != null &&
-              existsAfter(
+              request.resource.data.get('activeSessionId', null) == null
+              && resource.data.get('activeSessionId', null) != null
+              && existsAfter(
                 /databases/$(database)/documents/bands/$(bandId)/sessions/$(resource.data.activeSessionId)
-              ) &&
-              getAfter(
+              )
+              && getAfter(
                 /databases/$(database)/documents/bands/$(bandId)/sessions/$(resource.data.activeSessionId)
-              ).data.status == 'ended' &&
-              (
+              ).data.status == 'ended'
+              && (
                 getAfter(
                   /databases/$(database)/documents/bands/$(bandId)/sessions/$(resource.data.activeSessionId)
-                ).data.directorId == request.auth.uid ||
-                isBandOwner(bandId)
+                ).data.directorId == request.auth.uid
+                || isBandOwner(bandId)
               )
             )
           )
@@ -149,72 +150,75 @@ service cloud.firestore {
       // MIEMBROS DE LA BANDA
       // bands/{bandId}/members/{memberUserId}
       // -----------------------------------------------------------------------
-      
+
       match /members/{memberUserId} {
-        
+
         // Lectura: miembros de la banda o el propio usuario autenticado
         allow read: if isBandMember(bandId) ||
-                       (isSignedIn() && request.auth.uid == memberUserId);
-        
+          (isSignedIn() && request.auth.uid == memberUserId);
+
         // ---------------------------------------------------------------------
         // CREACIÓN DE MIEMBROS
         // ---------------------------------------------------------------------
-        
+
         allow create: if isSignedIn() && (
-          
+
           // OWNER inicial de la banda
           (
-            request.auth.uid == memberUserId &&
-            request.resource.data.role == 'owner' &&
-            existsAfter(
+            request.auth.uid == memberUserId
+            && request.resource.data.role == 'owner'
+            && existsAfter(
               /databases/$(database)/documents/bands/$(bandId)
-            ) &&
-            getAfter(
+            )
+            && getAfter(
               /databases/$(database)/documents/bands/$(bandId)
             ).data.ownerId == request.auth.uid
-          ) ||
-          
+          )
+          ||
+
           // OWNER agrega un miembro directamente
           (
-            isBandOwner(bandId) &&
-            request.resource.data.role in ['member', 'director']
-          ) ||
-          
+            isBandOwner(bandId)
+            && request.resource.data.role in ['member', 'director']
+          )
+          ||
+
           // Usuario invitado se incorpora
           (
-            request.auth.uid == memberUserId &&
-            ('invitationId' in request.resource.data) &&
-            isValidInvitationJoin(bandId, memberUserId)
+            request.auth.uid == memberUserId
+            && ('invitationId' in request.resource.data)
+            && isValidInvitationJoin(bandId, memberUserId)
           )
         );
-                         
+
         // ---------------------------------------------------------------------
         // EDICIÓN DE MIEMBROS
         // ---------------------------------------------------------------------
-        
+
         allow update: if isBandOwner(bandId) && (
           (
-            memberUserId != request.auth.uid &&
-            request.resource.data.role in ['member', 'director']
-          ) ||
+            memberUserId != request.auth.uid
+            && request.resource.data.role in ['member', 'director']
+          )
+          ||
           (
-            memberUserId == request.auth.uid &&
-            request.resource.data.role == 'owner'
+            memberUserId == request.auth.uid
+            && request.resource.data.role == 'owner'
           )
         );
-        
+
         // ---------------------------------------------------------------------
         // ELIMINACIÓN DE MIEMBROS
         // ---------------------------------------------------------------------
-        
+
         allow delete: if (
-          isBandOwner(bandId) &&
-          memberUserId != request.auth.uid
+          isBandOwner(bandId)
+          && memberUserId != request.auth.uid
         ) ||
         (
-          isSignedIn() &&
-          request.auth.uid == memberUserId &&
-          resource.data.role != 'owner'
+          isSignedIn()
+          && request.auth.uid == memberUserId
+          && resource.data.role != 'owner'
         );
       }
 
@@ -222,31 +226,13 @@ service cloud.firestore {
       // REPERTORIO COMPARTIDO DE LA BANDA
       // bands/{bandId}/setlists/{setlistId}
       // -----------------------------------------------------------------------
-      
+
       match /setlists/{setlistId} {
 
-        // ---------------------------------------------------------------------
-        // LECTURA
-        // ---------------------------------------------------------------------
-        //
-        // Todos los miembros activos de la banda pueden consultar
-        // el repertorio compartido.
-        //
+        // Lectura: todos los miembros activos de la banda
         allow read: if isBandMember(bandId);
 
-
-        // ---------------------------------------------------------------------
-        // CREACIÓN
-        // ---------------------------------------------------------------------
-        //
-        // Solamente OWNER o DIRECTOR pueden crear repertorios.
-        //
-        // Validaciones:
-        // - bandId debe coincidir con la ruta.
-        // - createdBy debe ser el usuario autenticado.
-        // - createdAt y updatedAt deben existir.
-        // - El documento no puede agregar campos arbitrarios.
-        //
+        // Creación: solamente OWNER o DIRECTOR
         allow create: if isBandDirectorOrOwner(bandId)
           && request.resource.data.bandId == bandId
           && request.resource.data.createdBy == request.auth.uid
@@ -269,20 +255,7 @@ service cloud.firestore {
           && request.resource.data.createdAt is string
           && request.resource.data.updatedAt is string;
 
-
-        // ---------------------------------------------------------------------
-        // ACTUALIZACIÓN
-        // ---------------------------------------------------------------------
-        //
-        // Solamente OWNER o DIRECTOR pueden modificar un repertorio.
-        //
-        // Se protegen:
-        // - bandId
-        // - createdBy
-        // - id
-        //
-        // El resto de los campos propios del repertorio sí puede modificarse.
-        //
+        // Actualización: solamente OWNER o DIRECTOR
         allow update: if isBandDirectorOrOwner(bandId)
           && request.resource.data.bandId == resource.data.bandId
           && request.resource.data.bandId == bandId
@@ -307,13 +280,7 @@ service cloud.firestore {
           && request.resource.data.createdAt == resource.data.createdAt
           && request.resource.data.updatedAt is string;
 
-
-        // ---------------------------------------------------------------------
-        // ELIMINACIÓN
-        // ---------------------------------------------------------------------
-        //
-        // Solamente OWNER o DIRECTOR pueden eliminar repertorios.
-        //
+        // Eliminación: solamente OWNER o DIRECTOR
         allow delete: if isBandDirectorOrOwner(bandId);
       }
 
@@ -321,73 +288,76 @@ service cloud.firestore {
       // SESIONES DE DIRECTOR
       // bands/{bandId}/sessions/{sessionId}
       // -----------------------------------------------------------------------
-      
+
       match /sessions/{sessionId} {
-        
+
         // Todos los miembros pueden ver las sesiones
         allow read: if isBandMember(bandId);
-        
+
         // Solamente OWNER o DIRECTOR pueden crear sesiones.
         // El creador debe ser el director de la sesión y su UID coincidir con auth.uid.
-        // La sesión debe comenzar como "active" y registrarse atómicamente en activeSessionId de la banda.
-        allow create: if isBandDirectorOrOwner(bandId) 
-          && request.resource.data.directorId == request.auth.uid 
+        // La sesión debe comenzar como "active" y registrarse atómicamente en activeSessionId.
+        allow create: if isBandDirectorOrOwner(bandId)
+          && request.resource.data.directorId == request.auth.uid
           && request.resource.data.bandId == bandId
           && request.resource.data.status == 'active'
           && getAfter(
             /databases/$(database)/documents/bands/$(bandId)
           ).data.get('activeSessionId', null) == sessionId;
-          
+
         // Solamente el Director asignado o el OWNER puede actualizar.
-        allow update: if isBandDirectorOrOwner(bandId) 
+        allow update: if isBandDirectorOrOwner(bandId)
           && (
-            resource.data.directorId == request.auth.uid ||
-            isBandOwner(bandId)
+            resource.data.directorId == request.auth.uid
+            || isBandOwner(bandId)
           )
           && request.resource.data.directorId == resource.data.directorId
           && request.resource.data.bandId == resource.data.bandId
           && (
             (
-              resource.data.status == 'active' &&
-              request.resource.data.status == 'active' &&
-              getAfter(
+              resource.data.status == 'active'
+              && request.resource.data.status == 'active'
+              && getAfter(
                 /databases/$(database)/documents/bands/$(bandId)
               ).data.get('activeSessionId', null) == sessionId
-            ) ||
+            )
+            ||
             (
-              resource.data.status == 'active' &&
-              request.resource.data.status == 'ended' &&
-              getAfter(
+              resource.data.status == 'active'
+              && request.resource.data.status == 'ended'
+              && getAfter(
                 /databases/$(database)/documents/bands/$(bandId)
               ).data.get('activeSessionId', null) != sessionId
             )
           );
-          
+
         // Solamente el OWNER o el Director que inició la sesión pueden eliminarla.
-        allow delete: if isBandDirectorOrOwner(bandId) 
+        allow delete: if isBandDirectorOrOwner(bandId)
           && (
-            resource.data.directorId == request.auth.uid ||
-            isBandOwner(bandId)
+            resource.data.directorId == request.auth.uid
+            || isBandOwner(bandId)
           );
 
         // -----------------------------------------------------------------------
         // EVENTOS DE SESIÓN DE DIRECTOR
         // bands/{bandId}/sessions/{sessionId}/events/{eventId}
         // -----------------------------------------------------------------------
+
         match /events/{eventId} {
-          
+
           // Lectura: todos los miembros de la banda
           allow read: if isBandMember(bandId);
 
           // Creación: únicamente el director asignado a la sesión activa
-          // (o owner)
+          // (o owner).
           allow create: if isBandDirectorOrOwner(bandId)
             && isSignedIn()
             && request.resource.data.senderId == request.auth.uid
             && request.resource.data.type in [
               'SONG_CHANGED',
               'SCROLL_UP',
-              'SCROLL_DOWN'
+              'SCROLL_DOWN',
+              'SCROLL_POSITION'
             ]
             && request.resource.data.keys().hasOnly([
               'type',
@@ -396,10 +366,25 @@ service cloud.firestore {
               'timestamp'
             ])
             && (
-              request.resource.data.type != 'SONG_CHANGED' ||
               (
-                request.resource.data.payload is map &&
-                request.resource.data.payload.songId is string
+                request.resource.data.type == 'SONG_CHANGED'
+                && request.resource.data.payload is map
+                && request.resource.data.payload.songId is string
+              )
+              ||
+              (
+                request.resource.data.type == 'SCROLL_POSITION'
+                && request.resource.data.payload is map
+                && request.resource.data.payload.progress is number
+                && request.resource.data.payload.progress >= 0
+                && request.resource.data.payload.progress <= 1
+              )
+              ||
+              (
+                request.resource.data.type in [
+                  'SCROLL_UP',
+                  'SCROLL_DOWN'
+                ]
               )
             )
             && get(
@@ -408,8 +393,8 @@ service cloud.firestore {
             && (
               get(
                 /databases/$(database)/documents/bands/$(bandId)/sessions/$(sessionId)
-              ).data.directorId == request.auth.uid ||
-              isBandOwner(bandId)
+              ).data.directorId == request.auth.uid
+              || isBandOwner(bandId)
             );
 
           // Inmutabilidad
@@ -422,81 +407,80 @@ service cloud.firestore {
     // INVITACIONES A BANDAS
     // invitations/{invitationId}
     // =========================================================================
-    
+
     match /invitations/{invitationId} {
-      
+
       // Lectura:
       // - Usuario invitado por email.
       // - OWNER o DIRECTOR de la banda.
       allow read: if isSignedIn() && (
-        resource.data.invitedEmail == request.auth.token.email ||
-        isBandDirectorOrOwner(resource.data.bandId)
+        resource.data.invitedEmail == request.auth.token.email
+        || isBandDirectorOrOwner(resource.data.bandId)
       );
-      
+
       // -----------------------------------------------------------------------
       // CREACIÓN
       // -----------------------------------------------------------------------
-      
-      allow create: if isSignedIn() 
+
+      allow create: if isSignedIn()
         && isBandDirectorOrOwner(request.resource.data.bandId)
         && request.resource.data.invitedByUserId == request.auth.uid
         && request.resource.data.status == 'pending'
         && (
           (
-            isBandOwner(request.resource.data.bandId) &&
-            request.resource.data.role in ['member', 'director']
-          ) ||
+            isBandOwner(request.resource.data.bandId)
+            && request.resource.data.role in ['member', 'director']
+          )
+          ||
           (
-            !isBandOwner(request.resource.data.bandId) &&
-            request.resource.data.role == 'member'
+            !isBandOwner(request.resource.data.bandId)
+            && request.resource.data.role == 'member'
           )
         );
-      
+
       // -----------------------------------------------------------------------
       // ACTUALIZACIÓN
       // -----------------------------------------------------------------------
-      
+
       allow update: if isSignedIn() && (
-        
+
         // Usuario invitado acepta o rechaza
         (
-          resource.data.invitedEmail == request.auth.token.email &&
-          resource.data.status == 'pending' &&
-          resource.data.expiresAt > request.time &&
-          request.resource.data.diff(resource.data)
+          resource.data.invitedEmail == request.auth.token.email
+          && resource.data.status == 'pending'
+          && resource.data.expiresAt > request.time
+          && request.resource.data.diff(resource.data)
             .affectedKeys()
-            .hasOnly(['status', 'invitedUserId']) &&
-          (
+            .hasOnly(['status', 'invitedUserId'])
+          && (
             (
-              request.resource.data.status == 'accepted' &&
-              request.resource.data.invitedUserId == request.auth.uid &&
-              
-              existsAfter(
+              request.resource.data.status == 'accepted'
+              && request.resource.data.invitedUserId == request.auth.uid
+              && existsAfter(
                 /databases/$(database)/documents/bands/$(resource.data.bandId)/members/$(request.auth.uid)
-              ) &&
-              
-              getAfter(
+              )
+              && getAfter(
                 /databases/$(database)/documents/bands/$(resource.data.bandId)/members/$(request.auth.uid)
-              ).data.invitationId == invitationId &&
-              
-              getAfter(
+              ).data.invitationId == invitationId
+              && getAfter(
                 /databases/$(database)/documents/bands/$(resource.data.bandId)/members/$(request.auth.uid)
               ).data.role == resource.data.role
-            ) ||
-            
+            )
+            ||
             // Rechazar
             request.resource.data.status == 'rejected'
           )
-        ) ||
-        
+        )
+        ||
+
         // OWNER o DIRECTOR cancela
         (
-          isBandDirectorOrOwner(resource.data.bandId) &&
-          resource.data.status == 'pending' &&
-          request.resource.data.diff(resource.data)
+          isBandDirectorOrOwner(resource.data.bandId)
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data)
             .affectedKeys()
-            .hasOnly(['status']) &&
-          request.resource.data.status == 'cancelled'
+            .hasOnly(['status'])
+          && request.resource.data.status == 'cancelled'
         )
       );
 
@@ -508,27 +492,27 @@ service cloud.firestore {
     // =========================================================================
     // REGLAS LEGACY Y COMPATIBILIDAD CON FUNCIONALIDADES EXISTENTES
     // =========================================================================
-    
+
     // 1. Configuraciones de Usuario
     match /user_settings/{userId} {
       allow read, write: if isSignedIn() &&
         request.auth.uid == userId;
     }
-    
+
     // 2. Estadísticas de reproducción
     match /song_stats/{statId} {
       allow read, delete: if isSignedIn() &&
         resource.data.user_id == request.auth.uid;
-      
+
       allow create, update: if isSignedIn() &&
         request.resource.data.user_id == request.auth.uid;
     }
-    
+
     // 3. Listas personales compartidas en la nube
     // Cualquier usuario autenticado puede crear y gestionar sus propias listas.
     // NO se requiere pertenencia a ninguna banda.
     match /setlists/{setlistId} {
-      
+
       // Lectura: el propio dueño o documentos públicos.
       allow read: if isSignedIn() && (
         resource.data.user_id == request.auth.uid ||
@@ -552,12 +536,12 @@ service cloud.firestore {
     // 4. Prototipo inicial de sesiones en vivo
     match /live_sessions/{sessionId} {
       allow read: if isSignedIn();
-      
+
       allow create: if isSignedIn() &&
         request.resource.data.director_email == request.auth.token.email;
-      
+
       allow update, delete: if isSignedIn() && (
-        resource.data.director_email == request.auth.token.email || 
+        resource.data.director_email == request.auth.token.email ||
         !('director_email' in resource.data)
       );
     }
