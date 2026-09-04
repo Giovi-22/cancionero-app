@@ -7,25 +7,16 @@ import React, {
     useState,
 } from 'react';
 
-import { authService } from '../services/AuthService';
+import {
+    AuthenticatedUser,
+    authService,
+} from '../services/AuthService';
 import { UserService } from '../services/UserService';
 import { UserProfile } from '../types/band';
 
-export interface AuthenticatedUser {
-    id: string;
-    uid: string;
-    email: string | null;
-    user_metadata: {
-        full_name: string | null;
-        name: string | null;
-        avatar_url: string | null;
-    };
-}
-
 export interface UserContextType {
     /**
-     * Usuario autenticado en Firebase, normalizado para compatibilidad
-     * con la API que utilizaba anteriormente AppContext.
+     * Usuario autenticado en Firebase, normalizado para la aplicación.
      */
     user: AuthenticatedUser | null;
 
@@ -63,33 +54,38 @@ export const UserContextProvider = ({
     const [isLoading, setIsLoading] = useState(true);
 
     /**
-     * Convierte el usuario normalizado de AuthService en el perfil
-     * persistido de Firestore.
+     * Sincroniza el usuario autenticado con su perfil persistido
+     * en Firestore.
+     *
+     * La responsabilidad del perfil pertenece a UserContext/UserService.
      */
-    const syncProfile = useCallback(async (authUser: AuthenticatedUser) => {
-        try {
-            const profile = await UserService.syncUserProfile(authUser);
+    const syncProfile = useCallback(
+        async (authUser: AuthenticatedUser) => {
+            try {
+                const profile =
+                    await UserService.syncUserProfile(authUser);
 
-            if (profile) {
-                setUserProfile(profile);
+                if (profile) {
+                    setUserProfile(profile);
+                }
+            } catch (error) {
+                console.warn(
+                    '[UserContext] Error al sincronizar perfil:',
+                    error
+                );
             }
-        } catch (error) {
-            console.warn(
-                '[UserContext] Error al sincronizar perfil:',
-                error
-            );
-        }
-    }, []);
+        },
+        []
+    );
 
     useEffect(() => {
         /**
-         * AuthService ya se encarga internamente de:
-         * - escuchar Firebase Auth
-         * - normalizar el usuario
-         * - sincronizar el perfil
+         * AuthService solamente informa cambios en Firebase Auth.
          *
-         * UserContext agrega encima el estado React y conserva también
-         * el UserProfile disponible para el resto de la aplicación.
+         * UserContext se encarga de:
+         * - mantener el usuario en React
+         * - sincronizar su perfil
+         * - exponer el estado de autenticación al resto de la app
          */
         const unsubscribe = authService.onAuthStateChanged(
             (authUser: AuthenticatedUser | null) => {
@@ -101,10 +97,9 @@ export const UserContextProvider = ({
                     return;
                 }
 
+                // La sesión queda disponible inmediatamente.
+                // El perfil se sincroniza en segundo plano.
                 setIsLoading(false);
-
-                // La sincronización no debe bloquear la disponibilidad
-                // de la sesión para la UI.
                 syncProfile(authUser);
             }
         );
@@ -118,8 +113,11 @@ export const UserContextProvider = ({
         try {
             await authService.signOut();
         } finally {
-            // onAuthStateChanged también hará esto, pero limpiar
-            // inmediatamente evita mantener estado viejo durante el cierre.
+            /**
+             * onAuthStateChanged también actualizará este estado,
+             * pero lo limpiamos inmediatamente para evitar mostrar
+             * información del usuario durante el cierre de sesión.
+             */
             setUser(null);
             setUserProfile(null);
         }
