@@ -17,6 +17,7 @@ import { DirectorSessionBanner } from "../src/components/DirectorSessionBanner";
 //App Contexts
 import { useAppContext } from "../src/context/AppContext";
 import { UserContextProvider } from "../src/context/UserContext";
+import { DebugContextProvider } from "../src/context/DebugContext";
 
 function GlobalModals() {
     const { isLibrariesOpen, setIsLibrariesOpen } = useAppContext();
@@ -75,27 +76,29 @@ export default function RootLayout() {
             >
                 <UserContextProvider>
                     <StatusBar style="light" backgroundColor="#0a0a0a" translucent />
-                    <AppContextProvider>
-                        <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-                            <GlobalDirectorBanner />
-                            <View style={{ flex: 1 }}>
-                                <Stack
-                                    screenOptions={{
-                                        headerShown: false,
-                                    }}
-                                >
-                                    <Stack.Screen name="(tabs)" />
-                                    <Stack.Screen name="song/[id]" />
-                                    <Stack.Screen name="pedal-config" />
-                                    <Stack.Screen
-                                        name="setlist-player/[setlistId]"
-                                        options={{ animation: 'slide_from_bottom' }}
-                                    />
-                                </Stack>
+                    <DebugContextProvider>
+                        <AppContextProvider>
+                            <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+                                <GlobalDirectorBanner />
+                                <View style={{ flex: 1 }}>
+                                    <Stack
+                                        screenOptions={{
+                                            headerShown: false,
+                                        }}
+                                    >
+                                        <Stack.Screen name="(tabs)" />
+                                        <Stack.Screen name="song/[id]" />
+                                        <Stack.Screen name="pedal-config" />
+                                        <Stack.Screen
+                                            name="setlist-player/[setlistId]"
+                                            options={{ animation: 'slide_from_bottom' }}
+                                        />
+                                    </Stack>
+                                </View>
                             </View>
-                        </View>
-                        <GlobalModals />
-                    </AppContextProvider>
+                            <GlobalModals />
+                        </AppContextProvider>
+                    </DebugContextProvider>
                 </UserContextProvider>
             </SafeAreaProvider>
         </GestureHandlerRootView>

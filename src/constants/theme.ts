@@ -5,5 +5,6 @@ export const COLORS = {
   mutedForeground: '#a0a0a0',
   accent: '#3b82f6',
   border: '#333333',
-  card: '#121212'
+  card: '#121212',
+  text: '#ffffff'
 };

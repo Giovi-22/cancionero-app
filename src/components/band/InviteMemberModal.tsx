@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   Keyboard,
   Image,
   FlatList,
@@ -18,6 +17,7 @@ import {
   DriveFolderUser,
   DriveService,
 } from '../../services/DriveService';
+import AppModal from '../common/AppModal';
 
 interface InviteMemberModalProps {
   visible: boolean;
@@ -45,6 +45,16 @@ export function InviteMemberModal({
   const [driveUsers, setDriveUsers] = useState<DriveFolderUser[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
+
+  const [successModal, setSuccessModal] = useState<{
+    visible: boolean;
+    email: string;
+    role: 'member' | 'director';
+  }>({
+    visible: false,
+    email: '',
+    role: 'member',
+  });
 
   /**
    * Carga los usuarios de Drive cuando se abre el modal.
@@ -150,18 +160,17 @@ export function InviteMemberModal({
     try {
       await onInvite(trimmedEmail, role);
 
-      Alert.alert(
-        'Invitación enviada',
-        `Se envió una invitación a ${trimmedEmail} con el rol de ${role.toUpperCase()}.`
-      );
-
       setEmail('');
       setRole('member');
 
-      onClose();
+      setSuccessModal({
+        visible: true,
+        email: trimmedEmail,
+        role,
+      });
     } catch (e: any) {
       setError(
-        e.message ||
+        e?.message ||
         'Error al enviar la invitación.'
       );
     } finally {
@@ -170,10 +179,23 @@ export function InviteMemberModal({
   };
 
   /**
+   * Cierra el modal de éxito y posteriormente
+   * cierra el formulario de invitación.
+   */
+  const handleCloseSuccess = () => {
+    setSuccessModal(prev => ({
+      ...prev,
+      visible: false,
+    }));
+
+    onClose();
+  };
+
+  /**
    * Cierra el modal y limpia su estado.
    */
   const handleClose = () => {
-    if (loading) {
+    if (loading || successModal.visible) {
       return;
     }
 
@@ -199,330 +221,303 @@ export function InviteMemberModal({
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="fade"
-      onRequestClose={handleClose}
-    >
-      <View style={styles.overlay}>
-        <View style={styles.content}>
+    <>
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={handleClose}
+      >
+        <View style={styles.overlay}>
+          <View style={styles.content}>
 
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.titleRow}>
-              <UserPlus
-                color={COLORS.accent}
-                size={22}
-              />
+            {/* Header */}
+            <View style={styles.header}>
+              <View style={styles.titleRow}>
+                <UserPlus
+                  color={COLORS.accent}
+                  size={22}
+                />
 
-              <Text style={styles.title}>
-                Invitar Miembro
-              </Text>
+                <Text style={styles.title}>
+                  Invitar Miembro
+                </Text>
+              </View>
+
+              <TouchableOpacity
+                onPress={handleClose}
+                style={styles.closeBtn}
+                disabled={loading}
+              >
+                <X
+                  color={COLORS.mutedForeground}
+                  size={20}
+                />
+              </TouchableOpacity>
             </View>
 
-            <TouchableOpacity
-              onPress={handleClose}
-              style={styles.closeBtn}
-              disabled={loading}
-            >
-              <X
-                color={COLORS.mutedForeground}
-                size={20}
-              />
-            </TouchableOpacity>
-          </View>
-
-          <Text style={styles.subtitle}>
-            Ingresá el correo electrónico del músico.
-            Recibirá una notificación al iniciar sesión.
-          </Text>
-
-          {error && (
-            <Text style={styles.errorText}>
-              {error}
+            <Text style={styles.subtitle}>
+              Ingresá el correo electrónico del músico.
+              Recibirá una notificación al iniciar sesión.
             </Text>
-          )}
 
-          {/* Email */}
-          <Text style={styles.label}>
-            Correo Electrónico
-          </Text>
+            {error && (
+              <Text style={styles.errorText}>
+                {error}
+              </Text>
+            )}
 
-          <TextInput
-            style={styles.input}
-            placeholder="ejemplo@correo.com"
-            placeholderTextColor={
-              COLORS.mutedForeground
-            }
-            value={email}
-            onChangeText={handleEmailChange}
-            onFocus={() => {
-              setShowSuggestions(true);
-            }}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!loading}
-          />
+            {/* Email */}
+            <Text style={styles.label}>
+              Correo Electrónico
+            </Text>
 
-          {/* Lista de sugerencias */}
-          {showSuggestions && (
-            <View style={styles.suggestionsWrapper}>
+            <TextInput
+              style={styles.input}
+              placeholder="ejemplo@correo.com"
+              placeholderTextColor={
+                COLORS.mutedForeground
+              }
+              value={email}
+              onChangeText={handleEmailChange}
+              onFocus={() => {
+                setShowSuggestions(true);
+              }}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
+            />
 
-              {loadingUsers ? (
-                <View
-                  style={
-                    styles.loadingSuggestions
-                  }
-                >
-                  <ActivityIndicator
-                    size="small"
-                    color={COLORS.accent}
-                  />
+            {/* Lista de sugerencias */}
+            {showSuggestions && (
+              <View style={styles.suggestionsWrapper}>
 
-                  <Text
-                    style={
-                      styles.loadingText
-                    }
-                  >
-                    Cargando usuarios...
-                  </Text>
-                </View>
+                {loadingUsers ? (
+                  <View style={styles.loadingSuggestions}>
+                    <ActivityIndicator
+                      size="small"
+                      color={COLORS.accent}
+                    />
 
-              ) : filteredUsers.length > 0 ? (
+                    <Text style={styles.loadingText}>
+                      Cargando usuarios...
+                    </Text>
+                  </View>
 
-                <View style={styles.listContainer}>
-                  <FlatList
-                    data={filteredUsers}
-                    keyExtractor={item => item.id}
-                    renderItem={({ item }) => (
-                      <TouchableOpacity
-                        style={
-                          styles.userSuggestion
-                        }
-                        onPress={() =>
-                          handleSelectUser(item)
-                        }
-                        activeOpacity={0.7}
-                      >
-                        {/* Avatar */}
-                        {item.photoUrl ? (
-                          <Image
-                            source={{
-                              uri: item.photoUrl,
-                            }}
-                            style={
-                              styles.avatarImage
-                            }
-                          />
-                        ) : (
-                          <View
-                            style={styles.avatar}
-                          >
+                ) : filteredUsers.length > 0 ? (
+
+                  <View style={styles.listContainer}>
+                    <FlatList
+                      data={filteredUsers}
+                      keyExtractor={item => item.id}
+                      renderItem={({ item }) => (
+                        <TouchableOpacity
+                          style={styles.userSuggestion}
+                          onPress={() =>
+                            handleSelectUser(item)
+                          }
+                          activeOpacity={0.7}
+                        >
+                          {/* Avatar */}
+                          {item.photoUrl ? (
+                            <Image
+                              source={{
+                                uri: item.photoUrl,
+                              }}
+                              style={styles.avatarImage}
+                            />
+                          ) : (
+                            <View style={styles.avatar}>
+                              <Text style={styles.avatarText}>
+                                {(
+                                  item.name ||
+                                  item.email
+                                )
+                                  .charAt(0)
+                                  .toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
+
+                          {/* Nombre + email */}
+                          <View style={styles.userInfo}>
                             <Text
-                              style={
-                                styles.avatarText
-                              }
+                              style={styles.userName}
+                              numberOfLines={1}
                             >
-                              {(
-                                item.name ||
-                                item.email
-                              )
-                                .charAt(0)
-                                .toUpperCase()}
+                              {item.name ||
+                                item.email}
+                            </Text>
+
+                            <Text
+                              style={styles.userEmail}
+                              numberOfLines={1}
+                            >
+                              {item.email}
                             </Text>
                           </View>
-                        )}
+                        </TouchableOpacity>
+                      )}
+                      style={styles.usersList}
+                      keyboardShouldPersistTaps="handled"
+                      showsVerticalScrollIndicator={true}
+                      scrollEnabled={true}
+                      nestedScrollEnabled={true}
+                    />
+                  </View>
 
-                        {/* Nombre + email */}
-                        <View
-                          style={
-                            styles.userInfo
-                          }
-                        >
-                          <Text
-                            style={
-                              styles.userName
-                            }
-                            numberOfLines={1}
-                          >
-                            {item.name ||
-                              item.email}
-                          </Text>
+                ) : (
 
-                          <Text
-                            style={
-                              styles.userEmail
-                            }
-                            numberOfLines={1}
-                          >
-                            {item.email}
-                          </Text>
-                        </View>
-                      </TouchableOpacity>
-                    )}
-                    style={styles.usersList}
-                    keyboardShouldPersistTaps="handled"
-                    showsVerticalScrollIndicator={true}
-                    scrollEnabled={true}
-                    nestedScrollEnabled={true}
-                  />
-                </View>
+                  <View style={styles.emptySuggestions}>
+                    <Text style={styles.emptySuggestionsText}>
+                      No se encontraron usuarios.
+                    </Text>
+                  </View>
 
-              ) : (
+                )}
+              </View>
+            )}
 
-                <View
-                  style={
-                    styles.emptySuggestions
-                  }
-                >
-                  <Text
-                    style={
-                      styles.emptySuggestionsText
-                    }
-                  >
-                    No se encontraron usuarios.
-                  </Text>
-                </View>
+            {/* Rol */}
+            <Text style={styles.roleLabel}>
+              Rol en la banda
+            </Text>
 
-              )}
-            </View>
-          )}
+            <View style={styles.roleContainer}>
 
-          {/* Rol */}
-          <Text style={styles.roleLabel}>
-            Rol en la banda
-          </Text>
-
-          <View style={styles.roleContainer}>
-
-            {/* Miembro */}
-            <TouchableOpacity
-              style={[
-                styles.roleOption,
-                role === 'member' &&
-                styles.roleOptionSelected,
-              ]}
-              onPress={() =>
-                setRole('member')
-              }
-              disabled={loading}
-            >
-              <User
-                size={18}
-                color={
-                  role === 'member'
-                    ? COLORS.accent
-                    : COLORS.mutedForeground
-                }
-              />
-
-              <Text
+              {/* Miembro */}
+              <TouchableOpacity
                 style={[
-                  styles.roleText,
+                  styles.roleOption,
                   role === 'member' &&
-                  styles.roleTextSelected,
+                  styles.roleOptionSelected,
                 ]}
+                onPress={() =>
+                  setRole('member')
+                }
+                disabled={loading}
               >
-                Miembro
-              </Text>
-            </TouchableOpacity>
-
-            {/* Director */}
-            <TouchableOpacity
-              style={[
-                styles.roleOption,
-                role === 'director' &&
-                styles.roleOptionSelected,
-                !canInviteDirector &&
-                styles.roleOptionDisabled,
-              ]}
-              onPress={() =>
-                canInviteDirector &&
-                setRole('director')
-              }
-              disabled={
-                loading ||
-                !canInviteDirector
-              }
-            >
-              <Shield
-                size={18}
-                color={
-                  !canInviteDirector
-                    ? 'rgba(255, 255, 255, 0.2)'
-                    : role === 'director'
+                <User
+                  size={18}
+                  color={
+                    role === 'member'
                       ? COLORS.accent
                       : COLORS.mutedForeground
-                }
-              />
-
-              <Text
-                style={[
-                  styles.roleText,
-                  role === 'director' &&
-                  styles.roleTextSelected,
-                  !canInviteDirector &&
-                  styles.roleTextDisabled,
-                ]}
-              >
-                Director
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          {!canInviteDirector && (
-            <Text style={styles.hintText}>
-              * Únicamente el Propietario (Owner)
-              puede invitar a otros Directores.
-            </Text>
-          )}
-
-          {/* Actions */}
-          <View style={styles.actions}>
-
-            <TouchableOpacity
-              style={styles.cancelBtn}
-              onPress={handleClose}
-              disabled={loading}
-            >
-              <Text
-                style={styles.cancelBtnText}
-              >
-                Cancelar
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.submitBtn,
-                loading &&
-                styles.submitBtnDisabled,
-              ]}
-              onPress={handleSubmit}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator
-                  color="#000"
-                  size="small"
-                />
-              ) : (
-                <Text
-                  style={
-                    styles.submitBtnText
                   }
-                >
-                  Enviar invitación
-                </Text>
-              )}
-            </TouchableOpacity>
+                />
 
+                <Text
+                  style={[
+                    styles.roleText,
+                    role === 'member' &&
+                    styles.roleTextSelected,
+                  ]}
+                >
+                  Miembro
+                </Text>
+              </TouchableOpacity>
+
+              {/* Director */}
+              <TouchableOpacity
+                style={[
+                  styles.roleOption,
+                  role === 'director' &&
+                  styles.roleOptionSelected,
+                  !canInviteDirector &&
+                  styles.roleOptionDisabled,
+                ]}
+                onPress={() =>
+                  canInviteDirector &&
+                  setRole('director')
+                }
+                disabled={
+                  loading ||
+                  !canInviteDirector
+                }
+              >
+                <Shield
+                  size={18}
+                  color={
+                    !canInviteDirector
+                      ? 'rgba(255, 255, 255, 0.2)'
+                      : role === 'director'
+                        ? COLORS.accent
+                        : COLORS.mutedForeground
+                  }
+                />
+
+                <Text
+                  style={[
+                    styles.roleText,
+                    role === 'director' &&
+                    styles.roleTextSelected,
+                    !canInviteDirector &&
+                    styles.roleTextDisabled,
+                  ]}
+                >
+                  Director
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            {!canInviteDirector && (
+              <Text style={styles.hintText}>
+                * Únicamente el Propietario (Owner)
+                puede invitar a otros Directores.
+              </Text>
+            )}
+
+            {/* Actions */}
+            <View style={styles.actions}>
+
+              <TouchableOpacity
+                style={styles.cancelBtn}
+                onPress={handleClose}
+                disabled={loading}
+              >
+                <Text style={styles.cancelBtnText}>
+                  Cancelar
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.submitBtn,
+                  loading &&
+                  styles.submitBtnDisabled,
+                ]}
+                onPress={handleSubmit}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator
+                    color="#000"
+                    size="small"
+                  />
+                ) : (
+                  <Text style={styles.submitBtnText}>
+                    Enviar invitación
+                  </Text>
+                )}
+              </TouchableOpacity>
+
+            </View>
           </View>
         </View>
-      </View>
-    </Modal>
+      </Modal>
+
+      {/* Confirmación de invitación enviada */}
+      <AppModal
+        visible={successModal.visible}
+        type="success"
+        title="Invitación enviada"
+        message={`Se envió una invitación a ${successModal.email} con el rol de ${successModal.role.toUpperCase()}.`}
+        confirmText="Aceptar"
+        onConfirm={handleCloseSuccess}
+        dismissOnBackdrop={false}
+      />
+    </>
   );
 }
 
@@ -806,3 +801,4 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 });
+

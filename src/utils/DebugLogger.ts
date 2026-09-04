@@ -1,15 +1,15 @@
 /**
  * DebugLogger
  *
- * Logger centralizado de la aplicación.
+ * Logger global de la aplicación.
  *
  * Permite:
  * - Activar / desactivar logs.
  * - Filtrar por nivel.
  * - Filtrar por módulo.
- * - Mantener errores visibles aunque el debug esté apagado.
+ * - Mantener errores visibles.
  *
- * Ejemplo:
+ * Uso:
  *
  *   import { logger } from '../utils/DebugLogger';
  *
@@ -24,8 +24,8 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'none';
 export interface DebugLoggerConfig {
     enabled: boolean;
     level: LogLevel;
-    enabledModules?: string[];
-    disabledModules?: string[];
+    enabledModules: string[];
+    disabledModules: string[];
 }
 
 const LEVEL_PRIORITY: Record<LogLevel, number> = {
@@ -36,115 +36,112 @@ const LEVEL_PRIORITY: Record<LogLevel, number> = {
     none: 99,
 };
 
+const DEFAULT_CONFIG: DebugLoggerConfig = {
+    enabled: true,
+    level: 'debug',
+    enabledModules: [],
+    disabledModules: [],
+};
+
 class DebugLogger {
-    private enabled = true;
-
-    private level: LogLevel = 'debug';
-
-    private enabledModules: Set<string> = new Set();
-
-    private disabledModules: Set<string> = new Set();
+    private config: DebugLoggerConfig = {
+        ...DEFAULT_CONFIG,
+        enabledModules: [],
+        disabledModules: [],
+    };
 
     /**
-     * Configuración general.
+     * Configura el logger.
      */
     configure(config: Partial<DebugLoggerConfig>) {
-        if (config.enabled !== undefined) {
-            this.enabled = config.enabled;
-        }
-
-        if (config.level !== undefined) {
-            this.level = config.level;
-        }
-
-        if (config.enabledModules !== undefined) {
-            this.enabledModules = new Set(config.enabledModules);
-        }
-
-        if (config.disabledModules !== undefined) {
-            this.disabledModules = new Set(config.disabledModules);
-        }
+        this.config = {
+            ...this.config,
+            ...config,
+            enabledModules:
+                config.enabledModules ?? this.config.enabledModules,
+            disabledModules:
+                config.disabledModules ?? this.config.disabledModules,
+        };
     }
 
     /**
-     * Activa o desactiva completamente el logger.
-     *
-     * Los errores siguen mostrándose mediante console.error
-     * aunque el logger esté desactivado.
+     * Activa/desactiva los logs globalmente.
      */
     setEnabled(enabled: boolean) {
-        this.enabled = enabled;
+        this.config.enabled = enabled;
     }
 
     /**
-     * Cambia el nivel mínimo que se muestra.
+     * Cambia el nivel mínimo de log.
      */
     setLevel(level: LogLevel) {
-        this.level = level;
+        this.config.level = level;
     }
 
     /**
-     * Activa un módulo.
+     * Activa un módulo específico.
      */
     enableModule(module: string) {
-        this.enabledModules.add(module);
-        this.disabledModules.delete(module);
+        this.config.enabledModules = [
+            ...this.config.enabledModules.filter(m => m !== module),
+        ];
+
+        this.config.disabledModules =
+            this.config.disabledModules.filter(m => m !== module);
     }
 
     /**
-     * Desactiva un módulo.
+     * Desactiva un módulo específico.
      */
     disableModule(module: string) {
-        this.disabledModules.add(module);
-        this.enabledModules.delete(module);
+        this.config.disabledModules = [
+            ...this.config.disabledModules.filter(m => m !== module),
+            module,
+        ];
+
+        this.config.enabledModules =
+            this.config.enabledModules.filter(m => m !== module);
     }
 
     /**
      * Limpia todos los filtros de módulos.
      */
     clearModuleFilters() {
-        this.enabledModules.clear();
-        this.disabledModules.clear();
+        this.config.enabledModules = [];
+        this.config.disabledModules = [];
     }
 
     /**
-     * Devuelve la configuración actual.
+     * Obtiene una copia de la configuración actual.
      */
     getConfig(): DebugLoggerConfig {
         return {
-            enabled: this.enabled,
-            level: this.level,
-            enabledModules: Array.from(this.enabledModules),
-            disabledModules: Array.from(this.disabledModules),
+            ...this.config,
+            enabledModules: [...this.config.enabledModules],
+            disabledModules: [...this.config.disabledModules],
         };
     }
 
-    /**
-     * Log DEBUG.
-     */
     debug(module: string, message: string, ...data: any[]) {
         this.log('debug', module, message, data);
     }
 
-    /**
-     * Log INFO.
-     */
     info(module: string, message: string, ...data: any[]) {
         this.log('info', module, message, data);
     }
 
-    /**
-     * Log WARNING.
-     */
     warn(module: string, message: string, ...data: any[]) {
         this.log('warn', module, message, data);
     }
 
-    /**
-     * Log ERROR.
-     */
     error(module: string, message: string, ...data: any[]) {
-        this.log('error', module, message, data);
+        /*
+         * Los errores siempre se muestran.
+         *
+         * Esto es intencional: aunque el usuario desactive
+         * el modo debug, no queremos esconder errores reales.
+         */
+        console.error(`[${module}] ${message}`, ...data);
     }
 
     private log(
@@ -153,38 +150,36 @@ class DebugLogger {
         message: string,
         data: any[],
     ) {
+        if (!this.config.enabled) {
+            return;
+        }
+
+        if (this.config.level === 'none') {
+            return;
+        }
+
+        if (
+            LEVEL_PRIORITY[level] <
+            LEVEL_PRIORITY[this.config.level]
+        ) {
+            return;
+        }
+
         /*
-         * Los errores se mantienen visibles aunque el logger
-         * esté desactivado.
+         * Si el módulo está explícitamente desactivado,
+         * no mostramos sus logs.
          */
-        if (level === 'error') {
-            console.error(`[${module}] ${message}`, ...data);
-            return;
-        }
-
-        if (!this.enabled) {
-            return;
-        }
-
-        if (this.level === 'none') {
-            return;
-        }
-
-        if (LEVEL_PRIORITY[level] < LEVEL_PRIORITY[this.level]) {
-            return;
-        }
-
-        if (this.disabledModules.has(module)) {
+        if (this.config.disabledModules.includes(module)) {
             return;
         }
 
         /*
-         * Si hay una whitelist de módulos, solamente mostramos
-         * los módulos incluidos.
+         * Si existe una whitelist de módulos,
+         * solamente mostramos esos módulos.
          */
         if (
-            this.enabledModules.size > 0 &&
-            !this.enabledModules.has(module)
+            this.config.enabledModules.length > 0 &&
+            !this.config.enabledModules.includes(module)
         ) {
             return;
         }
@@ -207,11 +202,4 @@ class DebugLogger {
     }
 }
 
-/**
- * Instancia global.
- *
- * Se utiliza en toda la aplicación:
- *
- *   import { logger } from '../utils/DebugLogger';
- */
 export const logger = new DebugLogger();
