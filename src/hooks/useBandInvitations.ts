@@ -146,27 +146,11 @@ export function useBandInvitations(
           photoURL: user.user_metadata?.avatar_url || null,
         };
 
-        console.log('[useBandInvitations] Aceptando invitación:', {
-          invitationId,
-          uid: userProfile.uid,
-          email: userProfile.email,
-        });
-
-        console.log('[useBandInvitations] Sincronizando perfil...');
-
         await UserService.syncUserProfile(userProfile);
-
-        console.log(
-          '[useBandInvitations] Perfil sincronizado. Llamando a InvitationService...'
-        );
 
         await InvitationService.acceptInvitation(
           invitationId,
           userProfile
-        );
-
-        console.log(
-          '[useBandInvitations] ✅ Invitación aceptada correctamente.'
         );
       } catch (err: any) {
         console.error(

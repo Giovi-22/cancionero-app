@@ -18,14 +18,6 @@ export function useBands() {
     return getBandPermissions(userRole);
   }, [userRole]);
 
-  console.log('[useBands] userRole:', userRole);
-  console.log(
-    '[useBands] permissions:',
-    getBandPermissions(userRole)
-  );
-  console.log('[useBands] selectedBand:', selectedBand?.id);
-  console.log('[useBands] userRole:', userRole);
-
   // ============================================================
   // Cargar bandas inicialmente
   // ============================================================

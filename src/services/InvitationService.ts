@@ -95,7 +95,6 @@ export class InvitationService {
     };
 
     await invRef.set(newInvitationData);
-    console.log('[InvitationService] Invitación creada:', invRef.id);
     return newInvitationData as Invitation;
   }
 
@@ -200,11 +199,6 @@ export class InvitationService {
       return () => { };
     }
 
-    console.log(
-      '[InvitationService] Suscribiendo a invitaciones de la banda:',
-      bandId
-    );
-
     return firestore()
       .collection(this.COLLECTION)
       .where('bandId', '==', bandId)
@@ -238,11 +232,6 @@ export class InvitationService {
 
             return dateB - dateA;
           });
-
-          console.log(
-            '[InvitationService] Invitaciones pendientes de la banda:',
-            pendingInvitations
-          );
 
           onUpdate(pendingInvitations);
         },
@@ -315,28 +304,14 @@ export class InvitationService {
       .doc(userProfile.uid);
 
     const memberSnap = await memberRef.get();
-    console.log(
-      '[InvitationService] Verificando miembro:',
-      {
-        bandId: invitation.bandId,
-        userId: userProfile.uid,
-        exists: memberSnap.exists(),
-      }
-    );
     if (memberSnap.exists()) {
       // Ya es miembro, solo actualizar el estado de la invitación
-      console.log(
-        '[InvitationService] ⚠️ El miembro YA EXISTE. Solo se actualizará la invitación.'
-      );
       await invRef.update({
         status: 'accepted',
         invitedUserId: userProfile.uid,
       });
       return;
     }
-    console.log(
-      '[InvitationService] El miembro NO existe. Creando invitación + miembro en batch.'
-    );
     const now = new Date().toISOString();
 
     const newMember: BandMember = {
@@ -363,17 +338,6 @@ export class InvitationService {
 
     // Comprometer ambas escrituras atómicamente
     await batch.commit();
-
-    console.log(
-      '[InvitationService] ✅ Batch aceptado correctamente:',
-      {
-        invitationId,
-        bandId: invitation.bandId,
-        userId: userProfile.uid,
-        memberPath: `bands/${invitation.bandId}/members/${userProfile.uid}`,
-      }
-    );
-    console.log('[InvitationService] Invitación aceptada atómicamente. Miembro creado:', userProfile.uid);
   }
 
   /**
@@ -395,7 +359,6 @@ export class InvitationService {
     await invRef.update({
       status: 'rejected',
     });
-    console.log('[InvitationService] Invitación rechazada:', invitationId);
   }
 
   /**
@@ -406,6 +369,5 @@ export class InvitationService {
     await invRef.update({
       status: 'cancelled',
     });
-    console.log('[InvitationService] Invitación cancelada:', invitationId);
   }
 }

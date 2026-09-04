@@ -226,11 +226,6 @@ export class StorageService {
           }
         }
       }
-
-      console.log(
-        `[Migration] Local songs migration completed. ` +
-        `Standardized ${migratedCount}/${songs.length} songs to ChordPro.`
-      );
     } catch (error) {
       console.error(
         '[Migration] Failed to migrate local songs:',

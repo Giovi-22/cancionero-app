@@ -21,8 +21,6 @@ export class SyncService {
     this.isSyncing = true;
 
     try {
-      console.log(`[Sync] Starting full repertoire sync for folder: ${folderId} (Force: ${force})`);
-
       // 1. Verificar autenticación y traer datos de Firestore
       const token = await authService.getGoogleAccessToken();
       if (!token) throw new Error('Usuario no autenticado en Google');
@@ -31,9 +29,7 @@ export class SyncService {
       await StorageService.pullFromFirestore();
 
       // 2. Obtener lista de canciones remotas (incluyendo subcarpetas recursivamente)
-      console.log('[Sync] Scanning Drive folder recursively (including subfolders)...');
       const remoteFiles = await DriveService.getSongsFromFolderRecursive(folderId);
-      console.log(`[Sync] Found ${remoteFiles.length} total files across all subfolders.`);
 
       // 3. Obtener lista local para comparar
       const localSongs = await StorageService.getAllSongs(libraryId);
@@ -58,26 +54,12 @@ export class SyncService {
           localSong.modifiedTime !== remoteFile.modifiedTime ||
           (localSong.localPath ?? '').includes('undefined')
         ) {
-          if (force) {
-            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Sincronización forzada)`);
-          } else if (!localSong) {
-            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (No existe localmente)`);
-          } else if (!fileExists) {
-            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Falta el archivo físico)`);
-          } else if (localSong.modifiedTime !== remoteFile.modifiedTime) {
-            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Modificada en la nube. Local: '${localSong.modifiedTime || 'Ninguna'}', Drive: '${remoteFile.modifiedTime || 'Ninguna'}')`);
-          } else {
-            console.log(`[Sync] Canción '${remoteFile.name}' requiere descarga (Ruta local corrupta)`);
-          }
-
           songsToUpdate.push({
             id: remoteFile.id,
             name: remoteFile.name,
             mimeType: remoteFile.mimeType,
             modifiedTime: remoteFile.modifiedTime
           });
-        } else {
-          console.log(`[Sync] Canción '${remoteFile.name}' al día. Fecha: '${localSong.modifiedTime}'`);
         }
       }
 
@@ -88,8 +70,6 @@ export class SyncService {
           songsToDelete.push(localSong.id);
         }
       }
-
-      console.log(`[Sync] Sync plan: ${songsToUpdate.length} to download, ${songsToDelete.length} to delete.`);
 
       // Conjunto para registrar los IDs de descargas fallidas
       const failedSongIds = new Set<string>();
@@ -122,8 +102,6 @@ export class SyncService {
 
       await StorageService.saveSongs(finalMetadata, libraryId);
 
-      console.log('[Sync] Sync completed successfully.');
-
       // Retornar true si hubo descargas exitosas o eliminaciones
       const successfulDownloadsCount = songsToUpdate.length - failedSongIds.size;
       return successfulDownloadsCount > 0 || songsToDelete.length > 0;
@@ -147,7 +125,6 @@ export class SyncService {
           }
         })
       );
-      console.log(`[Sync] Downloaded batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(songs.length / BATCH_SIZE)}`);
     }
   }
 

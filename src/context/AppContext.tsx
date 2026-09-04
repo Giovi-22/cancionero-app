@@ -245,16 +245,11 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
 
   const triggerBackgroundSync = async (folderId: string, libId: string) => {
     try {
-      console.log(`[Background Sync] Iniciando verificación silenciosa para biblioteca: ${libId}...`);
       const didChange = await SyncService.syncFullRepertoire(folderId, false, libId);
       if (didChange) {
-        console.log('[Background Sync] Cambios detectados. Refrescando UI...');
         await refreshLocalDataForLibrary(libId);
-      } else {
-        console.log('[Background Sync] Al día.');
       }
     } catch (error) {
-      console.log('[Background Sync] Falló de forma silenciosa:', error);
     }
   };
 
@@ -656,8 +651,6 @@ export const AppContextProvider = ({ children }: { children: ReactNode }) => {
   };
 
   const selectFolder = (id: string) => {
-    console.log('[AppContext] selectFolder - ID:', id);
-    console.log('[AppContext] selectFolder - folderPickerCallback:', folderPickerCallback);
     if (folderPickerCallback) {
       folderPickerCallback(id);
     } else {

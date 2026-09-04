@@ -68,8 +68,6 @@ export class BandService {
     if (!userId) return [];
 
     try {
-      console.log('[BandService] getUserBands - userId:', userId);
-
       const membersSnapshot = await firestore()
         .collectionGroup('members')
         .where('userId', '==', userId)
