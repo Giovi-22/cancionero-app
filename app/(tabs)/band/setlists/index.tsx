@@ -4,7 +4,6 @@ import {
     StyleSheet,
     TouchableOpacity,
     Text,
-    Alert,
 } from 'react-native';
 import { CreateBandSetlistModal } from '../../../../src/components/band/CreateBandSetlistModal';
 import { router } from 'expo-router';
@@ -19,6 +18,20 @@ import { useBandSetlists } from '../../../../src/hooks/useBandSetlists';
 import { useAppContext } from '../../../../src/context/AppContext';
 import { useDirectorSession } from '../../../../src/hooks/useDirectorSession';
 import { BandSetlistService } from '../../../../src/services/BandSetlistService';
+import AppModal from '../../../../src/components/common/AppModal';
+
+type FeedbackModalType =
+    | 'danger'
+    | 'warning'
+    | 'success'
+    | 'info';
+
+interface FeedbackModalState {
+    visible: boolean;
+    type: FeedbackModalType;
+    title: string;
+    message: string;
+}
 
 export default function BandSetlistsScreen() {
     const [isCreateModalOpen, setIsCreateModalOpen] =
@@ -26,6 +39,28 @@ export default function BandSetlistsScreen() {
 
     const [deletingSetlistId, setDeletingSetlistId] =
         useState<string | null>(null);
+
+    // ============================================================
+    // AppModal - Eliminar repertorio
+    // ============================================================
+    const [
+        setlistToDelete,
+        setSetlistToDelete,
+    ] = useState<BandSetlist | null>(null);
+
+    const [isDeletingSetlist, setIsDeletingSetlist] =
+        useState(false);
+
+    // ============================================================
+    // AppModal - Feedback general
+    // ============================================================
+    const [feedbackModal, setFeedbackModal] =
+        useState<FeedbackModalState>({
+            visible: false,
+            type: 'info',
+            title: '',
+            message: '',
+        });
 
     const insets = useSafeAreaInsets();
 
@@ -65,6 +100,32 @@ export default function BandSetlistsScreen() {
     const canDeleteSetlist = canManageSetlists;
     const canCreateSetlist = canManageSetlists;
 
+    // ============================================================
+    // Feedback modal helpers
+    // ============================================================
+    const showFeedbackModal = (
+        type: FeedbackModalType,
+        title: string,
+        message: string
+    ) => {
+        setFeedbackModal({
+            visible: true,
+            type,
+            title,
+            message,
+        });
+    };
+
+    const closeFeedbackModal = () => {
+        setFeedbackModal(prev => ({
+            ...prev,
+            visible: false,
+        }));
+    };
+
+    // ============================================================
+    // Seleccionar repertorio
+    // ============================================================
     const handleSelectSetlist = (
         setlist: BandSetlist
     ) => {
@@ -76,6 +137,9 @@ export default function BandSetlistsScreen() {
         });
     };
 
+    // ============================================================
+    // Crear repertorio
+    // ============================================================
     const handleCreateSetlist = () => {
         if (!canCreateSetlist) {
             return;
@@ -93,6 +157,9 @@ export default function BandSetlistsScreen() {
         setIsCreateModalOpen(false);
     };
 
+    // ============================================================
+    // Solicitar eliminación de repertorio
+    // ============================================================
     const handleDeleteSetlist = (
         setlist: BandSetlist
     ) => {
@@ -103,61 +170,71 @@ export default function BandSetlistsScreen() {
         // Por seguridad, no permitimos eliminar desde acá
         // un repertorio que tiene una sesión activa.
         if (activeSession?.setlistId === setlist.id) {
-            Alert.alert(
+            showFeedbackModal(
+                'warning',
                 'Repertorio en vivo',
                 'Este repertorio está siendo reproducido actualmente. Finalizá la sesión de Director Mode antes de eliminarlo.'
             );
             return;
         }
 
-        Alert.alert(
-            'Eliminar repertorio',
-            `¿Seguro que querés eliminar "${setlist.name}"?\n\nEsta acción no se puede deshacer.`,
-            [
-                {
-                    text: 'Cancelar',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Eliminar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        if (!activeBandId) {
-                            Alert.alert(
-                                'Error',
-                                'No hay una banda seleccionada.'
-                            );
-                            return;
-                        }
-
-                        try {
-                            setDeletingSetlistId(
-                                setlist.id
-                            );
-
-                            await BandSetlistService.deleteBandSetlist(
-                                activeBandId,
-                                setlist.id
-                            );
-                        } catch (err) {
-                            console.error(
-                                '[BandSetlistsScreen] Error eliminando repertorio:',
-                                err
-                            );
-
-                            Alert.alert(
-                                'Error',
-                                'No se pudo eliminar el repertorio. Intentá nuevamente.'
-                            );
-                        } finally {
-                            setDeletingSetlistId(null);
-                        }
-                    },
-                },
-            ]
-        );
+        setSetlistToDelete(setlist);
     };
 
+    // ============================================================
+    // Confirmar eliminación de repertorio
+    // ============================================================
+    const handleConfirmDeleteSetlist = async () => {
+        if (!setlistToDelete) {
+            return;
+        }
+
+        if (!activeBandId) {
+            setSetlistToDelete(null);
+
+            showFeedbackModal(
+                'danger',
+                'Error',
+                'No hay una banda seleccionada.'
+            );
+
+            return;
+        }
+
+        try {
+            setIsDeletingSetlist(true);
+            setDeletingSetlistId(
+                setlistToDelete.id
+            );
+
+            await BandSetlistService.deleteBandSetlist(
+                activeBandId,
+                setlistToDelete.id
+            );
+
+            setSetlistToDelete(null);
+        } catch (err) {
+            console.error(
+                '[BandSetlistsScreen] Error eliminando repertorio:',
+                err
+            );
+
+            setSetlistToDelete(null);
+
+            showFeedbackModal(
+                'danger',
+                'Error',
+                'No se pudo eliminar el repertorio. Intentá nuevamente.'
+            );
+        } finally {
+            setIsDeletingSetlist(false);
+            setDeletingSetlistId(null);
+        }
+    };
+
+    // ============================================================
+    // Volver
+    // ============================================================
     const handleGoBack = () => {
         router.back();
     };
@@ -220,6 +297,41 @@ export default function BandSetlistsScreen() {
                         : undefined
                 }
                 deletingSetlistId={deletingSetlistId}
+            />
+
+            {/* ====================================================
+                AppModal - Eliminar repertorio
+            ==================================================== */}
+            <AppModal
+                visible={!!setlistToDelete}
+                type="danger"
+                title="Eliminar repertorio"
+                message={
+                    setlistToDelete
+                        ? `¿Seguro que querés eliminar "${setlistToDelete.name}"?\n\nEsta acción no se puede deshacer.`
+                        : ''
+                }
+                confirmText="Eliminar"
+                cancelText="Cancelar"
+                onCancel={() =>
+                    setSetlistToDelete(null)
+                }
+                onConfirm={
+                    handleConfirmDeleteSetlist
+                }
+                loading={isDeletingSetlist}
+            />
+
+            {/* ====================================================
+                AppModal - Feedback general
+            ==================================================== */}
+            <AppModal
+                visible={feedbackModal.visible}
+                type={feedbackModal.type}
+                title={feedbackModal.title}
+                message={feedbackModal.message}
+                confirmText="Aceptar"
+                onConfirm={closeFeedbackModal}
             />
 
             {/* Crear repertorio */}

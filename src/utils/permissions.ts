@@ -40,7 +40,7 @@ export function getBandPermissions(role: BandRole | null): BandPermissions {
         canRemoveMembers: false,
         canCreateDirectorSession: true,
         canControlDirectorSession: true,
-        canManageSetlists: false,
+        canManageSetlists: true,
       };
     case 'member':
     default:

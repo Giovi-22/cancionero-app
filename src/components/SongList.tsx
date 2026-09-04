@@ -63,6 +63,14 @@ interface SongListProps {
 
   isSetlistMode?: boolean;
 
+  /**
+   * Indica si el usuario puede modificar el repertorio.
+   *
+   * Owner/director: true
+   * Member: false
+   */
+  canManageSetlist?: boolean;
+
   onRemoveFromSetlist?: (songId: string) => void;
 
   onAddSongsPress?: () => void;
@@ -71,10 +79,6 @@ interface SongListProps {
 
   scrollEnabled?: boolean;
 
-  /**
-   * Estado de carga de la canción que se está abriendo.
-   * SongList ya no obtiene esto directamente desde AppContext.
-   */
   loadingSongId?: string | null;
 
   /**
@@ -139,6 +143,7 @@ interface SortableItemProps {
   scrollRef: any;
   total: number;
   isSetlistMode?: boolean;
+  canManageSetlist?: boolean;
   onSongPress: (song: SongMetadata) => void;
   onRemoveFromSetlist?: (songId: string) => void;
   onReorder?: (fromIndex: number, toIndex: number) => void;
@@ -155,6 +160,7 @@ function SortableItem({
   scrollRef,
   total,
   isSetlistMode,
+  canManageSetlist,
   onSongPress,
   onRemoveFromSetlist,
   onReorder,
@@ -182,10 +188,8 @@ function SortableItem({
       startTop.value = positions.value[song.id] * ITEM_HEIGHT;
     })
     .onUpdate((e) => {
-      // Relative movement prevents jumping
       top.value = startTop.value + e.translationY;
 
-      // ── Autoscroll up ──────────────────────────────────────
       if (e.absoluteY < AUTOSCROLL_THRESHOLD) {
         const nextScroll = Math.max(
           0,
@@ -196,7 +200,6 @@ function SortableItem({
         scrollY.value = nextScroll;
       }
 
-      // ── Autoscroll down ────────────────────────────────────
       if (e.absoluteY > SCREEN_HEIGHT - AUTOSCROLL_THRESHOLD) {
         const maxScroll = Math.max(
           0,
@@ -212,7 +215,6 @@ function SortableItem({
         scrollY.value = nextScroll;
       }
 
-      // ── Swap logic ─────────────────────────────────────────
       const centerOfCard = top.value + ITEM_HEIGHT / 2;
 
       const newIndex = clamp(
@@ -247,8 +249,6 @@ function SortableItem({
     if (!isDragging.value) {
       const pos = positions.value[song.id];
 
-      // Guard: si pos es undefined (timing entre JS y UI thread),
-      // usar initialIndex.
       const targetPos =
         pos !== undefined ? pos : initialIndex;
 
@@ -287,7 +287,7 @@ function SortableItem({
       <View style={styles.songRow}>
 
         {/* Grip handle */}
-        {isSetlistMode && (
+        {isSetlistMode && canManageSetlist && (
           <GestureDetector gesture={gesture}>
             <View style={styles.gripHandle}>
               <GripVertical
@@ -339,9 +339,12 @@ function SortableItem({
                 <TouchableOpacity
                   style={styles.songNoteBadge}
                   onPress={() =>
+                    canManageSetlist &&
                     onEditSongNote?.(song)
                   }
-                  activeOpacity={0.7}
+                  activeOpacity={
+                    canManageSetlist ? 0.7 : 1
+                  }
                 >
                   <FileText
                     size={10}
@@ -365,42 +368,44 @@ function SortableItem({
             </View>
 
             {/* Compact note badge button */}
-            {isSetlistMode && onEditSongNote && (
-              <TouchableOpacity
-                style={[
-                  styles.compactNoteBadgeBtn,
-                  !!songNote &&
-                  styles.compactNoteBadgeBtnActive,
-                ]}
-                onPress={() =>
-                  onEditSongNote(song)
-                }
-                activeOpacity={0.7}
-                hitSlop={{
-                  top: 8,
-                  bottom: 8,
-                  left: 8,
-                  right: 8,
-                }}
-              >
-                <FileText
-                  size={13}
-                  color={
-                    songNote
-                      ? COLORS.accent
-                      : COLORS.mutedForeground
+            {isSetlistMode &&
+              canManageSetlist &&
+              onEditSongNote && (
+                <TouchableOpacity
+                  style={[
+                    styles.compactNoteBadgeBtn,
+                    !!songNote &&
+                    styles.compactNoteBadgeBtnActive,
+                  ]}
+                  onPress={() =>
+                    onEditSongNote(song)
                   }
-                />
+                  activeOpacity={0.7}
+                  hitSlop={{
+                    top: 8,
+                    bottom: 8,
+                    left: 8,
+                    right: 8,
+                  }}
+                >
+                  <FileText
+                    size={13}
+                    color={
+                      songNote
+                        ? COLORS.accent
+                        : COLORS.mutedForeground
+                    }
+                  />
 
-                {songNote ? (
-                  <Text
-                    style={styles.compactNoteBadgeText}
-                  >
-                    Nota
-                  </Text>
-                ) : null}
-              </TouchableOpacity>
-            )}
+                  {songNote ? (
+                    <Text
+                      style={styles.compactNoteBadgeText}
+                    >
+                      Nota
+                    </Text>
+                  ) : null}
+                </TouchableOpacity>
+              )}
 
             {isLoading ? (
               <ActivityIndicator
@@ -418,6 +423,7 @@ function SortableItem({
 
         {/* Remove button */}
         {isSetlistMode &&
+          canManageSetlist &&
           onRemoveFromSetlist && (
             <TouchableOpacity
               style={styles.removeBtn}
@@ -443,6 +449,7 @@ export const SongList: React.FC<SongListProps> = ({
   onSongPress,
   onSyncPress,
   isSetlistMode,
+  canManageSetlist = false,
   onRemoveFromSetlist,
   onAddSongsPress,
   onReorder,
@@ -479,6 +486,10 @@ export const SongList: React.FC<SongListProps> = ({
   const handleOpenSongNote = (
     song: SongMetadata
   ) => {
+    if (!canManageSetlist) {
+      return;
+    }
+
     setEditingSong(song);
 
     const existing =
@@ -490,7 +501,8 @@ export const SongList: React.FC<SongListProps> = ({
   const handleSaveSongNote = async () => {
     if (
       !editingSong ||
-      !onSaveSongNote
+      !onSaveSongNote ||
+      !canManageSetlist
     ) {
       return;
     }
@@ -512,7 +524,8 @@ export const SongList: React.FC<SongListProps> = ({
   const handleDeleteSongNote = async () => {
     if (
       !editingSong ||
-      !onDeleteSongNote
+      !onDeleteSongNote ||
+      !canManageSetlist
     ) {
       return;
     }
@@ -561,6 +574,10 @@ export const SongList: React.FC<SongListProps> = ({
     from: number,
     to: number
   ) => {
+    if (!canManageSetlist) {
+      return;
+    }
+
     onReorder?.(from, to);
   };
 
@@ -581,6 +598,7 @@ export const SongList: React.FC<SongListProps> = ({
         </Text>
 
         {isSetlistMode ? (
+          canManageSetlist &&
           onAddSongsPress && (
             <TouchableOpacity
               style={styles.syncButton}
@@ -646,14 +664,16 @@ export const SongList: React.FC<SongListProps> = ({
               scrollRef={scrollRef}
               total={songs.length}
               isSetlistMode={isSetlistMode}
+              canManageSetlist={canManageSetlist}
               onSongPress={onSongPress}
               onRemoveFromSetlist={
                 onRemoveFromSetlist
               }
               onReorder={handleReorder}
               onEditSongNote={
-                onSaveSongNote ||
-                  onDeleteSongNote
+                canManageSetlist &&
+                  (onSaveSongNote ||
+                    onDeleteSongNote)
                   ? handleOpenSongNote
                   : undefined
               }
@@ -777,7 +797,8 @@ export const SongList: React.FC<SongListProps> = ({
                   }
                   disabled={
                     isSavingNote ||
-                    !onDeleteSongNote
+                    !onDeleteSongNote ||
+                    !canManageSetlist
                   }
                 >
                   <Trash2
@@ -808,7 +829,8 @@ export const SongList: React.FC<SongListProps> = ({
                 }
                 disabled={
                   isSavingNote ||
-                  !onSaveSongNote
+                  !onSaveSongNote ||
+                  !canManageSetlist
                 }
               >
                 {isSavingNote ? (
@@ -991,12 +1013,7 @@ const styles = StyleSheet.create({
     borderColor:
       'rgba(59, 130, 246, 0.4)',
   },
-
-  compactNoteBadgeText: {
-    color: COLORS.accent,
-    fontSize: 11,
-    fontWeight: '600',
-  },
+  compactNoteBadgeText: { color: COLORS.accent, fontSize: 11, fontWeight: '600', },
 
   songNoteBadge: {
     flexDirection: 'row',

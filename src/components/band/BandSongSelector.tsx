@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     FlatList,
     StyleSheet,
     Text,
@@ -22,6 +21,20 @@ import { useAppContext } from '../../context/AppContext';
 import { useBandSetlists } from '../../hooks/useBandSetlists';
 import { SongMetadata } from '../../types';
 import { COLORS } from '../../constants/theme';
+import AppModal from '../common/AppModal';
+
+type FeedbackModalType =
+    | 'danger'
+    | 'warning'
+    | 'success'
+    | 'info';
+
+interface FeedbackModalState {
+    visible: boolean;
+    type: FeedbackModalType;
+    title: string;
+    message: string;
+}
 
 export default function BandSongSelector() {
     const insets = useSafeAreaInsets();
@@ -47,6 +60,34 @@ export default function BandSongSelector() {
         new Set()
     );
     const [isSaving, setIsSaving] = useState(false);
+
+    const [feedbackModal, setFeedbackModal] =
+        useState<FeedbackModalState>({
+            visible: false,
+            type: 'info',
+            title: '',
+            message: '',
+        });
+
+    const showFeedbackModal = (
+        type: FeedbackModalType,
+        title: string,
+        message: string
+    ) => {
+        setFeedbackModal({
+            visible: true,
+            type,
+            title,
+            message,
+        });
+    };
+
+    const closeFeedbackModal = () => {
+        setFeedbackModal(prev => ({
+            ...prev,
+            visible: false,
+        }));
+    };
 
     /**
      * Busca el repertorio actual.
@@ -184,7 +225,8 @@ export default function BandSongSelector() {
                 err
             );
 
-            Alert.alert(
+            showFeedbackModal(
+                'danger',
                 'Error',
                 err?.message ||
                 'No se pudieron actualizar las canciones.'
@@ -612,6 +654,16 @@ export default function BandSongSelector() {
                     </Text>
                 </TouchableOpacity>
             </View>
+
+            {/* Modal de feedback */}
+            <AppModal
+                visible={feedbackModal.visible}
+                type={feedbackModal.type}
+                title={feedbackModal.title}
+                message={feedbackModal.message}
+                confirmText="Aceptar"
+                onConfirm={closeFeedbackModal}
+            />
         </View>
     );
 }

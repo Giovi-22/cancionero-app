@@ -6,7 +6,6 @@ import {
     ScrollView,
     TouchableOpacity,
     ActivityIndicator,
-    Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
@@ -30,6 +29,20 @@ import { PendingInvitationsList } from '../../../src/components/band/PendingInvi
 import { BandMemberList } from '../../../src/components/band/BandMemberList';
 import { useAppContext } from '../../../src/context/AppContext';
 import { SentInvitationsList } from '../../../src/components/band/SentInvitationsList';
+import AppModal from '../../../src/components/common/AppModal';
+
+type FeedbackModalType =
+    | 'danger'
+    | 'warning'
+    | 'success'
+    | 'info';
+
+interface FeedbackModalState {
+    visible: boolean;
+    type: FeedbackModalType;
+    title: string;
+    message: string;
+}
 
 export default function BandScreen() {
     const insets = useSafeAreaInsets();
@@ -69,8 +82,55 @@ export default function BandScreen() {
         userRole
     );
 
-    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-    const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] =
+        useState(false);
+
+    const [isInviteModalOpen, setIsInviteModalOpen] =
+        useState(false);
+
+    // ============================================================
+    // AppModal - Finalizar sesión
+    // ============================================================
+    const [
+        isEndSessionModalOpen,
+        setIsEndSessionModalOpen,
+    ] = useState(false);
+
+    const [
+        isEndingSession,
+        setIsEndingSession,
+    ] = useState(false);
+
+    // ============================================================
+    // AppModal - Feedback general
+    // ============================================================
+    const [feedbackModal, setFeedbackModal] =
+        useState<FeedbackModalState>({
+            visible: false,
+            type: 'info',
+            title: '',
+            message: '',
+        });
+
+    const showFeedbackModal = (
+        type: FeedbackModalType,
+        title: string,
+        message: string
+    ) => {
+        setFeedbackModal({
+            visible: true,
+            type,
+            title,
+            message,
+        });
+    };
+
+    const closeFeedbackModal = () => {
+        setFeedbackModal(prev => ({
+            ...prev,
+            visible: false,
+        }));
+    };
 
     const currentUserId = user?.uid || user?.id;
 
@@ -94,7 +154,7 @@ export default function BandScreen() {
     };
 
     // ============================================================
-    // Finalizar sesión activa
+    // Abrir modal para finalizar sesión
     // ============================================================
     const handleEndActiveSession = () => {
         if (
@@ -105,41 +165,51 @@ export default function BandScreen() {
             return;
         }
 
-        Alert.alert(
-            'Finalizar sesión',
-            `¿Querés finalizar la sesión de "${activeSession.setlistName}"?`,
-            [
-                {
-                    text: 'Cancelar',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Finalizar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await endSession();
-                        } catch (error) {
-                            console.error(
-                                '[BandScreen] Error al finalizar sesión:',
-                                error
-                            );
+        setIsEndSessionModalOpen(true);
+    };
 
-                            Alert.alert(
-                                'Error',
-                                'No se pudo finalizar la sesión.'
-                            );
-                        }
-                    },
-                },
-            ]
-        );
+    // ============================================================
+    // Confirmar finalización de sesión
+    // ============================================================
+    const handleConfirmEndSession = async () => {
+        if (
+            !selectedBand ||
+            !activeSession ||
+            !isDirectorOfSession
+        ) {
+            return;
+        }
+
+        try {
+            setIsEndingSession(true);
+
+            await endSession();
+
+            setIsEndSessionModalOpen(false);
+        } catch (error) {
+            console.error(
+                '[BandScreen] Error al finalizar sesión:',
+                error
+            );
+
+            setIsEndSessionModalOpen(false);
+
+            showFeedbackModal(
+                'danger',
+                'Error',
+                'No se pudo finalizar la sesión. Intentá nuevamente.'
+            );
+        } finally {
+            setIsEndingSession(false);
+        }
     };
 
     // ============================================================
     // Seleccionar banda
     // ============================================================
-    const handleSelectBand = (band: typeof bands[number]) => {
+    const handleSelectBand = (
+        band: typeof bands[number]
+    ) => {
         selectBand(band);
         setActiveBandId(band.id);
     };
@@ -151,7 +221,10 @@ export default function BandScreen() {
         name: string,
         description: string
     ) => {
-        const newBand = await createBand(name, description);
+        const newBand = await createBand(
+            name,
+            description
+        );
 
         // La nueva banda pasa a ser la banda activa.
         setActiveBandId(newBand.id);
@@ -164,7 +237,9 @@ export default function BandScreen() {
         email: string,
         role: 'member' | 'director'
     ) => {
-        if (!selectedBand) return;
+        if (!selectedBand) {
+            return;
+        }
 
         await sendInvitation(
             selectedBand,
@@ -177,7 +252,9 @@ export default function BandScreen() {
         memberUserId: string,
         newRole: 'member' | 'director'
     ) => {
-        if (!selectedBand) return;
+        if (!selectedBand) {
+            return;
+        }
 
         await BandService.updateMemberRole(
             selectedBand.id,
@@ -189,7 +266,9 @@ export default function BandScreen() {
     const handleRemoveMember = async (
         memberUserId: string
     ) => {
-        if (!selectedBand) return;
+        if (!selectedBand) {
+            return;
+        }
 
         await BandService.removeMember(
             selectedBand.id,
@@ -202,9 +281,10 @@ export default function BandScreen() {
     // ============================================================
     const handleDirectorClick = () => {
         if (!selectedBand) {
-            Alert.alert(
-                'Error',
-                'No hay banda seleccionada.'
+            showFeedbackModal(
+                'warning',
+                'Sin banda seleccionada',
+                'Seleccioná una banda para continuar.'
             );
             return;
         }
@@ -220,7 +300,8 @@ export default function BandScreen() {
         // Si no hay sesión activa, solamente Director u Owner
         // pueden iniciar una nueva.
         if (!permissions.canCreateDirectorSession) {
-            Alert.alert(
+            showFeedbackModal(
+                'warning',
                 'Acceso restringido',
                 'Únicamente el Director u Owner de la banda puede iniciar Director Mode.'
             );
@@ -238,9 +319,10 @@ export default function BandScreen() {
     // ============================================================
     const handleRepertorioClick = () => {
         if (!selectedBand) {
-            Alert.alert(
-                'Error',
-                'No hay banda seleccionada.'
+            showFeedbackModal(
+                'warning',
+                'Sin banda seleccionada',
+                'Seleccioná una banda para ver el repertorio compartido.'
             );
             return;
         }
@@ -255,7 +337,8 @@ export default function BandScreen() {
     // ============================================================
     const handleInviteClick = () => {
         if (!permissions.canInviteMembers) {
-            Alert.alert(
+            showFeedbackModal(
+                'warning',
                 'Acceso restringido',
                 'No tenés permisos para invitar miembros a esta banda.'
             );
@@ -619,6 +702,9 @@ export default function BandScreen() {
                                                 onPress={
                                                     handleEndActiveSession
                                                 }
+                                                disabled={
+                                                    isEndingSession
+                                                }
                                             >
                                                 <Text
                                                     style={
@@ -844,6 +930,39 @@ export default function BandScreen() {
                     </View>
                 )}
             </ScrollView>
+
+            {/* ============================================================
+                AppModal - Finalizar sesión
+            ============================================================ */}
+            <AppModal
+                visible={isEndSessionModalOpen}
+                type="danger"
+                title="Finalizar sesión"
+                message={
+                    activeSession
+                        ? `¿Querés finalizar la sesión de "${activeSession.setlistName}"?`
+                        : ''
+                }
+                confirmText="Finalizar"
+                cancelText="Cancelar"
+                onCancel={() =>
+                    setIsEndSessionModalOpen(false)
+                }
+                onConfirm={handleConfirmEndSession}
+                loading={isEndingSession}
+            />
+
+            {/* ============================================================
+                AppModal - Feedback general
+            ============================================================ */}
+            <AppModal
+                visible={feedbackModal.visible}
+                type={feedbackModal.type}
+                title={feedbackModal.title}
+                message={feedbackModal.message}
+                confirmText="Aceptar"
+                onConfirm={closeFeedbackModal}
+            />
 
             {/* Modal para Crear Banda */}
             <CreateBandModal

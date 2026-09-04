@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     ActivityIndicator,
-    Alert,
     StyleSheet,
     Text,
     TextInput,
@@ -29,6 +28,21 @@ import { BandSetlist } from '../../../../src/types/band';
 import { SongMetadata } from '../../../../src/types';
 import { SongList } from '../../../../src/components/SongList';
 import { COLORS } from '../../../../src/constants/theme';
+import { getBandPermissions } from '../../../../src/utils/permissions';
+import AppModal from '../../../../src/components/common/AppModal';
+
+type FeedbackModalType =
+    | 'danger'
+    | 'warning'
+    | 'success'
+    | 'info';
+
+interface FeedbackModalState {
+    visible: boolean;
+    type: FeedbackModalType;
+    title: string;
+    message: string;
+}
 
 export default function BandSetlistDetailScreen() {
     const { id } = useLocalSearchParams<{ id: string }>();
@@ -39,7 +53,42 @@ export default function BandSetlistDetailScreen() {
     const [notesText, setNotesText] = useState('');
     const [isNotesExpanded, setIsNotesExpanded] = useState(false);
     const [isSavingNotes, setIsSavingNotes] = useState(false);
-    const [isStartingDirector, setIsStartingDirector] = useState(false);
+    const [isStartingDirector, setIsStartingDirector] =
+        useState(false);
+
+    const [songToRemove, setSongToRemove] =
+        useState<SongMetadata | null>(null);
+
+    const [isRemovingSong, setIsRemovingSong] =
+        useState(false);
+
+    const [feedbackModal, setFeedbackModal] =
+        useState<FeedbackModalState>({
+            visible: false,
+            type: 'info',
+            title: '',
+            message: '',
+        });
+
+    const showFeedbackModal = (
+        type: FeedbackModalType,
+        title: string,
+        message: string
+    ) => {
+        setFeedbackModal({
+            visible: true,
+            type,
+            title,
+            message,
+        });
+    };
+
+    const closeFeedbackModal = () => {
+        setFeedbackModal(prev => ({
+            ...prev,
+            visible: false,
+        }));
+    };
 
     const {
         songs,
@@ -49,9 +98,58 @@ export default function BandSetlistDetailScreen() {
         user,
     } = useAppContext();
 
+    /**
+     * IMPORTANTE:
+     *
+     * useBands() tiene estado local propio.
+     * Por eso NO usamos directamente permissions/userRole
+     * de esta instancia para determinar los permisos de la
+     * banda activa.
+     *
+     * En cambio, buscamos explícitamente activeBandId dentro
+     * de userBandsInfo.
+     */
     const {
-        permissions,
+        userBandsInfo,
     } = useBands();
+
+    const activeBandInfo = useMemo(() => {
+        if (!activeBandId) {
+            return null;
+        }
+
+        return (
+            userBandsInfo.find(
+                info => info.band.id === activeBandId
+            ) || null
+        );
+    }, [userBandsInfo, activeBandId]);
+
+    /**
+     * Permisos correspondientes EXCLUSIVAMENTE a la banda
+     * actualmente activa.
+     */
+    const activeBandPermissions = useMemo(() => {
+        return getBandPermissions(
+            activeBandInfo?.role || null
+        );
+    }, [activeBandInfo]);
+
+    const canManageSetlists =
+        activeBandPermissions.canManageSetlists;
+
+    const canCreateDirectorSession =
+        activeBandPermissions.canCreateDirectorSession;
+
+    console.log(
+        '[BandSetlistDetail] ACTIVE BAND PERMISSIONS:',
+        {
+            activeBandId,
+            activeBandRole: activeBandInfo?.role || null,
+            canManageSetlists,
+            canCreateDirectorSession,
+        }
+    );
 
     const {
         setlists: bandSetlists,
@@ -65,14 +163,17 @@ export default function BandSetlistDetailScreen() {
         activeSession,
         isDirectorOfSession,
     } = useDirectorSession(activeBandId);
+
     const userId = user?.uid || user.id;
+
     useEffect(() => {
         console.log('[BandSetlistDetail] Director Session:', {
             activeBandId,
             setlistId: id,
             activeSessionId: activeSession?.id,
             activeSessionSetlistId: activeSession?.setlistId,
-            activeSessionDirectorId: activeSession?.directorId,
+            activeSessionDirectorId:
+                activeSession?.directorId,
             userId,
             isDirectorOfSession,
         });
@@ -103,8 +204,6 @@ export default function BandSetlistDetailScreen() {
     /**
      * Determina si este es el repertorio que actualmente
      * está siendo dirigido.
-     *
-     * activeSession es la fuente de verdad de Director Mode.
      */
     const isActiveSetlist = useMemo(() => {
         if (!activeSession || !setlist) {
@@ -143,9 +242,8 @@ export default function BandSetlistDetailScreen() {
      * Convierte los IDs almacenados en Firestore en
      * SongMetadata disponibles localmente.
      *
-     * IMPORTANTE:
-     * Se recorre songIds y no songs, para conservar
-     * exactamente el orden del repertorio.
+     * Se recorre songIds para conservar exactamente
+     * el orden del repertorio.
      */
     const setlistSongs = useMemo<SongMetadata[]>(() => {
         if (!setlist) {
@@ -163,8 +261,8 @@ export default function BandSetlistDetailScreen() {
     }, [setlist, songs]);
 
     /**
-     * Detecta canciones que existen en el setlist de Firestore
-     * pero que no están disponibles actualmente en la biblioteca local.
+     * Detecta canciones que existen en Firestore pero
+     * no están disponibles actualmente en la biblioteca local.
      */
     const missingSongIds = useMemo(() => {
         if (!setlist) {
@@ -182,9 +280,6 @@ export default function BandSetlistDetailScreen() {
 
     /**
      * Entra a la sesión activa.
-     *
-     * Esto funciona tanto para el director como para los
-     * followers de la banda.
      */
     const handleGoToActiveSession = () => {
         if (!activeSession || !activeBandId) {
@@ -202,28 +297,23 @@ export default function BandSetlistDetailScreen() {
 
     /**
      * Inicia una sesión de Director Mode para este repertorio.
-     *
-     * La sesión se crea antes de navegar al SetlistPlayer.
-     * El bandId se pasa explícitamente por route params para
-     * no depender únicamente de activeBandId durante la navegación.
      */
     const handleStartDirectorMode = async () => {
-        console.log('[BandSetlistDetail] handleStartDirectorMode');
+        console.log(
+            '[BandSetlistDetail] handleStartDirectorMode'
+        );
 
         if (
             !setlist ||
             !activeBandId ||
             isStartingDirector
         ) {
-            console.log('[BandSetlistDetail] return');
+            console.log(
+                '[BandSetlistDetail] return'
+            );
             return;
         }
 
-        /**
-         * Si ya existe una sesión activa, no intentamos crear
-         * otra. Si casualmente es este mismo repertorio,
-         * simplemente entramos a la sesión existente.
-         */
         if (activeSession) {
             if (
                 activeSession.setlistId === setlist.id
@@ -232,7 +322,8 @@ export default function BandSetlistDetailScreen() {
                 return;
             }
 
-            Alert.alert(
+            showFeedbackModal(
+                'warning',
                 'Director Mode activo',
                 `Ya se está dirigiendo "${activeSession.setlistName}".\n\nFinalizá esa sesión antes de iniciar otra.`
             );
@@ -240,16 +331,20 @@ export default function BandSetlistDetailScreen() {
             return;
         }
 
-        if (!permissions.canCreateDirectorSession) {
-            Alert.alert(
+        if (!canCreateDirectorSession) {
+            showFeedbackModal(
+                'warning',
                 'Acceso restringido',
                 'Únicamente el Director u Owner de la banda puede iniciar Director Mode.'
             );
+
             return;
         }
 
         try {
-            console.log('[BandSetlistDetail] try');
+            console.log(
+                '[BandSetlistDetail] try'
+            );
 
             setIsStartingDirector(true);
 
@@ -287,7 +382,8 @@ export default function BandSetlistDetailScreen() {
                 err
             );
 
-            Alert.alert(
+            showFeedbackModal(
+                'danger',
                 'No se pudo iniciar Director Mode',
                 err?.message ||
                 'Ocurrió un error al iniciar la sesión.'
@@ -302,10 +398,14 @@ export default function BandSetlistDetailScreen() {
     };
 
     /**
-     * Elimina una canción del repertorio.
+     * Abre la confirmación para quitar una canción.
      */
-    const handleRemoveSong = async (songId: string) => {
-        if (!setlist || isSaving) {
+    const handleRemoveSong = (songId: string) => {
+        if (
+            !canManageSetlists ||
+            !setlist ||
+            isSaving
+        ) {
             return;
         }
 
@@ -313,62 +413,71 @@ export default function BandSetlistDetailScreen() {
             item => item.id === songId
         );
 
-        Alert.alert(
-            'Quitar canción',
-            `¿Querés quitar "${song?.name || 'esta canción'}" del repertorio?`,
-            [
-                {
-                    text: 'Cancelar',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Quitar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setIsSaving(true);
+        if (!song) {
+            return;
+        }
 
-                            const updatedSongIds =
-                                setlist.songIds.filter(
-                                    currentId =>
-                                        currentId !== songId
-                                );
+        setSongToRemove(song);
+    };
 
-                            await updateBandSetlist({
-                                ...setlist,
-                                songIds: updatedSongIds,
-                            });
-                        } catch (err: any) {
-                            console.error(
-                                '[BandSetlistDetail] Error quitando canción:',
-                                err
-                            );
+    /**
+     * Confirma la eliminación de una canción.
+     */
+    const handleConfirmRemoveSong = async () => {
+        if (
+            !canManageSetlists ||
+            !setlist ||
+            !songToRemove ||
+            isRemovingSong
+        ) {
+            return;
+        }
 
-                            Alert.alert(
-                                'Error',
-                                err?.message ||
-                                'No se pudo quitar la canción.'
-                            );
-                        } finally {
-                            setIsSaving(false);
-                        }
-                    },
-                },
-            ]
-        );
+        try {
+            setIsRemovingSong(true);
+            setIsSaving(true);
+
+            const updatedSongIds =
+                setlist.songIds.filter(
+                    currentId =>
+                        currentId !== songToRemove.id
+                );
+
+            await updateBandSetlist({
+                ...setlist,
+                songIds: updatedSongIds,
+            });
+
+            setSongToRemove(null);
+        } catch (err: any) {
+            console.error(
+                '[BandSetlistDetail] Error quitando canción:',
+                err
+            );
+
+            setSongToRemove(null);
+
+            showFeedbackModal(
+                'danger',
+                'Error',
+                err?.message ||
+                'No se pudo quitar la canción.'
+            );
+        } finally {
+            setIsRemovingSong(false);
+            setIsSaving(false);
+        }
     };
 
     /**
      * Reordena canciones.
-     *
-     * SongList trabaja con índices, mientras que Firestore
-     * guarda el orden mediante songIds.
      */
     const handleReorder = async (
         fromIndex: number,
         toIndex: number
     ) => {
         if (
+            !canManageSetlists ||
             !setlist ||
             fromIndex === toIndex ||
             isSaving
@@ -404,7 +513,8 @@ export default function BandSetlistDetailScreen() {
                 err
             );
 
-            Alert.alert(
+            showFeedbackModal(
+                'danger',
                 'Error',
                 err?.message ||
                 'No se pudo guardar el nuevo orden.'
@@ -415,13 +525,17 @@ export default function BandSetlistDetailScreen() {
     };
 
     /**
-     * Guarda la nota de una canción del repertorio.
+     * Guarda la nota de una canción.
      */
     const handleSaveSongNote = async (
         songId: string,
         note: string
     ) => {
-        if (!setlist || isSaving) {
+        if (
+            !canManageSetlists ||
+            !setlist ||
+            isSaving
+        ) {
             return;
         }
 
@@ -450,7 +564,8 @@ export default function BandSetlistDetailScreen() {
                 err
             );
 
-            Alert.alert(
+            showFeedbackModal(
+                'danger',
                 'Error',
                 err?.message ||
                 'No se pudo guardar la nota.'
@@ -463,12 +578,16 @@ export default function BandSetlistDetailScreen() {
     };
 
     /**
-     * Elimina la nota de una canción del repertorio.
+     * Elimina la nota de una canción.
      */
     const handleDeleteSongNote = async (
         songId: string
     ) => {
-        if (!setlist || isSaving) {
+        if (
+            !canManageSetlists ||
+            !setlist ||
+            isSaving
+        ) {
             return;
         }
 
@@ -491,7 +610,8 @@ export default function BandSetlistDetailScreen() {
                 err
             );
 
-            Alert.alert(
+            showFeedbackModal(
+                'danger',
                 'Error',
                 err?.message ||
                 'No se pudo eliminar la nota.'
@@ -507,7 +627,11 @@ export default function BandSetlistDetailScreen() {
      * Guarda la nota general del repertorio.
      */
     const handleSaveNotes = async () => {
-        if (!setlist || isSavingNotes) {
+        if (
+            !canManageSetlists ||
+            !setlist ||
+            isSavingNotes
+        ) {
             return;
         }
 
@@ -530,7 +654,8 @@ export default function BandSetlistDetailScreen() {
                 err
             );
 
-            Alert.alert(
+            showFeedbackModal(
+                'danger',
                 'Error',
                 err?.message ||
                 'No se pudieron guardar las notas.'
@@ -544,12 +669,16 @@ export default function BandSetlistDetailScreen() {
      * Abre el selector de canciones.
      */
     const handleAddSongs = () => {
-        if (!setlist) {
+        if (
+            !canManageSetlists ||
+            !setlist
+        ) {
             return;
         }
 
         router.push({
-            pathname: '/(tabs)/band/setlists/add-songs',
+            pathname:
+                '/(tabs)/band/setlists/add-songs',
             params: {
                 id: setlist.id,
             },
@@ -595,7 +724,9 @@ export default function BandSetlistDetailScreen() {
                 <View style={styles.centerContainer}>
                     <Music2
                         size={48}
-                        color={COLORS.mutedForeground}
+                        color={
+                            COLORS.mutedForeground
+                        }
                     />
 
                     <Text style={styles.emptyTitle}>
@@ -698,7 +829,9 @@ export default function BandSetlistDetailScreen() {
                 <View style={styles.centerContainer}>
                     <Music2
                         size={48}
-                        color={COLORS.mutedForeground}
+                        color={
+                            COLORS.mutedForeground
+                        }
                     />
 
                     <Text style={styles.emptyTitle}>
@@ -749,7 +882,9 @@ export default function BandSetlistDetailScreen() {
                 <View style={styles.centerContainer}>
                     <Music2
                         size={48}
-                        color={COLORS.mutedForeground}
+                        color={
+                            COLORS.mutedForeground
+                        }
                     />
 
                     <Text style={styles.emptyTitle}>
@@ -802,21 +937,23 @@ export default function BandSetlistDetailScreen() {
                     </Text>
                 </View>
 
-                <TouchableOpacity
-                    style={styles.addButton}
-                    activeOpacity={0.8}
-                    onPress={handleAddSongs}
-                    disabled={isSaving}
-                >
-                    <Plus
-                        size={19}
-                        color={COLORS.background}
-                    />
+                {canManageSetlists && (
+                    <TouchableOpacity
+                        style={styles.addButton}
+                        activeOpacity={0.8}
+                        onPress={handleAddSongs}
+                        disabled={isSaving}
+                    >
+                        <Plus
+                            size={19}
+                            color={COLORS.background}
+                        />
 
-                    <Text style={styles.addButtonText}>
-                        Agregar
-                    </Text>
-                </TouchableOpacity>
+                        <Text style={styles.addButtonText}>
+                            Agregar
+                        </Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* Advertencia de canciones no disponibles */}
@@ -890,34 +1027,36 @@ export default function BandSetlistDetailScreen() {
                             styles.notesHeaderActions
                         }
                     >
-                        <TouchableOpacity
-                            style={styles.editNotesBtn}
-                            onPress={() => {
-                                if (
-                                    !isNotesExpanded
-                                ) {
-                                    setIsNotesExpanded(
-                                        true
-                                    );
-                                }
+                        {canManageSetlists && (
+                            <TouchableOpacity
+                                style={styles.editNotesBtn}
+                                onPress={() => {
+                                    if (
+                                        !isNotesExpanded
+                                    ) {
+                                        setIsNotesExpanded(
+                                            true
+                                        );
+                                    }
 
-                                setIsEditingNotes(
-                                    !isEditingNotes
-                                );
-                            }}
-                        >
-                            <Text
-                                style={
-                                    styles.editNotesBtnText
-                                }
+                                    setIsEditingNotes(
+                                        !isEditingNotes
+                                    );
+                                }}
                             >
-                                {isEditingNotes
-                                    ? 'Cancelar'
-                                    : setlist.notes
-                                        ? 'Editar'
-                                        : '+ Añadir'}
-                            </Text>
-                        </TouchableOpacity>
+                                <Text
+                                    style={
+                                        styles.editNotesBtnText
+                                    }
+                                >
+                                    {isEditingNotes
+                                        ? 'Cancelar'
+                                        : setlist.notes
+                                            ? 'Editar'
+                                            : '+ Añadir'}
+                                </Text>
+                            </TouchableOpacity>
+                        )}
 
                         {isNotesExpanded ? (
                             <ChevronUp
@@ -939,7 +1078,8 @@ export default function BandSetlistDetailScreen() {
 
                 {isNotesExpanded && (
                     <View style={styles.notesBody}>
-                        {isEditingNotes ? (
+                        {isEditingNotes &&
+                            canManageSetlists ? (
                             <View
                                 style={
                                     styles.notesEditWrapper
@@ -997,14 +1137,7 @@ export default function BandSetlistDetailScreen() {
                                 </TouchableOpacity>
                             </View>
                         ) : (
-                            <TouchableOpacity
-                                onPress={() =>
-                                    setIsEditingNotes(
-                                        true
-                                    )
-                                }
-                                activeOpacity={0.8}
-                            >
+                            <View>
                                 {setlist.notes &&
                                     setlist.notes.trim().length > 0 ? (
                                     <Text
@@ -1021,12 +1154,10 @@ export default function BandSetlistDetailScreen() {
                                         }
                                     >
                                         Sin notas para este
-                                        repertorio. Tocá para
-                                        añadir observaciones,
-                                        orden del servicio, etc.
+                                        repertorio.
                                     </Text>
                                 )}
-                            </TouchableOpacity>
+                            </View>
                         )}
                     </View>
                 )}
@@ -1034,11 +1165,6 @@ export default function BandSetlistDetailScreen() {
 
             {/* Director Mode */}
 
-            {/*
-             * Este repertorio es el que está activo.
-             *
-             * Lo pueden abrir tanto el director como los followers.
-             */}
             {isActiveSetlist && activeSession && (
                 <TouchableOpacity
                     style={[
@@ -1082,13 +1208,8 @@ export default function BandSetlistDetailScreen() {
                 </TouchableOpacity>
             )}
 
-            {/*
-             * No hay sesión activa.
-             *
-             * Solamente Director/Owner puede iniciar una.
-             */}
             {!activeSession &&
-                permissions.canCreateDirectorSession && (
+                canCreateDirectorSession && (
                     <TouchableOpacity
                         style={styles.directorButton}
                         activeOpacity={0.8}
@@ -1119,10 +1240,6 @@ export default function BandSetlistDetailScreen() {
                     </TouchableOpacity>
                 )}
 
-            {/*
-             * Hay otra sesión activa en la banda y este no
-             * es el repertorio que se está dirigiendo.
-             */}
             {hasAnotherActiveSetlist &&
                 activeSession && (
                     <View
@@ -1184,6 +1301,9 @@ export default function BandSetlistDetailScreen() {
                     onDeleteSongNote={
                         handleDeleteSongNote
                     }
+                    canManageSetlist={
+                        canManageSetlists
+                    }
                 />
             </View>
 
@@ -1200,6 +1320,35 @@ export default function BandSetlistDetailScreen() {
                     </Text>
                 </View>
             )}
+
+            {/* Confirmación: quitar canción */}
+            <AppModal
+                visible={!!songToRemove}
+                type="danger"
+                title="Quitar canción"
+                message={
+                    songToRemove
+                        ? `¿Querés quitar "${songToRemove.name}" del repertorio?`
+                        : ''
+                }
+                confirmText="Quitar"
+                cancelText="Cancelar"
+                onCancel={() =>
+                    setSongToRemove(null)
+                }
+                onConfirm={handleConfirmRemoveSong}
+                loading={isRemovingSong}
+            />
+
+            {/* Feedback genérico */}
+            <AppModal
+                visible={feedbackModal.visible}
+                type={feedbackModal.type}
+                title={feedbackModal.title}
+                message={feedbackModal.message}
+                confirmText="Aceptar"
+                onConfirm={closeFeedbackModal}
+            />
         </View>
     );
 }
