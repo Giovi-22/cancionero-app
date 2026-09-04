@@ -11,7 +11,8 @@
     "update-preview": "eas update --channel preview",
     "build-preview": "eas build --platform android --profile preview",
     "build-dev": "eas build --platform android --profile development",
-    "build-prod": "eas build --platform android --profile production"
+    "build-prod": "eas build --platform android --profile production",
+    "test:rules": "jest rules-tests/firestore.rules.test.js --runInBand"
   },
   "dependencies": {
     "@react-native-community/datetimepicker": "8.4.4",
@@ -54,7 +55,9 @@
     "reanimated-color-picker": "^5.1.2"
   },
   "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
     "@types/react": "~19.1.0",
+    "jest": "^30.4.2",
     "typescript": "~5.9.2"
   },
   "private": true

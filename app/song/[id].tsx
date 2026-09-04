@@ -1,29 +1,36 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
-import { useLocalSearchParams, router } from 'expo-router';
+import { router } from 'expo-router';
 import { useAppContext } from '../../src/context/AppContext';
+import { useDirectorSession } from '../../src/hooks/useDirectorSession';
 import { SongViewer } from '../../src/components/SongViewer';
 import { COLORS } from '../../src/constants/theme';
 
 export default function SongScreen() {
-    const { id } = useLocalSearchParams();
     const {
         selectedSong,
         songContent,
         songSettings,
         handleSaveSongSettings,
-        myDirectorSession,
-        followingSession,
+        activeBandId,
         handleFollowSongChange,
         setlistSongs,
-        handleDirectorNext,
-        handleDirectorPrev,
         setSelectedSong,
         setSongContent,
         setSetlistSongs,
         globalTheme,
-        handleSaveGlobalTheme
+        handleSaveGlobalTheme,
     } = useAppContext();
+
+    const {
+        activeSession,
+        isDirectorOfSession,
+        latestEvent,
+        sendEvent,
+    } = useDirectorSession(activeBandId);
+
+    const isDirector = isDirectorOfSession;
+    const isFollower = !isDirector && !!activeSession;
 
     if (!selectedSong || !songContent) {
         return (
@@ -34,17 +41,35 @@ export default function SongScreen() {
     }
 
     const handleClose = () => {
-        // Navegar primero para evitar el flash del spinner de carga
         router.back();
-        // Limpiar el estado después para no pisar la animación de salida
         setTimeout(() => {
             setSelectedSong(null);
             setSongContent(null);
-            if (!myDirectorSession) {
+            if (!isDirector) {
                 setSetlistSongs([]);
             }
         }, 350);
     };
+
+    // Callbacks de navegación dentro del setlist (solo para Director)
+    const handleDirectorNext = isDirector ? async () => {
+        if (!selectedSong || setlistSongs.length === 0) return;
+        const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
+        const next = setlistSongs[idx + 1];
+        if (next) {
+            // Navegar a la canción siguiente
+            router.replace(`/song/${next.id}`);
+        }
+    } : undefined;
+
+    const handleDirectorPrev = isDirector ? async () => {
+        if (!selectedSong || setlistSongs.length === 0) return;
+        const idx = setlistSongs.findIndex(s => s.id === selectedSong.id);
+        const prev = setlistSongs[idx - 1];
+        if (prev) {
+            router.replace(`/song/${prev.id}`);
+        }
+    } : undefined;
 
     return (
         <View style={styles.container}>
@@ -57,10 +82,11 @@ export default function SongScreen() {
                 onSaveSettings={handleSaveSongSettings}
                 globalTheme={globalTheme}
                 onSaveGlobalTheme={handleSaveGlobalTheme}
-                isDirector={!!myDirectorSession}
-                directorSessionId={myDirectorSession?.id}
-                followSessionId={followingSession?.id}
-                onFollowSongChange={handleFollowSongChange}
+                isDirector={isDirector}
+                isFollower={isFollower}
+                onSendDirectorEvent={isDirector ? sendEvent : undefined}
+                incomingDirectorEvent={!isDirector ? latestEvent : null}
+                onFollowSongChange={!isDirector ? handleFollowSongChange : undefined}
                 setlistSongs={setlistSongs}
                 onDirectorNext={handleDirectorNext}
                 onDirectorPrev={handleDirectorPrev}

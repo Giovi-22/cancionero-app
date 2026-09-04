@@ -2,6 +2,14 @@ import { authService } from './AuthService';
 import { legacyToChordPro } from '../utils/legacyToChordPro';
 import { convertGoogleDocToChordPro } from '../utils/chordpro/chordProConverter';
 
+export interface DriveFolderUser {
+  id: string;
+  email: string;
+  name?: string;
+  role?: string;
+  photoUrl?: string;
+}
+
 export class DriveService {
   private static DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files';
   private static DOCS_API_URL = 'https://docs.googleapis.com/v1/documents';
@@ -42,18 +50,132 @@ export class DriveService {
   }
 
   /**
+   * Obtiene los usuarios que tienen permisos sobre una carpeta de Google Drive.
+   *
+   * Se utiliza únicamente como fuente de sugerencias de emails.
+   * NO modifica permisos ni invita usuarios automáticamente.
+   */
+  static async getFolderUsers(folderId: string): Promise<DriveFolderUser[]> {
+    if (!folderId || folderId === 'root') {
+      return [];
+    }
+
+    const token = await authService.getGoogleAccessToken();
+    if (!token) {
+      throw new Error('No hay token de acceso a Google');
+    }
+
+    try {
+      const users: DriveFolderUser[] = [];
+      let pageToken: string | undefined = undefined;
+
+      do {
+        const params = new URLSearchParams({
+          fields: 'nextPageToken,permissions(id,type,role,emailAddress,displayName,photoLink)',
+          pageSize: '100',
+          supportsAllDrives: 'true',
+        });
+
+        if (pageToken) {
+          params.set('pageToken', pageToken);
+        }
+
+        const response = await fetch(
+          `${this.DRIVE_API_URL}/${encodeURIComponent(folderId)}/permissions?${params.toString()}`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+
+        if (!response.ok) {
+          const error = await response.json().catch(() => ({}));
+
+          throw new Error(
+            error.error?.message ||
+            `Error al obtener los usuarios de la carpeta (${response.status})`
+          );
+        }
+
+        const data = await response.json();
+
+        const permissions = data.permissions || [];
+
+        for (const permission of permissions) {
+          // Solo nos interesan usuarios individuales.
+          // Ignoramos grupos, dominios y enlaces públicos.
+          if (permission.type !== 'user') {
+            continue;
+          }
+
+          // Algunas respuestas pueden no incluir emailAddress.
+          // En ese caso no podemos utilizar el permiso como sugerencia.
+          if (!permission.emailAddress) {
+            continue;
+          }
+
+          users.push({
+            id: permission.id,
+            email: permission.emailAddress,
+            name: permission.displayName || undefined,
+            role: permission.role || undefined,
+            photoUrl: permission.photoLink || undefined,
+          });
+        }
+
+        pageToken = data.nextPageToken;
+      } while (pageToken);
+
+      // Evitar duplicados por email.
+      const uniqueUsers = Array.from(
+        new Map(
+          users.map(user => [user.email.toLowerCase(), user])
+        ).values()
+      );
+
+      console.log(
+        `[DriveService] Usuarios encontrados en carpeta ${folderId}:`,
+        uniqueUsers
+      );
+
+      return uniqueUsers;
+    } catch (error) {
+      console.error(
+        '[DriveService] Error al obtener usuarios de la carpeta:',
+        error
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Lista subcarpetas directas de un folder
    */
-  private static async listSubfolders(folderId: string, token: string): Promise<{ id: string; name: string }[]> {
+  private static async listSubfolders(
+    folderId: string,
+    token: string
+  ): Promise<{ id: string; name: string }[]> {
     const query = `'${folderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
+
     const response = await fetch(
       `${this.DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name)&orderBy=name&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
     );
+
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(`Error al listar subcarpetas: ${err.error?.message || response.status}`);
+
+      throw new Error(
+        `Error al listar subcarpetas: ${err.error?.message || response.status
+        }`
+      );
     }
+
     const data = await response.json();
     return data.files || [];
   }
@@ -61,16 +183,30 @@ export class DriveService {
   /**
    * Obtiene archivos de canciones directamente dentro de una carpeta
    */
-  private static async getSongsInFolder(folderId: string, token: string): Promise<any[]> {
+  private static async getSongsInFolder(
+    folderId: string,
+    token: string
+  ): Promise<any[]> {
     const query = `'${folderId}' in parents and trashed = false and (mimeType = 'text/plain' or mimeType = 'application/vnd.google-apps.document' or name contains '.txt' or name contains '.pro' or name contains '.chordpro' or name contains '.cho')`;
+
     const response = await fetch(
       `${this.DRIVE_API_URL}?q=${encodeURIComponent(query)}&fields=files(id, name, mimeType, modifiedTime)&pageSize=1000&supportsAllDrives=true&includeItemsFromAllDrives=true`,
-      { headers: { Authorization: `Bearer ${token}` } }
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
     );
+
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
-      throw new Error(`Error al obtener canciones de la carpeta: ${err.error?.message || response.status}`);
+
+      throw new Error(
+        `Error al obtener canciones de la carpeta: ${err.error?.message || response.status
+        }`
+      );
     }
+
     const data = await response.json();
     return data.files || [];
   }
@@ -85,14 +221,24 @@ export class DriveService {
     folderName?: string,
     depth: number = 0,
     maxDepth: number = 4
-  ): Promise<Array<{ id: string; name: string; mimeType: string; modifiedTime: string; folderName?: string }>> {
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      modifiedTime: string;
+      folderName?: string;
+    }>
+  > {
     const token = await authService.getGoogleAccessToken();
     if (!token) throw new Error('No hay token de acceso a Google');
 
     // Obtener canciones y subcarpetas en paralelo
     const [songs, subfolders] = await Promise.all([
       this.getSongsInFolder(folderId, token),
-      depth < maxDepth ? this.listSubfolders(folderId, token) : Promise.resolve([]),
+      depth < maxDepth
+        ? this.listSubfolders(folderId, token)
+        : Promise.resolve([]),
     ]);
 
     // Canciones en esta carpeta, etiquetadas con su nombre de carpeta
@@ -104,7 +250,12 @@ export class DriveService {
     // Recursión en subcarpetas (en paralelo)
     const subResults = await Promise.all(
       subfolders.map((sub: { id: string; name: string }) =>
-        this.getSongsFromFolderRecursive(sub.id, sub.name, depth + 1, maxDepth)
+        this.getSongsFromFolderRecursive(
+          sub.id,
+          sub.name,
+          depth + 1,
+          maxDepth
+        )
       )
     );
 
@@ -112,7 +263,8 @@ export class DriveService {
   }
 
   /**
-   * Obtiene las canciones de una carpeta específica (sin subcarpetas — compatibilidad)
+   * Obtiene las canciones de una carpeta específica
+   * (sin subcarpetas — compatibilidad)
    */
   async getSongsFromFolder(folderId: string) {
     const token = await authService.getGoogleAccessToken();
@@ -141,7 +293,11 @@ export class DriveService {
   /**
    * Obtiene el contenido de un archivo con reintentos para Google Docs
    */
-  async getSongContent(fileId: string, mimeType?: string, songName?: string): Promise<string> {
+  async getSongContent(
+    fileId: string,
+    mimeType?: string,
+    songName?: string
+  ): Promise<string> {
     const token = await authService.getGoogleAccessToken();
     if (!token) throw new Error('No hay token de acceso a Google');
 
@@ -176,7 +332,11 @@ export class DriveService {
    * Obtiene y convierte un Google Doc. Intenta primero usar Google Docs API v1
    * para obtener la estructura interna; si falla (ej. sin scope), usa fallback a export text/plain.
    */
-  private async exportGoogleDoc(fileId: string, token: string, songName?: string): Promise<string> {
+  private async exportGoogleDoc(
+    fileId: string,
+    token: string,
+    songName?: string
+  ): Promise<string> {
     // 1. Intentar obtener el documento a través de Google Docs API v1 (detección por color)
     try {
       const response = await fetch(
@@ -186,16 +346,28 @@ export class DriveService {
 
       if (response.ok) {
         const docJson = await response.json();
-        const chordPro = convertGoogleDocToChordPro(docJson.body.content || []);
+        const chordPro = convertGoogleDocToChordPro(
+          docJson.body.content || []
+        );
+
         if (chordPro && chordPro.trim().length > 0) {
-          console.log('[DriveService] Google Doc convertido a ChordPro mediante ChordProConverter');
+          console.log(
+            '[DriveService] Google Doc convertido a ChordPro mediante ChordProConverter'
+          );
           return chordPro;
         }
       } else {
-        console.warn('[DriveService] Google Docs API devolvió status:', response.status, '- Usando fallback a export plain text');
+        console.warn(
+          '[DriveService] Google Docs API devolvió status:',
+          response.status,
+          '- Usando fallback a export plain text'
+        );
       }
     } catch (e) {
-      console.warn('[DriveService] Error llamando a Google Docs API, usando fallback:', e);
+      console.warn(
+        '[DriveService] Error llamando a Google Docs API, usando fallback:',
+        e
+      );
     }
 
     // 2. Fallback: exportar como text/plain desde Drive API
@@ -204,10 +376,13 @@ export class DriveService {
       { headers: { Authorization: `Bearer ${token}` } }
     );
 
-    if (!exportResponse.ok) throw new Error('No se pudo exportar el Google Doc');
+    if (!exportResponse.ok) {
+      throw new Error('No se pudo exportar el Google Doc');
+    }
+
     const plainText = await exportResponse.text();
     return legacyToChordPro(plainText, songName);
   }
-
 }
+
 export const driveService = new DriveService();

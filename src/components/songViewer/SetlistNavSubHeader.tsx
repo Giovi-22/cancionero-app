@@ -6,55 +6,92 @@ import { SongMetadata } from '../../types';
 import { useAppContext } from '../../context/AppContext';
 
 const COLORS = {
-  background: '#0a0a0a', surface: '#1a1a1a', foreground: '#ffffff',
-  mutedForeground: '#a0a0a0', accent: '#3b82f6', border: '#333333'
+  background: '#0a0a0a',
+  surface: '#1a1a1a',
+  foreground: '#ffffff',
+  mutedForeground: '#a0a0a0',
+  accent: '#3b82f6',
+  border: '#333333'
 };
 
 interface SetlistNavSubHeaderProps {
   isDirector: boolean;
-  followSessionId?: string;
+  isFollower?: boolean;
   setlistSongs: SongMetadata[];
   songId: string;
   onDirectorPrev?: () => void;
   onDirectorNext?: () => void;
   notes?: string;
+  songNote?: string;
 }
 
 export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
   isDirector,
-  followSessionId,
+  isFollower = false,
   setlistSongs,
   songId,
   onDirectorPrev,
   onDirectorNext,
-  notes: propNotes
+  notes: propNotes,
+  songNote: propSongNote,
 }) => {
   const { activeSetlist } = useAppContext();
   const insets = useSafeAreaInsets();
+
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [showSongNoteModal, setShowSongNoteModal] = useState(false);
 
-  if (!isDirector && !followSessionId && setlistSongs.length === 0) {
+  if (!isDirector && !isFollower && setlistSongs.length === 0) {
     return null;
   }
 
   const idx = setlistSongs.findIndex(s => s.id === songId);
-  const isFollower = !!followSessionId && !isDirector;
-  const effectiveNotes = propNotes || activeSetlist?.notes;
-  const hasNotes = !!effectiveNotes && effectiveNotes.trim().length > 0;
 
-  const currentSongNote = activeSetlist?.songNotes?.[songId];
-  const hasSongNote = !!currentSongNote && currentSongNote.trim().length > 0;
+  // En modo banda llegan por props.
+  // En modo personal seguimos usando activeSetlist.
+  const effectiveNotes = propNotes || activeSetlist?.notes;
+
+  const effectiveSongNote =
+    propSongNote || activeSetlist?.songNotes?.[songId];
+
+  const hasNotes =
+    !!effectiveNotes &&
+    effectiveNotes.trim().length > 0;
+
+  const hasSongNote =
+    !!effectiveSongNote &&
+    effectiveSongNote.trim().length > 0;
 
   return (
     <View style={{ flexDirection: 'column' }}>
       <View style={styles.subHeader}>
         {/* Badge de modo */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-          <View style={[styles.subHeaderBadge, isFollower ? styles.followerBadge : isDirector ? styles.directorBadge : styles.localBadge]}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 6,
+            flexWrap: 'wrap',
+          }}
+        >
+          <View
+            style={[
+              styles.subHeaderBadge,
+              isFollower
+                ? styles.followerBadge
+                : isDirector
+                  ? styles.directorBadge
+                  : styles.localBadge,
+            ]}
+          >
             <Radio size={10} color="#fff" />
+
             <Text style={styles.subHeaderBadgeText}>
-              {isFollower ? 'SEGUIDOR' : isDirector ? 'DIRECTOR' : 'LISTA'}
+              {isFollower
+                ? 'SEGUIDOR'
+                : isDirector
+                  ? 'DIRECTOR'
+                  : 'LISTA'}
             </Text>
           </View>
 
@@ -64,7 +101,10 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
               onPress={() => setShowSongNoteModal(true)}
             >
               <FileText size={12} color="#fbbf24" />
-              <Text style={styles.songNoteButtonText}>Nota Canción</Text>
+
+              <Text style={styles.songNoteButtonText}>
+                Nota Canción
+              </Text>
             </TouchableOpacity>
           )}
 
@@ -74,27 +114,48 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
               onPress={() => setShowNotesModal(true)}
             >
               <FileText size={12} color="#fff" />
-              <Text style={styles.notesButtonText}>Notas Lista</Text>
+
+              <Text style={styles.notesButtonText}>
+                Notas Lista
+              </Text>
             </TouchableOpacity>
           )}
         </View>
 
         {/* Controles de navegación */}
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
           <TouchableOpacity
             onPress={onDirectorPrev}
-            style={[styles.subNavBtn, idx <= 0 && styles.subNavBtnDisabled]}
+            style={[
+              styles.subNavBtn,
+              idx <= 0 && styles.subNavBtnDisabled,
+            ]}
             disabled={idx <= 0 || isFollower}
           >
             <ChevronLeft size={20} color="#fff" />
           </TouchableOpacity>
 
-          <Text style={styles.subHeaderCounter}>{idx + 1} / {setlistSongs.length}</Text>
+          <Text style={styles.subHeaderCounter}>
+            {idx + 1} / {setlistSongs.length}
+          </Text>
 
           <TouchableOpacity
             onPress={onDirectorNext}
-            style={[styles.subNavBtn, idx >= setlistSongs.length - 1 && styles.subNavBtnDisabled]}
-            disabled={idx >= setlistSongs.length - 1 || isFollower}
+            style={[
+              styles.subNavBtn,
+              idx >= setlistSongs.length - 1 &&
+              styles.subNavBtnDisabled,
+            ]}
+            disabled={
+              idx >= setlistSongs.length - 1 ||
+              isFollower
+            }
           >
             <ChevronRight size={20} color="#fff" />
           </TouchableOpacity>
@@ -109,9 +170,21 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
           activeOpacity={0.8}
         >
           <FileText size={14} color="#fbbf24" />
-          <Text style={styles.songNoteBannerText} numberOfLines={1}>
-            <Text style={{ fontWeight: 'bold', color: '#fbbf24' }}>Nota: </Text>
-            {currentSongNote}
+
+          <Text
+            style={styles.songNoteBannerText}
+            numberOfLines={1}
+          >
+            <Text
+              style={{
+                fontWeight: 'bold',
+                color: '#fbbf24',
+              }}
+            >
+              Nota:{' '}
+            </Text>
+
+            {effectiveSongNote}
           </Text>
         </TouchableOpacity>
       )}
@@ -121,24 +194,59 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
         visible={showNotesModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowNotesModal(false)}
+        onRequestClose={() =>
+          setShowNotesModal(false)
+        }
       >
         <TouchableOpacity
-          style={[styles.notesModalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}
+          style={[
+            styles.notesModalOverlay,
+            {
+              paddingTop: insets.top + 10,
+              paddingBottom: insets.bottom + 10,
+            },
+          ]}
           activeOpacity={1}
           onPress={() => setShowNotesModal(false)}
         >
-          <View style={styles.notesModalCard} onStartShouldSetResponder={() => true}>
+          <View
+            style={styles.notesModalCard}
+            onStartShouldSetResponder={() => true}
+          >
             <View style={styles.notesModalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <FileText size={18} color={COLORS.accent} />
-                <Text style={styles.notesModalTitle}>Notas de la Lista</Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <FileText
+                  size={18}
+                  color={COLORS.accent}
+                />
+
+                <Text style={styles.notesModalTitle}>
+                  Notas de la Lista
+                </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowNotesModal(false)} style={{ padding: 4 }}>
-                <X size={20} color={COLORS.foreground} />
+
+              <TouchableOpacity
+                onPress={() =>
+                  setShowNotesModal(false)
+                }
+                style={{ padding: 4 }}
+              >
+                <X
+                  size={20}
+                  color={COLORS.foreground}
+                />
               </TouchableOpacity>
             </View>
-            <Text style={styles.notesModalContent}>{effectiveNotes}</Text>
+
+            <Text style={styles.notesModalContent}>
+              {effectiveNotes}
+            </Text>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -148,24 +256,61 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
         visible={showSongNoteModal}
         transparent
         animationType="fade"
-        onRequestClose={() => setShowSongNoteModal(false)}
+        onRequestClose={() =>
+          setShowSongNoteModal(false)
+        }
       >
         <TouchableOpacity
-          style={[styles.notesModalOverlay, { paddingTop: insets.top + 10, paddingBottom: insets.bottom + 10 }]}
+          style={[
+            styles.notesModalOverlay,
+            {
+              paddingTop: insets.top + 10,
+              paddingBottom: insets.bottom + 10,
+            },
+          ]}
           activeOpacity={1}
-          onPress={() => setShowSongNoteModal(false)}
+          onPress={() =>
+            setShowSongNoteModal(false)
+          }
         >
-          <View style={styles.notesModalCard} onStartShouldSetResponder={() => true}>
+          <View
+            style={styles.notesModalCard}
+            onStartShouldSetResponder={() => true}
+          >
             <View style={styles.notesModalHeader}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <FileText size={18} color="#fbbf24" />
-                <Text style={styles.notesModalTitle}>Nota de la Canción</Text>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  gap: 8,
+                }}
+              >
+                <FileText
+                  size={18}
+                  color="#fbbf24"
+                />
+
+                <Text style={styles.notesModalTitle}>
+                  Nota de la Canción
+                </Text>
               </View>
-              <TouchableOpacity onPress={() => setShowSongNoteModal(false)} style={{ padding: 4 }}>
-                <X size={20} color={COLORS.foreground} />
+
+              <TouchableOpacity
+                onPress={() =>
+                  setShowSongNoteModal(false)
+                }
+                style={{ padding: 4 }}
+              >
+                <X
+                  size={20}
+                  color={COLORS.foreground}
+                />
               </TouchableOpacity>
             </View>
-            <Text style={styles.notesModalContent}>{currentSongNote}</Text>
+
+            <Text style={styles.notesModalContent}>
+              {effectiveSongNote}
+            </Text>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -184,6 +329,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+
   subHeaderBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -192,33 +338,41 @@ const styles = StyleSheet.create({
     paddingVertical: 3,
     borderRadius: 10,
   },
+
   directorBadge: {
     backgroundColor: '#dc2626',
   },
+
   followerBadge: {
     backgroundColor: '#2563eb',
   },
+
   localBadge: {
     backgroundColor: '#4b5563',
   },
+
   subHeaderBadgeText: {
     color: '#fff',
     fontSize: 10,
     fontWeight: 'bold',
   },
+
   subNavBtn: {
     padding: 6,
     borderRadius: 8,
     backgroundColor: 'rgba(255,255,255,0.1)',
   },
+
   subNavBtnDisabled: {
     opacity: 0.3,
   },
+
   subHeaderCounter: {
     color: COLORS.foreground,
     fontSize: 13,
     fontWeight: 'bold',
   },
+
   notesButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -230,11 +384,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(59, 130, 246, 0.4)',
   },
+
   notesButtonText: {
     color: '#fff',
     fontSize: 11,
     fontWeight: '600',
   },
+
   notesModalOverlay: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.7)',
@@ -242,6 +398,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
   },
+
   notesModalCard: {
     width: '100%',
     backgroundColor: COLORS.surface,
@@ -251,6 +408,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.border,
     maxHeight: '70%',
   },
+
   notesModalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -260,16 +418,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: COLORS.border,
   },
+
   notesModalTitle: {
     color: COLORS.foreground,
     fontSize: 16,
     fontWeight: 'bold',
   },
+
   notesModalContent: {
     color: COLORS.foreground,
     fontSize: 14,
     lineHeight: 22,
   },
+
   songNoteButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -281,11 +442,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: 'rgba(251, 191, 36, 0.4)',
   },
+
   songNoteButtonText: {
     color: '#fbbf24',
     fontSize: 11,
     fontWeight: '600',
   },
+
   songNoteBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -296,6 +459,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: 'rgba(251, 191, 36, 0.3)',
   },
+
   songNoteBannerText: {
     color: COLORS.foreground,
     fontSize: 12,

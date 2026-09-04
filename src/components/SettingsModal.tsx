@@ -1,305 +1,1230 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, TextInput, StyleSheet, Alert } from 'react-native';
-import { X, Search, User as UserIcon, BookOpen } from 'lucide-react-native';
-import { useAppContext } from '../context/AppContext';
-import { authService } from '../services/AuthService';
-import { COLORS } from '../constants/theme';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Constants from 'expo-constants';
-import packageJson from '../../package.json';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
+import {
+  X,
+  Minus,
+  Plus,
+  Clock,
+  AlertTriangle,
+  Edit2,
+} from 'lucide-react-native';
 
-const APP_VERSION = Constants.expoConfig?.version || packageJson.version || '1.1.0';
-
-interface SettingsModalProps {
-  onOpenLibraries: () => void;
-}
-
-export const SettingsModal = ({ onOpenLibraries }: SettingsModalProps) => {
-  const insets = useSafeAreaInsets();
-  const {
-    isSettingsOpen,
-    setIsSettingsOpen,
-    driveFolderId,
-    handleSaveConfig,
-    openFolderPicker,
-    user,
-    activeLibrary,
-    handleClearRepertoire
-  } = useAppContext();
-
-  if (!isSettingsOpen) return null;
-
-  return (
-    <View style={[styles.settingsPanel, { bottom: insets.bottom + 80 }]}>
-      <View style={styles.settingsHeader}>
-        <Text style={styles.settingsTitle}>Configuración</Text>
-        <TouchableOpacity onPress={() => setIsSettingsOpen(false)}>
-          <X size={24} color={COLORS.foreground} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.settingsScroll} keyboardShouldPersistTaps="handled">
-        {/* Sección de Biblioteca Activa */}
-        <View style={styles.settingGroup}>
-          <Text style={styles.settingLabel}>Biblioteca Activa</Text>
-          <View style={styles.libraryContainer}>
-            <View style={styles.libraryInfoRow}>
-              <View style={[styles.libraryColorDot, { backgroundColor: activeLibrary?.color || COLORS.accent }]} />
-              <Text style={styles.libraryNameText}>{activeLibrary?.name || 'Cargando...'}</Text>
-            </View>
-            <TouchableOpacity 
-              style={styles.manageLibrariesBtn} 
-              onPress={() => {
-                setIsSettingsOpen(false);
-                onOpenLibraries();
-              }}
-            >
-              <BookOpen size={16} color="#fff" />
-              <Text style={styles.manageLibrariesBtnText}>Administrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Sección de Carpeta de Drive */}
-        <View style={styles.settingGroup}>
-          <Text style={styles.settingLabel}>Carpeta de Canciones</Text>
-          <View style={styles.inputContainer}>
-            <TextInput
-              style={[styles.input, { flex: 1 }]}
-              value={driveFolderId}
-              onChangeText={handleSaveConfig}
-              placeholder="ID de la carpeta..."
-              placeholderTextColor={COLORS.mutedForeground}
-            />
-            <TouchableOpacity
-              style={styles.browseButton}
-              onPress={() => openFolderPicker()}
-              disabled={!user}
-            >
-              <Search size={20} color="#fff" />
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.settingHelp}>
-            {user ? 'Toca la lupa para elegir visualmente.' : 'Inicia sesión para explorar carpetas.'}
-          </Text>
-        </View>
-
-        {/* Cuenta y Google Login */}
-        {user ? (
-          <View style={styles.userInfo}>
-            <Text style={styles.userEmailLabel}>Cuenta activa:</Text>
-            <Text style={styles.userName}>{user.email}</Text>
-            <TouchableOpacity style={styles.signOutButton} onPress={() => authService.signOut()}>
-              <Text style={styles.signOutText}>Cerrar Sesión</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <TouchableOpacity style={styles.googleButton} onPress={() => authService.signInWithGoogle()}>
-            <Text style={styles.googleButtonText}>Iniciar Sesión con Google</Text>
-          </TouchableOpacity>
-        )}
-
-        {/* Zona de Peligro - Limpiar Repertorio */}
-        <View style={styles.dangerZone}>
-          <Text style={styles.settingLabel}>Zona de Peligro</Text>
-          <TouchableOpacity 
-            style={styles.clearButton} 
-            onPress={() => {
-              Alert.alert(
-                'Limpiar Repertorio',
-                '¿Estás seguro de que querés borrar todas las canciones locales de esta biblioteca y sus estadísticas en la nube? Deberás sincronizar de nuevo para descargarlas.',
-                [
-                  { text: 'Cancelar', style: 'cancel' },
-                  { text: 'Borrar todo', style: 'destructive', onPress: () => handleClearRepertoire() }
-                ]
-              );
-            }}
-          >
-            <Text style={styles.clearButtonText}>Limpiar Repertorio Local</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Versión */}
-        <View style={styles.versionContainer}>
-          <Text style={styles.versionText}>Cancionero Mobile v{APP_VERSION}</Text>
-        </View>
-      </ScrollView>
-    </View>
-  );
+const COLORS = {
+  background: '#0a0a0a',
+  surface: '#1a1a1a',
+  foreground: '#ffffff',
+  mutedForeground: '#a0a0a0',
+  accent: '#3b82f6',
+  border: '#333333',
 };
 
+const NOTE_SEMITONES: Record<string, number> = {
+  C: 0,
+  'C#': 1,
+  Db: 1,
+  D: 2,
+  'D#': 3,
+  Eb: 3,
+  E: 4,
+  F: 5,
+  'F#': 6,
+  Gb: 6,
+  G: 7,
+  'G#': 8,
+  Ab: 8,
+  A: 9,
+  'A#': 10,
+  Bb: 10,
+  B: 11,
+};
+
+const NOTES_DISPLAY = [
+  'C',
+  'C#',
+  'D',
+  'D#',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'A#',
+  'B',
+];
+
+const NOTE_LABELS: Record<string, string> = {
+  'C#': 'C#/D♭',
+  'D#': 'D#/E♭',
+  'F#': 'F#/G♭',
+  'G#': 'G#/A♭',
+  'A#': 'A#/B♭',
+};
+
+interface SettingsModalProps {
+  visible: boolean;
+  onClose: () => void;
+
+  capo: number;
+  setCapo: (capo: number) => void;
+
+  soundingKeySemitone: number | null;
+  soundingKeyName: string | null;
+
+  isMetronomeActive: boolean;
+  setIsMetronomeActive: (active: boolean) => void;
+
+  bpm: number;
+  setBpm: React.Dispatch<
+    React.SetStateAction<number>
+  >;
+
+  timeSignature: number;
+  setTimeSignature: (ts: number) => void;
+
+  metronomeMuted: boolean;
+  setMetronomeMuted: React.Dispatch<
+    React.SetStateAction<boolean>
+  >;
+
+  fontSize: number;
+  setFontSize: React.Dispatch<
+    React.SetStateAction<number>
+  >;
+
+  scrollSpeed: number;
+  setScrollSpeed: React.Dispatch<
+    React.SetStateAction<number>
+  >;
+
+  pedalSpeed: number;
+  setPedalSpeed: React.Dispatch<
+    React.SetStateAction<number>
+  >;
+
+  theme: any;
+  onOpenColorPicker: () => void;
+
+  viewMode: 'all' | 'lyrics';
+  setViewMode: (
+    mode: 'all' | 'lyrics'
+  ) => void;
+
+  isDebugMode: boolean;
+  setIsDebugMode: (
+    debug: boolean
+  ) => void;
+
+  isEditToolActive: boolean;
+  setIsEditToolActive: (
+    active: boolean
+  ) => void;
+}
+
+export const SettingsModal: React.FC<
+  SettingsModalProps
+> = ({
+  visible,
+  onClose,
+  capo,
+  setCapo,
+  soundingKeySemitone,
+  soundingKeyName,
+  isMetronomeActive,
+  setIsMetronomeActive,
+  bpm,
+  setBpm,
+  timeSignature,
+  setTimeSignature,
+  metronomeMuted,
+  setMetronomeMuted,
+  fontSize,
+  setFontSize,
+  scrollSpeed,
+  setScrollSpeed,
+  pedalSpeed,
+  setPedalSpeed,
+  theme,
+  onOpenColorPicker,
+  viewMode,
+  setViewMode,
+  isDebugMode,
+  setIsDebugMode,
+  isEditToolActive,
+  setIsEditToolActive,
+}) => {
+    if (!visible) return null;
+
+    return (
+      <View style={styles.settingsSheet}>
+        <View style={styles.settingsHeader}>
+          <Text style={styles.settingsTitle}>
+            Ajustes de Canción
+          </Text>
+
+          <TouchableOpacity onPress={onClose}>
+            <X
+              size={24}
+              color={COLORS.foreground}
+            />
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Capo */}
+          <Text style={styles.settingLabel}>
+            Capodastro
+          </Text>
+
+          <View style={styles.capoGrid}>
+            {[0, 1, 2, 3, 4, 5].map(
+              val => (
+                <TouchableOpacity
+                  key={val}
+                  style={[
+                    styles.capoBtn,
+                    capo === val &&
+                    styles.capoBtnActive,
+                  ]}
+                  onPress={() =>
+                    setCapo(val)
+                  }
+                >
+                  <Text
+                    style={[
+                      styles.capoText,
+                      capo === val &&
+                      styles.capoTextActive,
+                    ]}
+                  >
+                    {val === 0
+                      ? 'Off'
+                      : val}
+                  </Text>
+                </TouchableOpacity>
+              )
+            )}
+          </View>
+
+          {/* Calculadora de Capo */}
+          {soundingKeySemitone !== null ? (
+            <>
+              <View
+                style={
+                  styles.capoCalcHeader
+                }
+              >
+                <Text
+                  style={[
+                    styles.settingLabel,
+                    {
+                      marginTop: 20,
+                      marginBottom: 0,
+                      flex: 1,
+                    },
+                  ]}
+                >
+                  Calculadora de Capo
+                </Text>
+
+                <View
+                  style={
+                    styles.capoCalcKeyBadge
+                  }
+                >
+                  <Text
+                    style={
+                      styles.capoCalcKeyBadgeText
+                    }
+                  >
+                    Suena en {soundingKeyName}
+                  </Text>
+                </View>
+              </View>
+
+              <Text
+                style={
+                  styles.capoCalcSubtitle
+                }
+              >
+                Tocá en la tonalidad que
+                quieras — el capo se ajusta
+                solo.
+              </Text>
+
+              <View
+                style={styles.capoCalcGrid}
+              >
+                {NOTES_DISPLAY.map(
+                  note => {
+                    const targetSemitone =
+                      NOTE_SEMITONES[note];
+
+                    const fret =
+                      (soundingKeySemitone -
+                        targetSemitone +
+                        12) %
+                      12;
+
+                    const isPractical =
+                      fret >= 1 &&
+                      fret <= 7;
+
+                    const isCurrent =
+                      fret === 0;
+
+                    const isActive =
+                      capo === fret &&
+                      !isCurrent;
+
+                    return (
+                      <TouchableOpacity
+                        key={note}
+                        style={[
+                          styles.capoCalcBtn,
+                          isCurrent &&
+                          styles.capoCalcBtnCurrent,
+                          isActive &&
+                          styles.capoCalcBtnActive,
+                          !isPractical &&
+                          !isCurrent &&
+                          styles.capoCalcBtnDim,
+                        ]}
+                        onPress={() =>
+                          setCapo(fret)
+                        }
+                      >
+                        <Text
+                          style={[
+                            styles.capoCalcNote,
+                            isCurrent && {
+                              color:
+                                COLORS.accent,
+                            },
+                            isActive && {
+                              color: '#fff',
+                            },
+                            !isPractical &&
+                            !isCurrent && {
+                              color:
+                                COLORS.mutedForeground,
+                            },
+                          ]}
+                        >
+                          {NOTE_LABELS[note] ||
+                            note}
+                        </Text>
+
+                        <Text
+                          style={[
+                            styles.capoCalcFret,
+                            isPractical &&
+                            !isCurrent && {
+                              color:
+                                '#4ade80',
+                            },
+                            isCurrent && {
+                              color:
+                                COLORS.accent,
+                            },
+                            isActive && {
+                              color: '#fff',
+                            },
+                            !isPractical &&
+                            !isCurrent && {
+                              color:
+                                COLORS.mutedForeground,
+                            },
+                          ]}
+                        >
+                          {isCurrent
+                            ? 'sin capo'
+                            : `traste ${fret}`}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  }
+                )}
+              </View>
+            </>
+          ) : (
+            <View
+              style={
+                styles.capoCalcWarning
+              }
+            >
+              <AlertTriangle
+                size={16}
+                color="#fbbf24"
+                style={{
+                  marginRight: 8,
+                }}
+              />
+
+              <Text
+                style={
+                  styles.capoCalcWarningText
+                }
+              >
+                La calculadora de capo no
+                está disponible porque esta
+                canción no tiene especificado
+                su tono original (Tono:).
+              </Text>
+            </View>
+          )}
+
+          {/* Metrónomo */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Metrónomo
+          </Text>
+
+          <View
+            style={styles.controlGroup}
+          >
+            <TouchableOpacity
+              onPress={() =>
+                setIsMetronomeActive(
+                  !isMetronomeActive
+                )
+              }
+              style={[
+                styles.smallBtn,
+                isMetronomeActive && {
+                  backgroundColor:
+                    COLORS.accent,
+                },
+              ]}
+            >
+              <Clock
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() =>
+                setBpm(p =>
+                  Math.max(40, p - 5)
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Minus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() =>
+                setBpm(p =>
+                  Math.max(40, p - 1)
+                )
+              }
+              style={[
+                styles.smallBtn,
+                { width: 28 },
+              ]}
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 12,
+                }}
+              >
+                -1
+              </Text>
+            </TouchableOpacity>
+
+            <Text
+              style={styles.ctrlText}
+            >
+              {bpm} BPM
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                setBpm(p =>
+                  Math.min(250, p + 1)
+                )
+              }
+              style={[
+                styles.smallBtn,
+                { width: 28 },
+              ]}
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 12,
+                }}
+              >
+                +1
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() =>
+                setBpm(p =>
+                  Math.min(250, p + 5)
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Plus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Compás y silencio */}
+          <View
+            style={[
+              styles.controlGroup,
+              { marginTop: 10 },
+            ]}
+          >
+            <Text
+              style={[
+                styles.ctrlText,
+                {
+                  fontSize: 13,
+                  marginRight: 8,
+                },
+              ]}
+            >
+              Compás:
+            </Text>
+
+            {[2, 3, 4, 6].map(ts => (
+              <TouchableOpacity
+                key={ts}
+                onPress={() =>
+                  setTimeSignature(ts)
+                }
+                style={[
+                  styles.smallBtn,
+                  timeSignature === ts && {
+                    backgroundColor:
+                      '#f59e0b',
+                  },
+                ]}
+              >
+                <Text
+                  style={{
+                    color: '#fff',
+                    fontSize: 13,
+                    fontWeight: 'bold',
+                  }}
+                >
+                  {ts}/4
+                </Text>
+              </TouchableOpacity>
+            ))}
+
+            <TouchableOpacity
+              onPress={() =>
+                setMetronomeMuted(
+                  m => !m
+                )
+              }
+              style={[
+                styles.smallBtn,
+                { marginLeft: 8 },
+                metronomeMuted && {
+                  backgroundColor:
+                    '#ef4444',
+                },
+              ]}
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 11,
+                }}
+              >
+                {metronomeMuted
+                  ? '🔇'
+                  : '🔊'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Tamaño letra */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Tamaño Letra
+          </Text>
+
+          <View
+            style={styles.controlGroup}
+          >
+            <TouchableOpacity
+              onPress={() =>
+                setFontSize(p =>
+                  Math.max(10, p - 2)
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Minus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+
+            <Text
+              style={styles.ctrlText}
+            >
+              {fontSize}px
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                setFontSize(p =>
+                  Math.min(40, p + 2)
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Plus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Auto-scroll */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Velocidad Auto-scroll
+          </Text>
+
+          <View
+            style={styles.controlGroup}
+          >
+            <TouchableOpacity
+              onPress={() =>
+                setScrollSpeed(p =>
+                  Math.max(
+                    0.1,
+                    +(
+                      p - 0.1
+                    ).toFixed(1)
+                  )
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Minus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+
+            <Text
+              style={styles.ctrlText}
+            >
+              {scrollSpeed}x
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                setScrollSpeed(p =>
+                  Math.min(
+                    10,
+                    +(
+                      p + 0.1
+                    ).toFixed(1)
+                  )
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Plus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Pedal */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Velocidad Pedal
+          </Text>
+
+          <View
+            style={styles.controlGroup}
+          >
+            <TouchableOpacity
+              onPress={() =>
+                setPedalSpeed(p =>
+                  Math.max(
+                    0.1,
+                    +(
+                      p - 0.1
+                    ).toFixed(1)
+                  )
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Minus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+
+            <Text
+              style={styles.ctrlText}
+            >
+              {pedalSpeed}x
+            </Text>
+
+            <TouchableOpacity
+              onPress={() =>
+                setPedalSpeed(p =>
+                  Math.min(
+                    10,
+                    +(
+                      p + 0.1
+                    ).toFixed(1)
+                  )
+                )
+              }
+              style={styles.smallBtn}
+            >
+              <Plus
+                size={18}
+                color="#fff"
+              />
+            </TouchableOpacity>
+          </View>
+
+          {/* Colores */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Colores (Globales)
+          </Text>
+
+          <View
+            style={{
+              flexDirection: 'row',
+              gap: 12,
+              marginTop: 8,
+              marginBottom: 10,
+              alignItems: 'center',
+            }}
+          >
+            <View
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 15,
+                backgroundColor:
+                  theme.background,
+                borderWidth: 1,
+                borderColor:
+                  COLORS.border,
+              }}
+            />
+
+            <View
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 15,
+                backgroundColor:
+                  theme.lyrics,
+                borderWidth: 1,
+                borderColor:
+                  COLORS.border,
+              }}
+            />
+
+            <View
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: 15,
+                backgroundColor:
+                  theme.chords,
+                borderWidth: 1,
+                borderColor:
+                  COLORS.border,
+              }}
+            />
+
+            <TouchableOpacity
+              onPress={onOpenColorPicker}
+              style={{
+                marginLeft: 'auto',
+                backgroundColor:
+                  COLORS.accent,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+                borderRadius: 20,
+              }}
+            >
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 13,
+                  fontWeight: 'bold',
+                }}
+              >
+                Personalizar
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Vista */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Vista
+          </Text>
+
+          <View
+            style={styles.toggleGroup}
+          >
+            <TouchableOpacity
+              style={[
+                styles.toggleBtn,
+                viewMode === 'all' &&
+                styles.toggleBtnActive,
+              ]}
+              onPress={() =>
+                setViewMode('all')
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  viewMode === 'all' &&
+                  styles.toggleTextActive,
+                ]}
+              >
+                Todo
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.toggleBtn,
+                viewMode === 'lyrics' &&
+                styles.toggleBtnActive,
+              ]}
+              onPress={() =>
+                setViewMode('lyrics')
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  viewMode === 'lyrics' &&
+                  styles.toggleTextActive,
+                ]}
+              >
+                Solo Letra
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Debug */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Modo Depuración (Alineación)
+          </Text>
+
+          <View
+            style={styles.toggleGroup}
+          >
+            <TouchableOpacity
+              style={[
+                styles.toggleBtn,
+                !isDebugMode &&
+                styles.toggleBtnActive,
+              ]}
+              onPress={() =>
+                setIsDebugMode(false)
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  !isDebugMode &&
+                  styles.toggleTextActive,
+                ]}
+              >
+                Apagado
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.toggleBtn,
+                isDebugMode &&
+                styles.toggleBtnActive,
+              ]}
+              onPress={() =>
+                setIsDebugMode(true)
+              }
+            >
+              <Text
+                style={[
+                  styles.toggleText,
+                  isDebugMode &&
+                  styles.toggleTextActive,
+                ]}
+              >
+                Encendido
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Herramientas */}
+          <Text
+            style={[
+              styles.settingLabel,
+              { marginTop: 20 },
+            ]}
+          >
+            Herramientas
+          </Text>
+
+          <TouchableOpacity
+            style={[
+              {
+                backgroundColor:
+                  'rgba(255,255,255,0.08)',
+                padding: 12,
+                borderRadius: 8,
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                marginTop: 8,
+              },
+              isEditToolActive && {
+                backgroundColor:
+                  'rgba(59,130,246,0.2)',
+                borderWidth: 1,
+                borderColor:
+                  COLORS.accent,
+              },
+            ]}
+            onPress={() => {
+              setIsEditToolActive(
+                !isEditToolActive
+              );
+              onClose();
+            }}
+          >
+            <Edit2
+              size={18}
+              color={
+                isEditToolActive
+                  ? COLORS.accent
+                  : COLORS.foreground
+              }
+            />
+
+            <Text
+              style={{
+                color:
+                  isEditToolActive
+                    ? COLORS.accent
+                    : COLORS.foreground,
+                fontWeight: 'bold',
+                fontSize: 13,
+              }}
+            >
+              {isEditToolActive
+                ? 'Desactivar Editor Visual'
+                : '✏️ Herramienta Editor Visual de Acordes'}
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.doneBtn}
+            onPress={onClose}
+          >
+            <Text
+              style={styles.doneBtnText}
+            >
+              Listo
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  };
+
 const styles = StyleSheet.create({
-  settingsPanel: {
+  settingsSheet: {
     position: 'absolute',
-    left: 20,
-    right: 20,
+    bottom: 0,
+    left: 0,
+    right: 0,
     backgroundColor: COLORS.surface,
-    borderRadius: 15,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    padding: 20,
+    maxHeight: '80%',
     borderWidth: 1,
     borderColor: COLORS.border,
-    padding: 20,
-    zIndex: 990,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
+    zIndex: 90,
   },
+
   settingsHeader: {
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  settingsTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: COLORS.foreground,
-  },
-  settingsScroll: {
-    paddingBottom: 10,
-  },
-  settingGroup: {
-    marginBottom: 20,
-  },
-  settingLabel: {
-    fontSize: 14,
-    color: COLORS.mutedForeground,
-    marginBottom: 8,
-    fontWeight: '500',
-  },
-  libraryContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: COLORS.card,
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-  },
-  libraryInfoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  libraryColorDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  libraryNameText: {
-    fontSize: 16,
-    color: COLORS.foreground,
-    fontWeight: '600',
-  },
-  manageLibrariesBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: COLORS.accent,
-    paddingVertical: 6,
-    paddingHorizontal: 12,
-    borderRadius: 6,
-  },
-  manageLibrariesBtnText: {
-    color: '#fff',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  inputContainer: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  input: {
-    backgroundColor: COLORS.card,
-    color: COLORS.foreground,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    fontSize: 14,
-  },
-  browseButton: {
-    backgroundColor: COLORS.accent,
-    justifyContent: 'center',
-    alignItems: 'center',
-    width: 45,
-    borderRadius: 8,
-  },
-  settingHelp: {
-    fontSize: 11,
-    color: COLORS.mutedForeground,
-    marginTop: 5,
-  },
-  userInfo: {
-    marginTop: 10,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  userEmailLabel: {
-    fontSize: 12,
-    color: COLORS.mutedForeground,
-    marginBottom: 2,
-  },
-  userName: {
-    fontSize: 14,
-    color: COLORS.foreground,
-    fontWeight: 'bold',
     marginBottom: 15,
   },
-  signOutButton: {
+
+  settingsTitle: {
+    color: COLORS.foreground,
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+
+  settingLabel: {
+    color: COLORS.mutedForeground,
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 8,
+    textTransform: 'uppercase',
+  },
+
+  capoGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  capoBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor:
+      'rgba(255,255,255,0.05)',
+    alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#ef4444',
+    borderColor: COLORS.border,
+  },
+
+  capoBtnActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+
+  capoText: {
+    color: COLORS.foreground,
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+
+  capoTextActive: {
+    color: '#fff',
+  },
+
+  capoCalcHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  capoCalcKeyBadge: {
+    backgroundColor:
+      'rgba(59, 130, 246, 0.2)',
+    borderColor: COLORS.accent,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginTop: 20,
+  },
+
+  capoCalcKeyBadgeText: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  capoCalcSubtitle: {
+    color: COLORS.mutedForeground,
+    fontSize: 12,
+    marginTop: 4,
+    marginBottom: 10,
+  },
+
+  capoCalcGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+
+  capoCalcBtn: {
+    width: '23%',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor:
+      'rgba(255,255,255,0.05)',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORS.border,
+  },
+
+  capoCalcBtnCurrent: {
+    borderColor: COLORS.accent,
+    backgroundColor:
+      'rgba(59, 130, 246, 0.15)',
+  },
+
+  capoCalcBtnActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+
+  capoCalcBtnDim: {
+    opacity: 0.4,
+  },
+
+  capoCalcNote: {
+    color: COLORS.foreground,
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+
+  capoCalcFret: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+
+  capoCalcWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor:
+      'rgba(245, 158, 11, 0.1)',
+    borderColor:
+      'rgba(245, 158, 11, 0.3)',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 15,
+  },
+
+  capoCalcWarningText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    flex: 1,
+  },
+
+  controlGroup: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  smallBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor:
+      'rgba(255, 255, 255, 0.1)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+
+  ctrlText: {
+    color: COLORS.foreground,
+    fontWeight: 'bold',
+    fontSize: 14,
+    textAlign: 'center',
+    minWidth: 40,
+  },
+
+  toggleGroup: {
+    flexDirection: 'row',
+    backgroundColor:
+      'rgba(255,255,255,0.05)',
+    borderRadius: 10,
+    padding: 4,
+    gap: 4,
+  },
+
+  toggleBtn: {
+    flex: 1,
     paddingVertical: 10,
     borderRadius: 8,
     alignItems: 'center',
   },
-  signOutText: {
-    color: '#ef4444',
-    fontWeight: 'bold',
-    fontSize: 14,
+
+  toggleBtnActive: {
+    backgroundColor: COLORS.surface,
   },
-  googleButton: {
-    backgroundColor: COLORS.accent,
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  googleButtonText: {
-    color: '#fff',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  dangerZone: {
-    marginTop: 20,
-    paddingTop: 20,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  clearButton: {
-    borderWidth: 1,
-    borderColor: '#ef4444',
-    paddingVertical: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-    backgroundColor: 'rgba(239, 68, 68, 0.05)',
-  },
-  clearButtonText: {
-    color: '#ef4444',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
-  versionContainer: {
-    marginTop: 15,
-    alignItems: 'center',
-  },
-  versionText: {
-    fontSize: 12,
+
+  toggleText: {
     color: COLORS.mutedForeground,
-    opacity: 0.7,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+
+  toggleTextActive: {
+    color: COLORS.foreground,
+  },
+
+  doneBtn: {
+    backgroundColor: COLORS.accent,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    marginTop: 20,
+    marginBottom: 10,
+  },
+
+  doneBtnText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: 'bold',
   },
 });

@@ -1,126 +1,108 @@
-import { firestore } from '../lib/firebase';
+import { auth } from '../lib/firebase';
 import { StorageService } from './StorageService';
-
-export interface Setlist {
-  id: string;
-  name: string;
-  songIds: string[];
-  isPublic?: boolean;
-}
+import { Setlist } from '../types';
 
 export class SetlistService {
   private static instance: SetlistService;
-  private static COLLECTION = 'setlists';
 
-  private constructor() {}
+  private constructor() { }
 
   public static getInstance(): SetlistService {
     if (!SetlistService.instance) {
       SetlistService.instance = new SetlistService();
     }
+
     return SetlistService.instance;
   }
 
-  public async getSetlists(userEmail?: string): Promise<Setlist[]> {
-    let localSetlists = await StorageService.getAllSetlists();
+  /**
+   * Obtiene los setlists personales del usuario.
+   *
+   * La fuente local es SQLite.
+   * StorageService se encarga de sincronizar cada setlist
+   * con Firestore cuando corresponde.
+   *
+   * Los setlists personales NO dependen de ninguna banda.
+   */
+  public async getSetlists(): Promise<Setlist[]> {
+    const localSetlists = await StorageService.getAllSetlists();
 
-    if (userEmail) {
-      try {
-        const snapshot = await firestore()
-          .collection(SetlistService.COLLECTION)
-          .where('user_email', '==', userEmail)
-          .get();
+    const user = auth().currentUser;
 
-        if (!snapshot.empty) {
-          const cloudSetlists: Setlist[] = snapshot.docs.map((doc: any) => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              name: data.name,
-              songIds: data.song_ids || [],
-              isPublic: data.is_public ?? false
-            };
-          });
-
-          for (const s of cloudSetlists) {
-            await StorageService.saveSetlist(s);
-          }
-          return cloudSetlists;
-        }
-      } catch (e) {
-        console.error('Failed to sync setlists with Firestore:', e);
-      }
+    if (!user) {
+      return localSetlists as Setlist[];
     }
 
-    return localSetlists;
+    return localSetlists as Setlist[];
   }
 
-  public async createSetlist(name: string, userEmail?: string): Promise<Setlist> {
-    const newSetlist: Setlist = {
-      id: Date.now().toString(),
-      name,
-      songIds: [],
-    };
+  /**
+   * Crea un nuevo setlist personal.
+   *
+   * La persistencia y sincronización quedan delegadas
+   * completamente en StorageService.
+   */
+  public async createSetlist(name: string): Promise<Setlist> {
+    const trimmedName = name.trim();
 
-    if (userEmail) {
-      try {
-        const docRef = await firestore().collection(SetlistService.COLLECTION).add({
-          user_email: userEmail,
-          name: newSetlist.name,
-          song_ids: newSetlist.songIds,
-          is_public: false,
-          created_at: new Date().toISOString()
-        });
-
-        const created: Setlist = {
-          id: docRef.id,
-          name: newSetlist.name,
-          songIds: newSetlist.songIds,
-          isPublic: false
-        };
-
-        await StorageService.saveSetlist(created);
-        return created;
-      } catch (e) {
-        console.error('Failed to create setlist in Firestore:', e);
-      }
+    if (!trimmedName) {
+      throw new Error('El nombre del setlist no puede estar vacío.');
     }
 
+    const newSetlist: Setlist = {
+      id: Date.now().toString(),
+      name: trimmedName,
+      songIds: [],
+      isPublic: false,
+      date: undefined,
+      notes: undefined,
+      songNotes: {},
+      lastUpdated: new Date().toISOString(),
+      libraryId: 'default',
+    };
+
     await StorageService.saveSetlist(newSetlist);
+
     return newSetlist;
   }
 
-  public async updateSetlist(setlist: Setlist, userEmail?: string) {
-    await StorageService.saveSetlist(setlist);
-
-    if (userEmail && setlist.id) {
-      try {
-        await firestore()
-          .collection(SetlistService.COLLECTION)
-          .doc(setlist.id)
-          .set({
-            user_email: userEmail,
-            name: setlist.name,
-            song_ids: setlist.songIds,
-            is_public: !!setlist.isPublic,
-            updated_at: new Date().toISOString()
-          }, { merge: true });
-      } catch (e) {
-        console.error('Failed to update setlist in Firestore:', e);
-      }
+  /**
+   * Actualiza un setlist personal.
+   *
+   * StorageService se ocupa de:
+   * - SQLite
+   * - Firestore
+   */
+  public async updateSetlist(setlist: Setlist): Promise<void> {
+    if (!setlist?.id) {
+      throw new Error('No se puede actualizar un setlist sin ID.');
     }
+
+    if (!setlist.name?.trim()) {
+      throw new Error('El nombre del setlist no puede estar vacío.');
+    }
+
+    const updatedSetlist: Setlist = {
+      ...setlist,
+      name: setlist.name.trim(),
+      lastUpdated: new Date().toISOString(),
+    };
+
+    await StorageService.saveSetlist(updatedSetlist);
   }
 
-  public async deleteSetlist(id: string, userEmail?: string) {
-    await StorageService.deleteSetlistLocal(id);
-
-    if (userEmail && id) {
-      try {
-        await firestore().collection(SetlistService.COLLECTION).doc(id).delete();
-      } catch (e) {
-        console.error('Failed to delete setlist in Firestore:', e);
-      }
+  /**
+   * Elimina un setlist personal.
+   *
+   * StorageService se ocupa de eliminarlo localmente
+   * y de Firestore.
+   */
+  public async deleteSetlist(id: string): Promise<void> {
+    if (!id) {
+      throw new Error('No se puede eliminar un setlist sin ID.');
     }
+
+    await StorageService.deleteSetlistLocal(id);
   }
 }
 

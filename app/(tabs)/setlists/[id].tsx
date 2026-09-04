@@ -21,14 +21,13 @@ export default function SetlistDetailScreen() {
     handleRemoveSongFromSetlist,
     handleMoveSong,
     handleStartSetlistLocally,
-    handleStartShowFromSetlist,
-    handleEndShow,
     handleUpdateSetlistNotes,
-    myDirectorSession,
     user,
     setIsEditSetlistOpen,
     setlists,
-    loadingActions
+    loadingActions,
+    loadingSongId,
+    handleUpdateSetlistSongNote
   } = useAppContext();
 
   const insets = useSafeAreaInsets();
@@ -90,14 +89,37 @@ export default function SetlistDetailScreen() {
     }
   };
 
-  const isStartingShow = loadingActions['startShow'];
-  const isEndingShow = loadingActions['endShow'];
+  const handleSaveSongNote = async (
+    songId: string,
+    note: string
+  ) => {
+    if (!activeSetlist) return;
+
+    await handleUpdateSetlistSongNote(
+      activeSetlist.id,
+      songId,
+      note
+    );
+  };
+
+  const handleDeleteSongNote = async (
+    songId: string
+  ) => {
+    if (!activeSetlist) return;
+
+    await handleUpdateSetlistSongNote(
+      activeSetlist.id,
+      songId,
+      ''
+    );
+  };
+
 
   return (
     <View style={styles.container}>
       <View style={[styles.activeSetlistHeader, { paddingTop: insets.top + 10 }]}>
-        <TouchableOpacity 
-          onPress={() => { setActiveSetlist(null); router.back(); }} 
+        <TouchableOpacity
+          onPress={() => { setActiveSetlist(null); router.back(); }}
           style={styles.closeSetlistBtn}
         >
           <ArrowLeft size={24} color="#fff" />
@@ -116,7 +138,7 @@ export default function SetlistDetailScreen() {
         </View>
       </View>
 
-      {/* Acciones de Play / Vivo */}
+      {/* Acciones de Play */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={styles.startShowHeaderBtn}
@@ -125,41 +147,6 @@ export default function SetlistDetailScreen() {
           <Play size={16} color="#fff" />
           <Text style={styles.startShowHeaderText}>Iniciar Local</Text>
         </TouchableOpacity>
-        {user && (
-          <TouchableOpacity
-            style={[
-              styles.startShowHeaderBtn, 
-              myDirectorSession?.setlist_id === activeSetlist.id && styles.startShowHeaderBtnActive,
-              { flex: 1 }
-            ]}
-            onPress={() => handleStartShowFromSetlist(activeSetlist)}
-            disabled={isStartingShow || isEndingShow}
-          >
-            {isStartingShow ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Radio size={16} color="#fff" />
-            )}
-            <Text style={styles.startShowHeaderText}>
-              {myDirectorSession?.setlist_id === activeSetlist.id ? 'En Vivo' : 'Iniciar Show'}
-            </Text>
-          </TouchableOpacity>
-        )}
-        {/* Botón Terminar: solo cuando hay una sesión activa para ESTA lista */}
-        {myDirectorSession?.setlist_id === activeSetlist.id && (
-          <TouchableOpacity
-            style={styles.stopShowBtn}
-            onPress={handleEndShow}
-            disabled={isStartingShow || isEndingShow}
-          >
-            {isEndingShow ? (
-              <ActivityIndicator size="small" color="#fff" />
-            ) : (
-              <Square size={16} color="#fff" fill="#fff" />
-            )}
-            <Text style={styles.startShowHeaderText}>Terminar</Text>
-          </TouchableOpacity>
-        )}
       </View>
 
       {/* Sección de Notas de la Lista */}
@@ -271,6 +258,10 @@ export default function SetlistDetailScreen() {
         onRemoveFromSetlist={handleRemoveSongFromSetlist}
         onAddSongsPress={handleOpenEditSetlist}
         onReorder={handleMoveSong}
+        loadingSongId={loadingSongId}
+        songNotes={activeSetlist?.songNotes}
+        onSaveSongNote={handleSaveSongNote}
+        onDeleteSongNote={handleDeleteSongNote}
       />
     </View>
   );
