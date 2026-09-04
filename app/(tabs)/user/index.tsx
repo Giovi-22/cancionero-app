@@ -19,9 +19,9 @@ import Constants from 'expo-constants';
 
 import { AppHeader } from '../../../src/components/layout/AppHeader';
 import { useAppContext } from '../../../src/context/AppContext';
+import { useUserContext } from '../../../src/context/UserContext';
 import { COLORS } from '../../../src/constants/theme';
 import { authService } from '../../../src/services/AuthService';
-
 
 import packageJson from '../../../package.json';
 import AppModal from '../../../src/components/common/AppModal';
@@ -35,10 +35,14 @@ export default function UserTab() {
     const insets = useSafeAreaInsets();
 
     const {
-        user,
         isSyncing,
         handleSync,
     } = useAppContext();
+
+    const {
+        user,
+        signOut,
+    } = useUserContext();
 
     const [isAuthLoading, setIsAuthLoading] = useState(false);
 
@@ -88,7 +92,7 @@ export default function UserTab() {
         setIsAuthLoading(true);
 
         try {
-            await authService.signOut();
+            await signOut();
         } catch (e) {
             console.error('[User] Error al cerrar sesión:', e);
 

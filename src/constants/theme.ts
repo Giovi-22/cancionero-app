@@ -6,5 +6,4 @@ export const COLORS = {
   accent: '#3b82f6',
   border: '#333333',
   card: '#121212',
-  text: '#ffffff'
 };

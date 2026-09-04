@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAppContext } from '../context/AppContext';
 import { Band, BandMember, BandRole, UserProfile } from '../types/band';
 import { BandService, UserBandInfo } from '../services/BandService';
 import { UserService } from '../services/UserService';
 import { getBandPermissions, BandPermissions } from '../utils/permissions';
+import { useUserContext } from '../context/UserContext';
 
 export function useBands() {
-  const { user } = useAppContext();
+  const { user } = useUserContext();
   const [userBandsInfo, setUserBandsInfo] = useState<UserBandInfo[]>([]);
   const [selectedBand, setSelectedBand] = useState<Band | null>(null);
   const [userRole, setUserRole] = useState<BandRole | null>(null);

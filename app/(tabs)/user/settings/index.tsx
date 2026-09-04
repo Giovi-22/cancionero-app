@@ -19,14 +19,13 @@ import { router } from 'expo-router';
 
 import { COLORS } from '../../../../src/constants/theme';
 import { useAppContext } from '../../../../src/context/AppContext';
+import { useUserContext } from '../../../../src/context/UserContext';
 import AppModal from '../../../../src/components/common/AppModal';
-
 
 export default function SettingsScreen() {
     const isDevelopment = __DEV__;
 
     const {
-        user,
         isSyncing,
         setIsLibrariesOpen,
         activeLibrary,
@@ -36,6 +35,8 @@ export default function SettingsScreen() {
         handleClearRepertoire,
         isLoadingFolders,
     } = useAppContext();
+
+    const { user } = useUserContext();
 
     const [isClearRepertoireModalVisible, setIsClearRepertoireModalVisible] =
         useState(false);

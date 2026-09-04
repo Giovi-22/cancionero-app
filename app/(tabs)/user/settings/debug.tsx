@@ -1,15 +1,18 @@
 import React from 'react';
 import {
-    SafeAreaView,
     StyleSheet,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { DebugPanel } from '../../../../src/components/DebugPanel';
 import { COLORS } from '../../../../src/constants/theme';
 
 export default function DebugScreen() {
     return (
-        <SafeAreaView style={styles.container}>
+        <SafeAreaView
+            style={styles.container}
+            edges={['left', 'right', 'bottom']}
+        >
             <DebugPanel />
         </SafeAreaView>
     );

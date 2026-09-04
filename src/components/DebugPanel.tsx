@@ -16,6 +16,8 @@ import {
     useDebugContext,
 } from '../context/DebugContext';
 
+import { COLORS } from '../constants/theme';
+
 const MODULES = [
     'Auth',
     'User',
@@ -91,6 +93,10 @@ export function DebugPanel() {
                     <Switch
                         value={enabled}
                         onValueChange={setEnabled}
+                        trackColor={{
+                            false: COLORS.border,
+                            true: COLORS.accent,
+                        }}
                     />
                 </View>
             </View>
@@ -113,9 +119,7 @@ export function DebugPanel() {
                                     selected &&
                                     styles.levelButtonSelected,
                                 ]}
-                                onPress={() =>
-                                    setLevel(item)
-                                }
+                                onPress={() => setLevel(item)}
                             >
                                 <Text
                                     style={[
@@ -175,6 +179,10 @@ export function DebugPanel() {
                                         disableModule(module);
                                     }
                                 }}
+                                trackColor={{
+                                    false: COLORS.border,
+                                    true: COLORS.accent,
+                                }}
                             />
                         </View>
                     );
@@ -197,6 +205,7 @@ export function DebugPanel() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: COLORS.background,
     },
 
     content: {
@@ -205,14 +214,15 @@ const styles = StyleSheet.create({
     },
 
     title: {
+        color: COLORS.foreground,
         fontSize: 28,
         fontWeight: '700',
         marginBottom: 6,
     },
 
     description: {
+        color: COLORS.mutedForeground,
         fontSize: 14,
-        opacity: 0.65,
         marginBottom: 24,
     },
 
@@ -228,6 +238,7 @@ const styles = StyleSheet.create({
     },
 
     sectionTitle: {
+        color: COLORS.foreground,
         fontSize: 17,
         fontWeight: '700',
         marginBottom: 10,
@@ -239,7 +250,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         borderBottomWidth: StyleSheet.hairlineWidth,
-        borderBottomColor: '#333',
+        borderBottomColor: COLORS.border,
     },
 
     rowText: {
@@ -248,13 +259,14 @@ const styles = StyleSheet.create({
     },
 
     label: {
+        color: COLORS.foreground,
         fontSize: 16,
         fontWeight: '500',
     },
 
     secondary: {
+        color: COLORS.mutedForeground,
         fontSize: 13,
-        opacity: 0.55,
         marginTop: 3,
     },
 
@@ -269,28 +281,28 @@ const styles = StyleSheet.create({
         paddingVertical: 9,
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#444',
+        borderColor: COLORS.border,
     },
 
     levelButtonSelected: {
-        backgroundColor: '#333',
-        borderColor: '#777',
+        backgroundColor: COLORS.surface,
+        borderColor: COLORS.accent,
     },
 
     levelText: {
+        color: COLORS.mutedForeground,
         fontSize: 12,
         fontWeight: '600',
-        opacity: 0.65,
     },
 
     levelTextSelected: {
-        opacity: 1,
+        color: COLORS.foreground,
     },
 
     actionText: {
+        color: COLORS.accent,
         fontSize: 13,
         fontWeight: '600',
-        opacity: 0.8,
     },
 
     resetButton: {
@@ -299,10 +311,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         borderRadius: 8,
         borderWidth: 1,
-        borderColor: '#444',
+        borderColor: COLORS.border,
     },
 
     resetText: {
+        color: COLORS.foreground,
         fontSize: 14,
         fontWeight: '600',
     },
