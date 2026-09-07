@@ -22,7 +22,6 @@ export default function SetlistDetailScreen() {
     handleMoveSong,
     handleStartSetlistLocally,
     handleUpdateSetlistNotes,
-    user,
     setIsEditSetlistOpen,
     setlists,
     loadingActions,

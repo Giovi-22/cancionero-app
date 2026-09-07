@@ -24,7 +24,7 @@ import {
 } from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
 import { useUserContext } from '../context/UserContext';
-import { useBands } from '../hooks/useBands';
+import { useBandContext } from '../context/BandContext';
 import { COLORS } from '../constants/theme';
 import { AppHeader } from '../components/layout/AppHeader';
 import { router } from 'expo-router';
@@ -37,18 +37,15 @@ export const HomeScreen = () => {
     topSongs,
     setlists,
     activeLibrary,
-    activeBandId,
     handleSongPress,
     handleStartSetlistLocally,
     setActiveSetlist,
     isSyncing,
     handleSync,
-    loadingActions,
   } = useAppContext();
 
   const { user } = useUserContext();
-
-  const { bands } = useBands();
+  const { bands } = useBandContext();
 
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
@@ -63,6 +60,7 @@ export const HomeScreen = () => {
     color: string
   ) => {
     const size = 18;
+
 
     switch (iconName) {
       case 'music':
@@ -125,292 +123,296 @@ export const HomeScreen = () => {
           />
         );
     }
+
+
   };
 
-  return (
-    <ScrollView
-      style={styles.container}
-      showsVerticalScrollIndicator={false}
-      contentContainerStyle={styles.scrollContent}
+  return (<ScrollView
+    style={styles.container}
+    showsVerticalScrollIndicator={false}
+    contentContainerStyle={styles.scrollContent}
+  >
+    <AppHeader
+      title="Cancionero"
+      isSyncing={isSyncing}
+      onSync={handleSync}
+      onSettings={() =>
+        router.push('/(tabs)/user')
+      }
+      hasUser={!!user}
+    />
+
+
+    {/* SECCIÓN DE BIENVENIDA */}
+    <LinearGradient
+      colors={['#1e3a8a', '#3b82f6']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.welcomeCard}
     >
-      <AppHeader
-        title="Cancionero"
-        isSyncing={isSyncing}
-        onSync={handleSync}
-        onSettings={() =>
-          router.push('/(tabs)/user')
-        }
-        hasUser={!!user}
-      />
+      <View style={styles.welcomeLeft}>
+        <Text style={styles.welcomeTitle}>
+          ¡Hola,{' '}
+          {user?.user_metadata?.full_name ||
+            user?.email?.split('@')[0] ||
+            'Invitado'}
+          !
+        </Text>
 
-      {/* SECCIÓN DE BIENVENIDA */}
-      <LinearGradient
-        colors={['#1e3a8a', '#3b82f6']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.welcomeCard}
-      >
-        <View style={styles.welcomeLeft}>
-          <Text style={styles.welcomeTitle}>
-            ¡Hola,{' '}
-            {user?.user_metadata?.full_name ||
-              user?.email?.split('@')[0] ||
-              'Invitado'}
-            !
-          </Text>
-
-          {!user ? (
-            <View style={styles.connectionWarning}>
-              <Text style={styles.connectionWarningText}>
-                Sin conexión a Google Drive
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.welcomeSub}>
-              ¿Qué vamos a tocar hoy?
-            </Text>
-          )}
-        </View>
-
-        {/* Badge Biblioteca Activa */}
-        {activeLibrary && (
-          <View style={styles.libraryBadge}>
-            {renderLibraryIcon(
-              activeLibrary.icon || 'book-open',
-              '#fff'
-            )}
-
-            <Text style={styles.libraryBadgeText}>
-              {activeLibrary.name}
+        {!user ? (
+          <View style={styles.connectionWarning}>
+            <Text style={styles.connectionWarningText}>
+              Sin conexión a Google Drive
             </Text>
           </View>
+        ) : (
+          <Text style={styles.welcomeSub}>
+            ¿Qué vamos a tocar hoy?
+          </Text>
         )}
-      </LinearGradient>
-
-      <ActiveDirectorSessionsBanner bands={bands} />
-
-      {/* ESTADÍSTICAS RÁPIDAS */}
-      <View style={styles.statsRow}>
-        <TouchableOpacity
-          style={styles.statCard}
-          onPress={() =>
-            router.push('/(tabs)/songs')
-          }
-        >
-          <Music
-            size={24}
-            color={
-              activeLibrary?.color ||
-              COLORS.accent
-            }
-          />
-
-          <Text style={styles.statValue}>
-            {songs.length}
-          </Text>
-
-          <Text style={styles.statLabel}>
-            Canciones
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={styles.statCard}
-          onPress={() =>
-            router.push('/(tabs)/setlists')
-          }
-        >
-          <List
-            size={24}
-            color="#10b981"
-          />
-
-          <Text style={styles.statValue}>
-            {setlists.length}
-          </Text>
-
-          <Text style={styles.statLabel}>
-            Listas
-          </Text>
-        </TouchableOpacity>
       </View>
 
-      {/* MÁS ELEGIDAS */}
-      <View style={styles.sectionHeader}>
-        <TrendingUp
-          size={20}
+      {/* Badge Biblioteca Activa */}
+      {activeLibrary && (
+        <View style={styles.libraryBadge}>
+          {renderLibraryIcon(
+            activeLibrary.icon || 'book-open',
+            '#fff'
+          )}
+
+          <Text style={styles.libraryBadgeText}>
+            {activeLibrary.name}
+          </Text>
+        </View>
+      )}
+    </LinearGradient>
+
+    <ActiveDirectorSessionsBanner bands={bands} />
+
+    {/* ESTADÍSTICAS RÁPIDAS */}
+    <View style={styles.statsRow}>
+      <TouchableOpacity
+        style={styles.statCard}
+        onPress={() =>
+          router.push('/(tabs)/songs')
+        }
+      >
+        <Music
+          size={24}
           color={
             activeLibrary?.color ||
             COLORS.accent
           }
         />
 
-        <Text style={styles.sectionTitle}>
-          Más Elegidas
+        <Text style={styles.statValue}>
+          {songs.length}
         </Text>
-      </View>
 
-      <View style={styles.topSongsList}>
-        {topSongs.map((song, index) => (
-          <TouchableOpacity
-            key={song.id}
-            style={styles.topSongItem}
-            onPress={() =>
-              handleSongPress(song)
-            }
-          >
-            <View style={styles.topSongRank}>
-              <Text
-                style={
-                  styles.topSongRankText
-                }
-              >
-                {index + 1}
-              </Text>
-            </View>
+        <Text style={styles.statLabel}>
+          Canciones
+        </Text>
+      </TouchableOpacity>
 
-            <Text
-              style={styles.topSongName}
-              numberOfLines={1}
-            >
-              {song.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-
-        {topSongs.length === 0 && (
-          <Text style={styles.emptyText}>
-            Sincroniza tus canciones para empezar.
-          </Text>
-        )}
-      </View>
-
-      {/* LISTAS RECIENTES */}
-      <View style={styles.sectionHeader}>
-        <Star
-          size={20}
-          color="#fbbf24"
+      <TouchableOpacity
+        style={styles.statCard}
+        onPress={() =>
+          router.push('/(tabs)/setlists')
+        }
+      >
+        <List
+          size={24}
+          color="#10b981"
         />
 
-        <Text style={styles.sectionTitle}>
-          Listas Recientes
+        <Text style={styles.statValue}>
+          {setlists.length}
         </Text>
-      </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.recentSetlists}
-        contentContainerStyle={{
-          paddingRight: 20,
-        }}
-      >
-        {setlists.slice(0, 5).map(
-          (setlist, idx) => (
-            <LinearGradient
-              key={setlist.id}
-              colors={
-                idx % 2 === 0
-                  ? [
-                    '#0f172a',
-                    '#1e293b',
-                  ]
-                  : [
-                    '#1e1b4b',
-                    '#312e81',
-                  ]
+        <Text style={styles.statLabel}>
+          Listas
+        </Text>
+      </TouchableOpacity>
+    </View>
+
+    {/* MÁS ELEGIDAS */}
+    <View style={styles.sectionHeader}>
+      <TrendingUp
+        size={20}
+        color={
+          activeLibrary?.color ||
+          COLORS.accent
+        }
+      />
+
+      <Text style={styles.sectionTitle}>
+        Más Elegidas
+      </Text>
+    </View>
+
+    <View style={styles.topSongsList}>
+      {topSongs.map((song, index) => (
+        <TouchableOpacity
+          key={song.id}
+          style={styles.topSongItem}
+          onPress={() =>
+            handleSongPress(song)
+          }
+        >
+          <View style={styles.topSongRank}>
+            <Text
+              style={
+                styles.topSongRankText
               }
-              style={styles.setlistCard}
+            >
+              {index + 1}
+            </Text>
+          </View>
+
+          <Text
+            style={styles.topSongName}
+            numberOfLines={1}
+          >
+            {song.name}
+          </Text>
+        </TouchableOpacity>
+      ))}
+
+      {topSongs.length === 0 && (
+        <Text style={styles.emptyText}>
+          Sincroniza tus canciones para empezar.
+        </Text>
+      )}
+    </View>
+
+    {/* LISTAS RECIENTES */}
+    <View style={styles.sectionHeader}>
+      <Star
+        size={20}
+        color="#fbbf24"
+      />
+
+      <Text style={styles.sectionTitle}>
+        Listas Recientes
+      </Text>
+    </View>
+
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.recentSetlists}
+      contentContainerStyle={{
+        paddingRight: 20,
+      }}
+    >
+      {setlists.slice(0, 5).map(
+        (setlist, idx) => (
+          <LinearGradient
+            key={setlist.id}
+            colors={
+              idx % 2 === 0
+                ? [
+                  '#0f172a',
+                  '#1e293b',
+                ]
+                : [
+                  '#1e1b4b',
+                  '#312e81',
+                ]
+            }
+            style={styles.setlistCard}
+          >
+            <TouchableOpacity
+              onPress={() =>
+                handleSetlistPress(
+                  setlist
+                )
+              }
+            >
+              <View
+                style={
+                  styles.setlistCardIcon
+                }
+              >
+                <List
+                  size={24}
+                  color="#fff"
+                />
+              </View>
+
+              <Text
+                style={
+                  styles.setlistCardName
+                }
+                numberOfLines={2}
+              >
+                {setlist.name}
+              </Text>
+
+              <Text
+                style={
+                  styles.setlistCardCount
+                }
+              >
+                {setlist.songIds.length}{' '}
+                temas
+              </Text>
+            </TouchableOpacity>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: 5,
+                marginTop: 8,
+              }}
             >
               <TouchableOpacity
+                style={[
+                  styles.startShowBtn,
+                  {
+                    marginTop: 0,
+                    flex: 1,
+                    justifyContent:
+                      'center',
+                  },
+                ]}
                 onPress={() =>
-                  handleSetlistPress(
+                  handleStartSetlistLocally(
                     setlist
                   )
                 }
               >
-                <View
-                  style={
-                    styles.setlistCardIcon
-                  }
-                >
-                  <List
-                    size={24}
-                    color="#fff"
-                  />
-                </View>
+                <Play
+                  size={12}
+                  color="#fff"
+                />
 
                 <Text
                   style={
-                    styles.setlistCardName
-                  }
-                  numberOfLines={2}
-                >
-                  {setlist.name}
-                </Text>
-
-                <Text
-                  style={
-                    styles.setlistCardCount
+                    styles.startShowText
                   }
                 >
-                  {setlist.songIds.length}{' '}
-                  temas
+                  Iniciar
                 </Text>
               </TouchableOpacity>
+            </View>
+          </LinearGradient>
+        )
+      )}
 
-              <View
-                style={{
-                  flexDirection: 'row',
-                  gap: 5,
-                  marginTop: 8,
-                }}
-              >
-                <TouchableOpacity
-                  style={[
-                    styles.startShowBtn,
-                    {
-                      marginTop: 0,
-                      flex: 1,
-                      justifyContent:
-                        'center',
-                    },
-                  ]}
-                  onPress={() =>
-                    handleStartSetlistLocally(
-                      setlist
-                    )
-                  }
-                >
-                  <Play
-                    size={12}
-                    color="#fff"
-                  />
-
-                  <Text
-                    style={
-                      styles.startShowText
-                    }
-                  >
-                    Iniciar
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </LinearGradient>
-          )
-        )}
-
-        {setlists.length === 0 && (
-          <Text
-            style={
-              styles.emptyTextHorizontal
-            }
-          >
-            No hay listas creadas recientemente.
-          </Text>
-        )}
-      </ScrollView>
+      {setlists.length === 0 && (
+        <Text
+          style={
+            styles.emptyTextHorizontal
+          }
+        >
+          No hay listas creadas recientemente.
+        </Text>
+      )}
     </ScrollView>
+  </ScrollView>
+
+
   );
 };
 

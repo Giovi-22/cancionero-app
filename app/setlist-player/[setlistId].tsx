@@ -69,16 +69,6 @@ export default function SetlistPlayerScreen() {
   const resolvedBandId =
     isBandMode ? bandIdParam : null;
 
-  console.log(
-    '[SetlistPlayer] Params:',
-    {
-      setlistId,
-      bandIdParam,
-      isBandMode,
-      resolvedBandId,
-    }
-  );
-
   const {
     setlists: bandSetlists,
     loading: bandSetlistsLoading,

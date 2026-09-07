@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useAppContext } from '../context/AppContext';
 import { Band, Invitation, UserProfile } from '../types/band';
 import { InvitationService } from '../services/InvitationService';
 import { UserService } from '../services/UserService';
+import { useUserContext } from '../context/UserContext';
 
 type BandRole = 'owner' | 'director' | 'member';
 
@@ -10,7 +10,7 @@ export function useBandInvitations(
   bandId?: string | null,
   bandRole?: BandRole | null
 ) {
-  const { user } = useAppContext();
+  const { user } = useUserContext();
 
   // Invitaciones que recibió el usuario
   const [pendingInvitations, setPendingInvitations] = useState<Invitation[]>([]);
@@ -21,7 +21,7 @@ export function useBandInvitations(
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-  const userEmail = user?.email || user?.user_metadata?.email || '';
+  const userEmail = user?.email || '';
 
   // ============================================================
   // INVITACIONES RECIBIDAS

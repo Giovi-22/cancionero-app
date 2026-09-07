@@ -32,17 +32,9 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SongMetadata } from '../types';
+import { COLORS } from '../constants/theme';
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
-
-const COLORS = {
-  background: '#0a0a0a',
-  surface: '#1a1a1a',
-  foreground: '#ffffff',
-  mutedForeground: '#a0a0a0',
-  accent: '#3b82f6',
-  border: '#333333',
-};
 
 const ITEM_HEIGHT = 85;
 const AUTOSCROLL_THRESHOLD = 100;

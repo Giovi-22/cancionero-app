@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useAppContext } from '../context/AppContext';
+import { useUserContext } from '../context/UserContext';
 import { SetlistList } from '../components/SetlistList';
 import { COLORS } from '../constants/theme';
 import { Setlist } from '../types';
@@ -15,12 +16,17 @@ export const SetlistsScreen = () => {
     handleDeleteSetlist,
     isSyncing,
     handleSync,
-    user
   } = useAppContext();
+
+  const { user } = useUserContext();
 
   const handleSetlistPress = (setlist: Setlist) => {
     setActiveSetlist(setlist);
-    router.push({ pathname: "/(tabs)/setlists/[id]", params: { id: setlist.id } } as any);
+
+    router.push({
+      pathname: "/(tabs)/setlists/[id]",
+      params: { id: setlist.id },
+    } as any);
   };
 
   return (
@@ -32,6 +38,7 @@ export const SetlistsScreen = () => {
         onSettings={() => router.push("/(tabs)/user")}
         hasUser={!!user}
       />
+
       <SetlistList
         setlists={setlists}
         onSetlistPress={handleSetlistPress}

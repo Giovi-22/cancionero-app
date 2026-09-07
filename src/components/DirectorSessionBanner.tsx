@@ -30,6 +30,7 @@ import { COLORS } from '../constants/theme';
 import { useDirectorSession } from '../hooks/useDirectorSession';
 import { useAppContext } from '../context/AppContext';
 import AppModal from './common/AppModal';
+import { useBandContext } from '../context/BandContext';
 
 
 function DirectorSessionBannerInner({ bandId }: { bandId: string }) {
@@ -269,7 +270,9 @@ function DirectorSessionBannerInner({ bandId }: { bandId: string }) {
 }
 
 export const DirectorSessionBanner = () => {
-    const { activeBandId } = useAppContext();
+    const { selectedBand } = useBandContext();
+
+    const activeBandId = selectedBand?.id ?? null;
 
     if (!activeBandId) {
         return null;

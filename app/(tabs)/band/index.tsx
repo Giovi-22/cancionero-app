@@ -18,7 +18,7 @@ import {
     Sparkles,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { useBands } from '../../../src/hooks/useBands';
+import { useBandContext } from '../../../src/context/BandContext';
 import { useBandInvitations } from '../../../src/hooks/useBandInvitations';
 import { useDirectorSession } from '../../../src/hooks/useDirectorSession';
 import { BandService } from '../../../src/services/BandService';
@@ -30,6 +30,7 @@ import { BandMemberList } from '../../../src/components/band/BandMemberList';
 import { useAppContext } from '../../../src/context/AppContext';
 import { SentInvitationsList } from '../../../src/components/band/SentInvitationsList';
 import AppModal from '../../../src/components/common/AppModal';
+import { useUserContext } from '../../../src/context/UserContext';
 
 type FeedbackModalType =
     | 'danger'
@@ -48,11 +49,20 @@ export default function BandScreen() {
     const insets = useSafeAreaInsets();
 
     const {
-        user,
-        setActiveBandId,
         driveFolderId,
     } = useAppContext();
 
+    const { user } = useUserContext();
+
+    // ============================================================
+    // BandContext
+    //
+    // Fuente única de verdad para banda activa, rol y permisos.
+    // Antes esta pantalla usaba useBands() directamente, lo que
+    // creaba una instancia independiente (y su propio listener de
+    // Firestore) desincronizada del resto de la app. Ver plan de
+    // refactorización arquitectónica.
+    // ============================================================
     const {
         bands,
         selectedBand,
@@ -62,7 +72,7 @@ export default function BandScreen() {
         loading,
         selectBand,
         createBand,
-    } = useBands();
+    } = useBandContext();
 
     const {
         activeSession,
@@ -142,8 +152,6 @@ export default function BandScreen() {
             return;
         }
 
-        setActiveBandId(selectedBand.id);
-
         router.push({
             pathname: '/setlist-player/[setlistId]',
             params: {
@@ -211,7 +219,6 @@ export default function BandScreen() {
         band: typeof bands[number]
     ) => {
         selectBand(band);
-        setActiveBandId(band.id);
     };
 
     // ============================================================
@@ -221,13 +228,10 @@ export default function BandScreen() {
         name: string,
         description: string
     ) => {
-        const newBand = await createBand(
+        await createBand(
             name,
             description
         );
-
-        // La nueva banda pasa a ser la banda activa.
-        setActiveBandId(newBand.id);
     };
 
     // ============================================================
@@ -292,7 +296,6 @@ export default function BandScreen() {
         // Seguridad adicional:
         // si existe una sesión activa, volver directamente a ella.
         if (activeSession) {
-            setActiveBandId(selectedBand.id);
             handleGoToActiveSession();
             return;
         }
@@ -308,10 +311,13 @@ export default function BandScreen() {
             return;
         }
 
-        setActiveBandId(selectedBand.id);
-
         // Navegar al repertorio compartido de la banda.
-        router.push('/(tabs)/band/setlists');
+        router.push({
+            pathname: '/(tabs)/band/setlists',
+            params: {
+                bandId: selectedBand.id,
+            },
+        });
     };
 
     // ============================================================
@@ -327,9 +333,12 @@ export default function BandScreen() {
             return;
         }
 
-        setActiveBandId(selectedBand.id);
-
-        router.push('/(tabs)/band/setlists');
+        router.push({
+            pathname: '/(tabs)/band/setlists',
+            params: {
+                bandId: selectedBand.id,
+            },
+        });
     };
 
     // ============================================================
