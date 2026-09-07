@@ -76,8 +76,6 @@ export interface AppContextType {
   handleSaveGlobalTheme: (theme: any) => Promise<void>;
 
   // Band / Director session state
-  activeBandId: string | null;
-  setActiveBandId: (id: string | null) => void;
   handleStartSetlistLocally: (setlist: Setlist) => void;
   handleFollowSongChange: (newSongId: string) => Promise<void>;
 
@@ -166,7 +164,6 @@ export const AppContextProvider = ({
   const [songSettings, setSongSettings] = useState<any>(null);
 
   // Band / Director Mode
-  const [activeBandId, setActiveBandId] = useState<string | null>(null);
   const [setlistSongs, setSetlistSongs] = useState<SongMetadata[]>([]);
 
   // Estado de Setlist Activa
@@ -1258,8 +1255,6 @@ export const AppContextProvider = ({
         setSearchQuery,
         globalTheme,
         handleSaveGlobalTheme,
-        activeBandId,
-        setActiveBandId,
         handleStartSetlistLocally,
         handleFollowSongChange,
         refreshLocalData,
