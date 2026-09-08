@@ -75,9 +75,7 @@ export interface AppContextType {
   globalTheme: any;
   handleSaveGlobalTheme: (theme: any) => Promise<void>;
 
-  // Band / Director session state
   handleStartSetlistLocally: (setlist: Setlist) => void;
-  handleFollowSongChange: (newSongId: string) => Promise<void>;
 
   // Actions
   refreshLocalData: () => Promise<void>;
@@ -163,7 +161,6 @@ export const AppContextProvider = ({
   const [songContent, setSongContent] = useState<string | null>(null);
   const [songSettings, setSongSettings] = useState<any>(null);
 
-  // Band / Director Mode
   const [setlistSongs, setSetlistSongs] = useState<SongMetadata[]>([]);
 
   // Estado de Setlist Activa
@@ -1031,8 +1028,7 @@ export const AppContextProvider = ({
     );
   };
 
-  // --- Director Mode helpers ---
-
+  //Personal setlist helper
   const handleStartSetlistLocally = (
     setlist: Setlist
   ) => {
@@ -1063,49 +1059,6 @@ export const AppContextProvider = ({
     }
   };
 
-  /**
-   * Callback para que el SongViewer notifique
-   * al contexto cuando el Follower recibe
-   * un evento SONG_CHANGED.
-   */
-  const handleFollowSongChange = async (
-    newSongId: string
-  ) => {
-    const song = songs.find(
-      s => s.id === newSongId
-    );
-
-    if (!song) return;
-
-    const content =
-      await FileSystemService.getSongContent(
-        newSongId
-      );
-
-    if (!content) return;
-
-    const libId =
-      activeLibrary?.id || 'default';
-
-    let settings =
-      await StorageService.getSetting(
-        `song_settings_${libId}_${newSongId}`
-      );
-
-    if (
-      !settings &&
-      libId === 'default'
-    ) {
-      settings =
-        await StorageService.getSetting(
-          `song_settings_${newSongId}`
-        );
-    }
-
-    setSongContent(content);
-    setSongSettings(settings);
-    setSelectedSong(song);
-  };
 
   // Lógica del Explorador de Carpetas Drive
 
@@ -1256,7 +1209,6 @@ export const AppContextProvider = ({
         globalTheme,
         handleSaveGlobalTheme,
         handleStartSetlistLocally,
-        handleFollowSongChange,
         refreshLocalData,
         handleSync,
         handleSongPress,

@@ -10,7 +10,6 @@ import {
   Text,
   View,
   ScrollView,
-  TouchableOpacity,
   Alert,
   Switch,
 } from 'react-native';
@@ -77,10 +76,6 @@ interface SongViewerProps {
 
   incomingDirectorEvent?: DirectorEvent | null;
 
-  onFollowSongChange?: (
-    newSongId: string
-  ) => void;
-
   globalTheme?: any;
   onSaveGlobalTheme?: (
     theme: any
@@ -118,9 +113,6 @@ export const SongViewer: React.FC<
   onSendDirectorEvent,
 
   incomingDirectorEvent,
-
-  onFollowSongChange:
-  _onFollowSongChange,
 
   globalTheme,
   onSaveGlobalTheme,
@@ -1083,4 +1075,4 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-});
+})

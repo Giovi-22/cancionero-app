@@ -51,7 +51,6 @@ export default function SetlistPlayerScreen() {
     songs,
     setlists,
     activeLibrary,
-    handleFollowSongChange,
     handleSaveSongSettings,
     setSetlistSongs,
     globalTheme,
@@ -325,9 +324,18 @@ export default function SetlistPlayerScreen() {
 
     setReady(true);
 
-    setSetlistSongs(
-      songsOfList
-    );
+    /**
+     * setlistSongs pertenece al flujo de
+     * repertorios personales del AppContext.
+     *
+     * Un repertorio de banda permanece dentro
+     * de este player y no se copia al estado global.
+     */
+    if (!isBandMode) {
+      setSetlistSongs(
+        songsOfList
+      );
+    }
   }, [
     setlistId,
     isBandMode,
@@ -483,9 +491,20 @@ export default function SetlistPlayerScreen() {
    */
   const handleClose =
     useCallback(() => {
-      setSetlistSongs([]);
+      /**
+       * Solamente limpiamos el estado
+       * personal del AppContext.
+       *
+       * En Band Mode el repertorio vive
+       * exclusivamente dentro del player.
+       */
+      if (!isBandMode) {
+        setSetlistSongs([]);
+      }
+
       router.back();
     }, [
+      isBandMode,
       setSetlistSongs,
     ]);
 
@@ -714,12 +733,21 @@ export default function SetlistPlayerScreen() {
       eventId;
 
     /**
-     * Actualizamos el estado global de la
-     * aplicación.
+     * El contenido de la canción se carga
+     * mediante el mecanismo normal de pages.
+     *
+     * No modificamos selectedSong,
+     * songContent ni songSettings del
+     * AppContext.
      */
-    handleFollowSongChange(
-      newSongId
-    );
+    if (
+      !pages[idx].loaded
+    ) {
+      loadPage(
+        idx,
+        pages
+      );
+    }
 
     /**
      * Si ya estamos en esa canción no
@@ -751,7 +779,7 @@ export default function SetlistPlayerScreen() {
     followDirector,
     pages,
     currentIndex,
-    handleFollowSongChange,
+    loadPage,
   ]);
 
   /**
@@ -802,9 +830,14 @@ export default function SetlistPlayerScreen() {
       }
     );
 
-    handleFollowSongChange(
-      directorSongId
-    );
+    if (
+      !pages[idx].loaded
+    ) {
+      loadPage(
+        idx,
+        pages
+      );
+    }
 
     flatListRef.current?.scrollToIndex(
       {
@@ -821,7 +854,7 @@ export default function SetlistPlayerScreen() {
     isDirector,
     pages,
     currentIndex,
-    handleFollowSongChange,
+    loadPage,
   ]);
 
   /**
@@ -1139,10 +1172,10 @@ export default function SetlistPlayerScreen() {
           /**
            * SONG_CHANGED se procesa
            * exclusivamente en este SetlistPlayer.
+           *
+           * El prop onFollowSongChange ya no
+           * participa en el flujo.
            */
-          onFollowSongChange={
-            undefined
-          }
 
           /**
            * Setlist navigation.

@@ -13,7 +13,6 @@ export default function SongScreen() {
         songContent,
         songSettings,
         handleSaveSongSettings,
-        handleFollowSongChange,
         setlistSongs,
         setSelectedSong,
         setSongContent,
@@ -91,7 +90,6 @@ export default function SongScreen() {
                 isFollower={isFollower}
                 onSendDirectorEvent={isDirector ? sendEvent : undefined}
                 incomingDirectorEvent={!isDirector ? latestEvent : null}
-                onFollowSongChange={!isDirector ? handleFollowSongChange : undefined}
                 setlistSongs={setlistSongs}
                 onDirectorNext={handleDirectorNext}
                 onDirectorPrev={handleDirectorPrev}
