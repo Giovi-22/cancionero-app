@@ -18,7 +18,6 @@ import {
     Sparkles,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { useBandContext } from '../../../src/context/BandContext';
 import { useBandInvitations } from '../../../src/hooks/useBandInvitations';
 import { useDirectorSession } from '../../../src/hooks/useDirectorSession';
 import { BandService } from '../../../src/services/BandService';
@@ -31,6 +30,7 @@ import { useAppContext } from '../../../src/context/AppContext';
 import { SentInvitationsList } from '../../../src/components/band/SentInvitationsList';
 import AppModal from '../../../src/components/common/AppModal';
 import { useUserContext } from '../../../src/context/UserContext';
+import { useBandContext } from '../../../src/context/BandContext';
 
 type FeedbackModalType =
     | 'danger'

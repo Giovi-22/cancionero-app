@@ -11,7 +11,6 @@ import { COLORS } from "../src/constants/theme";
 
 import { FolderPickerModal } from "../src/components/FolderPickerModal";
 import { LibrarySelectorModal } from "../src/components/LibrarySelectorModal";
-import { CreateSetlistModal, EditSetlistModal } from "../src/components/SetlistModals";
 import { DirectorSessionBanner } from "../src/components/DirectorSessionBanner";
 
 //App Contexts
@@ -19,6 +18,8 @@ import { useAppContext } from "../src/context/AppContext";
 import { UserContextProvider } from "../src/context/UserContext";
 import { DebugContextProvider } from "../src/context/DebugContext";
 import { BandContextProvider } from "../src/context/BandContext";
+import CreateSetlistModal from "../src/components/CreateSetlistModal";
+import EditSetlistModal from "../src/components/EditSetlistModal";
 
 function GlobalModals() {
     const { isLibrariesOpen, setIsLibrariesOpen } = useAppContext();

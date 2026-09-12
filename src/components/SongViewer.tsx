@@ -57,6 +57,16 @@ interface SongViewerProps {
   initialSettings?: any;
   onSaveSettings?: (settings: any) => void;
 
+  /**
+   * Indica que la canción pertenece al repertorio
+   * pero no está disponible localmente en este dispositivo.
+   *
+   * El SongViewer se mantiene completamente funcional
+   * (header, navegación, controles, settings, etc.),
+   * pero el área de contenido muestra un mensaje.
+   */
+  isSongUnavailable?: boolean;
+
   isDirector?: boolean;
   isFollower?: boolean;
   isActive?: boolean;
@@ -98,6 +108,7 @@ export const SongViewer: React.FC<
   onClose,
   initialSettings,
   onSaveSettings,
+  isSongUnavailable = false,
 
   isDirector = false,
   isFollower = false,
@@ -729,66 +740,104 @@ export const SongViewer: React.FC<
             handleScrollAreaLayout
           }
         >
-          <ScrollView
-            ref={scrollRef}
-            style={styles.scroll}
-            contentContainerStyle={
-              styles.scrollContent
-            }
-            onContentSizeChange={
-              handleContentSizeChange
-            }
-            onScroll={e => {
-              handleScroll(
-                e.nativeEvent
-                  .contentOffset.y
-              );
-            }}
-            scrollEventThrottle={1}
-            scrollEnabled={
-              isScrollEnabled
-            }
-          >
-            <SongContent
-              parsedLines={
-                parsedLines
+          {isSongUnavailable ? (
+            <View
+              style={[
+                styles.unavailableContainer,
+                {
+                  backgroundColor:
+                    theme.background,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.unavailableTitle,
+                  {
+                    color:
+                      theme.lyrics,
+                  },
+                ]}
+              >
+                Canción no disponible
+              </Text>
+
+              <Text
+                style={[
+                  styles.unavailableSubtitle,
+                  {
+                    color:
+                      theme.lyrics,
+                  },
+                ]}
+              >
+                Esta canción pertenece al
+                repertorio, pero no está
+                disponible en este dispositivo.
+              </Text>
+            </View>
+          ) : (
+            <ScrollView
+              ref={scrollRef}
+              style={styles.scroll}
+              contentContainerStyle={
+                styles.scrollContent
               }
-              fontSize={
-                fontSize
+              onContentSizeChange={
+                handleContentSizeChange
               }
-              viewMode={
-                viewMode
-              }
-              theme={theme}
-              isStageMode={
-                isStageMode
-              }
-              isDebugMode={
-                isDebugMode
-              }
-              isEditToolActive={
-                isEditToolActive
-              }
-              onLinePress={(
-                lineIndex,
-                pageX,
-                pageY
-              ) => {
-                if (
-                  isEditToolActive
-                ) {
-                  openLineEditModal(
-                    lineIndex
-                  );
-                } else {
-                  addFloatingNoteAtLine(
-                    pageX,
-                    pageY
-                  );
-                }
+              onScroll={e => {
+                handleScroll(
+                  e.nativeEvent
+                    .contentOffset.y
+                );
               }}
-            />
-          </ScrollView>
+              scrollEventThrottle={1}
+              scrollEnabled={
+                isScrollEnabled
+              }
+            >
+              <SongContent
+                parsedLines={
+                  parsedLines
+                }
+                fontSize={
+                  fontSize
+                }
+                viewMode={
+                  viewMode
+                }
+                theme={theme}
+                isStageMode={
+                  isStageMode
+                }
+                isDebugMode={
+                  isDebugMode
+                }
+                isEditToolActive={
+                  isEditToolActive
+                }
+                onLinePress={(
+                  lineIndex,
+                  pageX,
+                  pageY
+                ) => {
+                  if (
+                    isEditToolActive
+                  ) {
+                    openLineEditModal(
+                      lineIndex
+                    );
+                  } else {
+                    addFloatingNoteAtLine(
+                      pageX,
+                      pageY
+                    );
+                  }
+                }}
+              />
+            </ScrollView>
+          )}
         </View>
 
         {/* Barra flotante */}
@@ -1013,6 +1062,7 @@ export const SongViewer: React.FC<
     );
   };
 
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -1026,6 +1076,27 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     paddingBottom: 200,
+  },
+
+  unavailableContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+  },
+
+  unavailableTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+
+  unavailableSubtitle: {
+    fontSize: 14,
+    lineHeight: 21,
+    textAlign: 'center',
+    opacity: 0.7,
   },
 
   followDirectorBar: {
@@ -1075,4 +1146,4 @@ const styles = StyleSheet.create({
     fontSize: 11,
     marginTop: 2,
   },
-})
+});

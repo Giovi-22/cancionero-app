@@ -181,7 +181,8 @@ export class BandSetlistService {
      */
     static async createBandSetlist(
         bandId: string,
-        name: string
+        name: string,
+        date?: Date
     ): Promise<BandSetlist> {
         if (!bandId) {
             throw new Error(
@@ -207,6 +208,14 @@ export class BandSetlistService {
 
         const now = new Date().toISOString();
 
+        const formattedDate = date
+            ? `${date.getFullYear()}-${String(
+                date.getMonth() + 1
+            ).padStart(2, '0')}-${String(
+                date.getDate()
+            ).padStart(2, '0')}`
+            : undefined;
+
         const docRef = this
             .getCollection(bandId)
             .doc();
@@ -215,6 +224,7 @@ export class BandSetlistService {
             id: docRef.id,
             bandId,
             name: trimmedName,
+            date: formattedDate,
             songIds: [],
             notes: undefined,
             songNotes: {},
@@ -227,7 +237,7 @@ export class BandSetlistService {
             id: newSetlist.id,
             bandId: bandId,
             name: newSetlist.name,
-            date: null,
+            date: newSetlist.date || null,
             songIds: [],
             notes: null,
             songNotes: {},

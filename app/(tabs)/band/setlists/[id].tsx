@@ -11,6 +11,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import {
     ChevronLeft,
     Plus,
+    Edit2,
     Music2,
     FileText,
     Check,
@@ -28,7 +29,9 @@ import { BandSetlist } from '../../../../src/types/band';
 import { SongMetadata } from '../../../../src/types';
 import { SongList } from '../../../../src/components/SongList';
 import { COLORS } from '../../../../src/constants/theme';
+import { Button } from '../../../../src/components/common/Button';
 import AppModal from '../../../../src/components/common/AppModal';
+import EditBandSetlistModal from '../../../../src/components/band/EditBandSetlistModal';
 
 type FeedbackModalType =
     | 'danger'
@@ -68,6 +71,8 @@ export default function BandSetlistDetailScreen() {
             title: '',
             message: '',
         });
+    const [isEditModalOpen, setIsEditModalOpen] =
+        useState(false);
 
     const showFeedbackModal = (
         type: FeedbackModalType,
@@ -640,6 +645,25 @@ export default function BandSetlistDetailScreen() {
         } as any);
     };
 
+    const handleOpenEditSetlist = () => {
+        if (!canManageSetlists || !setlist) {
+            return;
+        }
+
+        setIsEditModalOpen(true);
+    };
+
+    const handleSaveSetlist = async (
+        updatedSetlist: BandSetlist
+    ) => {
+        if (!canManageSetlists) {
+            return;
+        }
+
+        await updateBandSetlist(updatedSetlist);
+        setIsEditModalOpen(false);
+    };
+
     const handleGoBack = () => {
         router.back();
     };
@@ -893,21 +917,31 @@ export default function BandSetlistDetailScreen() {
                 </View>
 
                 {canManageSetlists && (
-                    <TouchableOpacity
-                        style={styles.addButton}
-                        activeOpacity={0.8}
-                        onPress={handleAddSongs}
-                        disabled={isSaving}
-                    >
-                        <Plus
-                            size={19}
-                            color={COLORS.background}
-                        />
+                    <View style={styles.headerActions}>
+                        <TouchableOpacity
+                            style={styles.headerActionButton}
+                            activeOpacity={0.8}
+                            onPress={handleAddSongs}
+                            disabled={isSaving}
+                        >
+                            <Plus
+                                size={19}
+                                color={COLORS.foreground}
+                            />
+                        </TouchableOpacity>
 
-                        <Text style={styles.addButtonText}>
-                            Agregar
-                        </Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.headerActionButton}
+                            activeOpacity={0.8}
+                            onPress={handleOpenEditSetlist}
+                            disabled={isSaving}
+                        >
+                            <Edit2
+                                size={18}
+                                color={COLORS.foreground}
+                            />
+                        </TouchableOpacity>
+                    </View>
                 )}
             </View>
 
@@ -1163,37 +1197,20 @@ export default function BandSetlistDetailScreen() {
                 </TouchableOpacity>
             )}
 
-            {!activeSession &&
-                canCreateDirectorSession && (
-                    <TouchableOpacity
-                        style={styles.directorButton}
-                        activeOpacity={0.8}
-                        onPress={handleStartDirectorMode}
-                        disabled={isStartingDirector}
-                    >
-                        {isStartingDirector ? (
-                            <ActivityIndicator
-                                size="small"
-                                color={COLORS.background}
-                            />
-                        ) : (
-                            <Radio
-                                size={18}
-                                color={COLORS.background}
-                            />
-                        )}
-
-                        <Text
-                            style={
-                                styles.directorButtonText
-                            }
-                        >
-                            {isStartingDirector
-                                ? 'Iniciando Director Mode...'
-                                : 'Iniciar Director Mode'}
-                        </Text>
-                    </TouchableOpacity>
-                )}
+            {!activeSession && canCreateDirectorSession && (
+                <Button
+                    title={
+                        isStartingDirector
+                            ? 'Iniciando Director Mode...'
+                            : 'Iniciar Director Mode'
+                    }
+                    icon={<Radio size={18} />}
+                    onPress={handleStartDirectorMode}
+                    loading={isStartingDirector}
+                    disabled={setlistSongs.length === 0}
+                    style={styles.directorButton}
+                />
+            )}
 
             {hasAnotherActiveSetlist &&
                 activeSession && (
@@ -1304,6 +1321,17 @@ export default function BandSetlistDetailScreen() {
                 confirmText="Aceptar"
                 onConfirm={closeFeedbackModal}
             />
+
+            {canManageSetlists && (
+                <EditBandSetlistModal
+                    visible={isEditModalOpen}
+                    setlist={setlist}
+                    onClose={() =>
+                        setIsEditModalOpen(false)
+                    }
+                    onSave={handleSaveSetlist}
+                />
+            )}
         </View>
     );
 }
@@ -1354,22 +1382,19 @@ const styles = StyleSheet.create({
     headerSpacer: {
         width: 42,
     },
-
-    addButton: {
+    headerActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
         gap: 5,
-        paddingHorizontal: 13,
-        height: 42,
-        borderRadius: 12,
-        backgroundColor: COLORS.accent,
     },
 
-    addButtonText: {
-        color: COLORS.background,
-        fontSize: 13,
-        fontWeight: '700',
+    headerActionButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.1)',
     },
 
     listContainer: {
