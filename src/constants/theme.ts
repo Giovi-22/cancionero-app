@@ -4,6 +4,8 @@ export const COLORS = {
   foreground: '#ffffff',
   mutedForeground: '#a0a0a0',
   accent: '#3b82f6',
+  primary: '#3b82f6',
   border: '#333333',
-  card: '#121212'
+  card: '#121212',
+  destructive: '#ef4444',
 };

@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { useAppContext } from '../context/AppContext';
 import { DirectorSession, DirectorEvent, DirectorEventType } from '../types/band';
 import { DirectorSessionService } from '../services/DirectorSessionService';
+import { useUserContext } from '../context/UserContext';
 
 export function useDirectorSession(bandId: string | null) {
-  const { user } = useAppContext();
+  const { user } = useUserContext();
   const [activeSession, setActiveSession] = useState<DirectorSession | null>(null);
   const [latestEvent, setLatestEvent] = useState<DirectorEvent | null>(null);
   const [loading, setLoading] = useState<boolean>(true);

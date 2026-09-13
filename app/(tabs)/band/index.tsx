@@ -16,13 +16,14 @@ import {
     UserPlus,
     ChevronRight,
     Sparkles,
+    Trash2,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
-import { useBands } from '../../../src/hooks/useBands';
 import { useBandInvitations } from '../../../src/hooks/useBandInvitations';
 import { useDirectorSession } from '../../../src/hooks/useDirectorSession';
 import { BandService } from '../../../src/services/BandService';
 import { COLORS } from '../../../src/constants/theme';
+import { Button } from '../../../src/components/common/Button';
 import { CreateBandModal } from '../../../src/components/band/CreateBandModal';
 import { InviteMemberModal } from '../../../src/components/band/InviteMemberModal';
 import { PendingInvitationsList } from '../../../src/components/band/PendingInvitationsList';
@@ -30,6 +31,8 @@ import { BandMemberList } from '../../../src/components/band/BandMemberList';
 import { useAppContext } from '../../../src/context/AppContext';
 import { SentInvitationsList } from '../../../src/components/band/SentInvitationsList';
 import AppModal from '../../../src/components/common/AppModal';
+import { useUserContext } from '../../../src/context/UserContext';
+import { useBandContext } from '../../../src/context/BandContext';
 
 type FeedbackModalType =
     | 'danger'
@@ -48,11 +51,20 @@ export default function BandScreen() {
     const insets = useSafeAreaInsets();
 
     const {
-        user,
-        setActiveBandId,
         driveFolderId,
     } = useAppContext();
 
+    const { user } = useUserContext();
+
+    // ============================================================
+    // BandContext
+    //
+    // Fuente única de verdad para banda activa, rol y permisos.
+    // Antes esta pantalla usaba useBands() directamente, lo que
+    // creaba una instancia independiente (y su propio listener de
+    // Firestore) desincronizada del resto de la app. Ver plan de
+    // refactorización arquitectónica.
+    // ============================================================
     const {
         bands,
         selectedBand,
@@ -62,7 +74,8 @@ export default function BandScreen() {
         loading,
         selectBand,
         createBand,
-    } = useBands();
+        deleteBand,
+    } = useBandContext();
 
     const {
         activeSession,
@@ -99,6 +112,19 @@ export default function BandScreen() {
     const [
         isEndingSession,
         setIsEndingSession,
+    ] = useState(false);
+
+    // ============================================================
+    // AppModal - Eliminar banda
+    // ============================================================
+    const [
+        isDeleteBandModalOpen,
+        setIsDeleteBandModalOpen,
+    ] = useState(false);
+
+    const [
+        isDeletingBand,
+        setIsDeletingBand,
     ] = useState(false);
 
     // ============================================================
@@ -141,8 +167,6 @@ export default function BandScreen() {
         if (!selectedBand || !activeSession) {
             return;
         }
-
-        setActiveBandId(selectedBand.id);
 
         router.push({
             pathname: '/setlist-player/[setlistId]',
@@ -211,7 +235,6 @@ export default function BandScreen() {
         band: typeof bands[number]
     ) => {
         selectBand(band);
-        setActiveBandId(band.id);
     };
 
     // ============================================================
@@ -221,13 +244,68 @@ export default function BandScreen() {
         name: string,
         description: string
     ) => {
-        const newBand = await createBand(
+        await createBand(
             name,
             description
         );
+    };
 
-        // La nueva banda pasa a ser la banda activa.
-        setActiveBandId(newBand.id);
+    // ============================================================
+    // Abrir modal para eliminar banda
+    // ============================================================
+    const handleDeleteBand = () => {
+        if (!selectedBand) {
+            return;
+        }
+
+        if (!permissions.canDeleteBand) {
+            showFeedbackModal(
+                'warning',
+                'Acceso restringido',
+                'Solo el propietario puede eliminar la banda.'
+            );
+            return;
+        }
+
+        setIsDeleteBandModalOpen(true);
+    };
+
+    // ============================================================
+    // Confirmar eliminación de banda
+    // ============================================================
+    const handleConfirmDeleteBand = async () => {
+        if (!selectedBand || !permissions.canDeleteBand) {
+            return;
+        }
+
+        try {
+            const hasOtherBands = bands.some(
+                band => band.id !== selectedBand.id
+            );
+            setIsDeletingBand(true);
+
+            await deleteBand(selectedBand.id);
+
+            setIsDeleteBandModalOpen(false);
+            if (!hasOtherBands) {
+                router.replace('/(tabs)');
+            }
+        } catch (error) {
+            console.error(
+                '[BandScreen] Error al eliminar banda:',
+                error
+            );
+
+            setIsDeleteBandModalOpen(false);
+
+            showFeedbackModal(
+                'danger',
+                'Error',
+                'No se pudo eliminar la banda. Intentá nuevamente.'
+            );
+        } finally {
+            setIsDeletingBand(false);
+        }
     };
 
     // ============================================================
@@ -292,7 +370,6 @@ export default function BandScreen() {
         // Seguridad adicional:
         // si existe una sesión activa, volver directamente a ella.
         if (activeSession) {
-            setActiveBandId(selectedBand.id);
             handleGoToActiveSession();
             return;
         }
@@ -308,10 +385,13 @@ export default function BandScreen() {
             return;
         }
 
-        setActiveBandId(selectedBand.id);
-
         // Navegar al repertorio compartido de la banda.
-        router.push('/(tabs)/band/setlists');
+        router.push({
+            pathname: '/(tabs)/band/setlists',
+            params: {
+                bandId: selectedBand.id,
+            },
+        });
     };
 
     // ============================================================
@@ -327,9 +407,12 @@ export default function BandScreen() {
             return;
         }
 
-        setActiveBandId(selectedBand.id);
-
-        router.push('/(tabs)/band/setlists');
+        router.push({
+            pathname: '/(tabs)/band/setlists',
+            params: {
+                bandId: selectedBand.id,
+            },
+        });
     };
 
     // ============================================================
@@ -925,6 +1008,31 @@ export default function BandScreen() {
                                         }
                                     />
                                 )}
+
+                                {permissions.canDeleteBand && (
+                                    <View style={styles.dangerZone}>
+                                        <View style={styles.dangerZoneHeader}>
+                                            <Text style={styles.dangerZoneTitle}>
+                                                Zona de peligro
+                                            </Text>
+
+                                            <Text style={styles.dangerZoneDescription}>
+                                                Eliminar la banda borrará su repertorio,
+                                                sesiones, miembros e invitaciones.
+                                                Tus canciones y biblioteca personal no se verán afectadas.
+                                            </Text>
+                                        </View>
+
+                                        <Button
+                                            title="Eliminar banda"
+                                            icon={<Trash2 size={18} />}
+                                            variant="danger"
+                                            onPress={handleDeleteBand}
+                                            loading={isDeletingBand}
+                                            style={styles.deleteBandButton}
+                                        />
+                                    </View>
+                                )}
                             </View>
                         )}
                     </View>
@@ -984,6 +1092,27 @@ export default function BandScreen() {
                     userRole === 'owner'
                 }
                 folderId={driveFolderId}
+            />
+
+            {/* ============================================================
+    AppModal - Eliminar banda
+============================================================ */}
+            <AppModal
+                visible={isDeleteBandModalOpen}
+                type="danger"
+                title="Eliminar banda"
+                message={
+                    selectedBand
+                        ? `¿Estás seguro de que querés eliminar "${selectedBand.name}"? Esta acción eliminará la banda, su repertorio compartido, sesiones, miembros e invitaciones. Tus canciones y biblioteca personal no se eliminarán.`
+                        : ''
+                }
+                confirmText="Eliminar banda"
+                cancelText="Cancelar"
+                onCancel={() =>
+                    setIsDeleteBandModalOpen(false)
+                }
+                onConfirm={handleConfirmDeleteBand}
+                loading={isDeletingBand}
             />
         </View>
     );
@@ -1308,5 +1437,32 @@ const styles = StyleSheet.create({
         color: COLORS.mutedForeground,
         fontSize: 12,
         marginTop: 2,
+    },
+    dangerZone: {
+        marginTop: 24,
+        paddingTop: 20,
+        borderTopWidth: 1,
+        borderTopColor: COLORS.border,
+    },
+
+    dangerZoneHeader: {
+        marginBottom: 12,
+    },
+
+    dangerZoneTitle: {
+        color: COLORS.foreground,
+        fontSize: 14,
+        fontWeight: '800',
+        marginBottom: 4,
+    },
+
+    dangerZoneDescription: {
+        color: COLORS.mutedForeground,
+        fontSize: 12,
+        lineHeight: 18,
+    },
+
+    deleteBandButton: {
+        width: '100%',
     },
 });

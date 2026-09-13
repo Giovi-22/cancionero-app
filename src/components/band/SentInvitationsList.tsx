@@ -1,115 +1,163 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
-    Alert,
 } from 'react-native';
 import { Clock, Mail, X } from 'lucide-react-native';
+
 import { Invitation } from '../../types/band';
 import { COLORS } from '../../constants/theme';
+import AppModal from '../common/AppModal';
 
 interface SentInvitationsListProps {
     invitations: Invitation[];
     onCancel: (invitationId: string) => Promise<void>;
 }
 
+interface ErrorModalState {
+    title: string;
+    message: string;
+}
+
 export function SentInvitationsList({
     invitations,
     onCancel,
 }: SentInvitationsListProps) {
+    const [selectedInvitation, setSelectedInvitation] =
+        useState<Invitation | null>(null);
+
+    const [errorModal, setErrorModal] =
+        useState<ErrorModalState | null>(null);
+
+    const [loading, setLoading] = useState(false);
+
     if (invitations.length === 0) {
         return null;
     }
 
     const handleCancel = (invitation: Invitation) => {
-        Alert.alert(
-            'Cancelar invitación',
-            `¿Querés cancelar la invitación enviada a ${invitation.invitedEmail}?`,
-            [
-                {
-                    text: 'No',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Cancelar invitación',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await onCancel(invitation.id);
-                        } catch (error: any) {
-                            Alert.alert(
-                                'Error',
-                                error?.message ||
-                                'No se pudo cancelar la invitación.'
-                            );
-                        }
-                    },
-                },
-            ]
-        );
+        setSelectedInvitation(invitation);
+    };
+
+    const handleConfirmCancel = async () => {
+        if (!selectedInvitation) {
+            return;
+        }
+
+        try {
+            setLoading(true);
+
+            await onCancel(selectedInvitation.id);
+
+            setSelectedInvitation(null);
+        } catch (error: any) {
+            setSelectedInvitation(null);
+
+            setErrorModal({
+                title: 'Error',
+                message:
+                    error?.message ||
+                    'No se pudo cancelar la invitación.',
+            });
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const closeErrorModal = () => {
+        setErrorModal(null);
     };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <View style={styles.headerLeft}>
-                    <Clock size={17} color={COLORS.accent} />
-                    <Text style={styles.title}>
-                        Invitaciones pendientes
-                    </Text>
-                </View>
-
-                <View style={styles.countBadge}>
-                    <Text style={styles.countText}>
-                        {invitations.length}
-                    </Text>
-                </View>
-            </View>
-
-            <Text style={styles.subtitle}>
-                Personas invitadas que todavía no aceptaron.
-            </Text>
-
-            <View style={styles.list}>
-                {invitations.map(invitation => (
-                    <View
-                        key={invitation.id}
-                        style={styles.invitationCard}
-                    >
-                        <View style={styles.iconCircle}>
-                            <Mail
-                                size={18}
-                                color={COLORS.mutedForeground}
-                            />
-                        </View>
-
-                        <View style={styles.info}>
-                            <Text style={styles.email}>
-                                {invitation.invitedEmail}
-                            </Text>
-
-                            <Text style={styles.role}>
-                                {invitation.role === 'director'
-                                    ? 'Director'
-                                    : 'Miembro'}
-                            </Text>
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.cancelButton}
-                            onPress={() => handleCancel(invitation)}
-                        >
-                            <X
-                                size={16}
-                                color={COLORS.mutedForeground}
-                            />
-                        </TouchableOpacity>
+        <>
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <View style={styles.headerLeft}>
+                        <Clock size={17} color={COLORS.accent} />
+                        <Text style={styles.title}>
+                            Invitaciones pendientes
+                        </Text>
                     </View>
-                ))}
+
+                    <View style={styles.countBadge}>
+                        <Text style={styles.countText}>
+                            {invitations.length}
+                        </Text>
+                    </View>
+                </View>
+
+                <Text style={styles.subtitle}>
+                    Personas invitadas que todavía no aceptaron.
+                </Text>
+
+                <View style={styles.list}>
+                    {invitations.map(invitation => (
+                        <View
+                            key={invitation.id}
+                            style={styles.invitationCard}
+                        >
+                            <View style={styles.iconCircle}>
+                                <Mail
+                                    size={18}
+                                    color={COLORS.mutedForeground}
+                                />
+                            </View>
+
+                            <View style={styles.info}>
+                                <Text style={styles.email}>
+                                    {invitation.invitedEmail}
+                                </Text>
+
+                                <Text style={styles.role}>
+                                    {invitation.role === 'director'
+                                        ? 'Director'
+                                        : 'Miembro'}
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.cancelButton}
+                                onPress={() => handleCancel(invitation)}
+                                disabled={loading}
+                            >
+                                <X
+                                    size={16}
+                                    color={COLORS.mutedForeground}
+                                />
+                            </TouchableOpacity>
+                        </View>
+                    ))}
+                </View>
             </View>
-        </View>
+
+            <AppModal
+                visible={selectedInvitation !== null}
+                type="warning"
+                title="Cancelar invitación"
+                message={
+                    selectedInvitation
+                        ? `¿Querés cancelar la invitación enviada a ${selectedInvitation.invitedEmail}?`
+                        : undefined
+                }
+                confirmText="Cancelar invitación"
+                cancelText="No"
+                onConfirm={handleConfirmCancel}
+                onCancel={() => setSelectedInvitation(null)}
+                loading={loading}
+            />
+
+            <AppModal
+                visible={errorModal !== null}
+                type="danger"
+                title={errorModal?.title ?? 'Error'}
+                message={errorModal?.message}
+                confirmText="Aceptar"
+                onConfirm={closeErrorModal}
+                onCancel={closeErrorModal}
+            />
+        </>
     );
 }
 

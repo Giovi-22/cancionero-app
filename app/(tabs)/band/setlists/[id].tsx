@@ -11,6 +11,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import {
     ChevronLeft,
     Plus,
+    Edit2,
     Music2,
     FileText,
     Check,
@@ -21,15 +22,16 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAppContext } from '../../../../src/context/AppContext';
+import { useBandContext } from '../../../../src/context/BandContext';
 import { useBandSetlists } from '../../../../src/hooks/useBandSetlists';
-import { useBands } from '../../../../src/hooks/useBands';
 import { useDirectorSession } from '../../../../src/hooks/useDirectorSession';
 import { BandSetlist } from '../../../../src/types/band';
 import { SongMetadata } from '../../../../src/types';
 import { SongList } from '../../../../src/components/SongList';
 import { COLORS } from '../../../../src/constants/theme';
-import { getBandPermissions } from '../../../../src/utils/permissions';
+import { Button } from '../../../../src/components/common/Button';
 import AppModal from '../../../../src/components/common/AppModal';
+import EditBandSetlistModal from '../../../../src/components/band/EditBandSetlistModal';
 
 type FeedbackModalType =
     | 'danger'
@@ -69,6 +71,8 @@ export default function BandSetlistDetailScreen() {
             title: '',
             message: '',
         });
+    const [isEditModalOpen, setIsEditModalOpen] =
+        useState(false);
 
     const showFeedbackModal = (
         type: FeedbackModalType,
@@ -90,66 +94,43 @@ export default function BandSetlistDetailScreen() {
         }));
     };
 
+    /**
+     * AppContext:
+     *
+     * Contiene únicamente el estado global de la aplicación
+     * que esta pantalla necesita.
+     *
+     * La banda activa ya NO se obtiene desde AppContext.
+     */
     const {
         songs,
         handleSongPress,
-        activeBandId,
         loadingSongId,
-        user,
     } = useAppContext();
 
     /**
-     * IMPORTANTE:
+     * BandContext:
      *
-     * useBands() tiene estado local propio.
-     * Por eso NO usamos directamente permissions/userRole
-     * de esta instancia para determinar los permisos de la
-     * banda activa.
+     * Es la fuente de verdad para la banda activa y sus permisos.
      *
-     * En cambio, buscamos explícitamente activeBandId dentro
-     * de userBandsInfo.
+     * useBands() se instancia únicamente dentro de BandContextProvider.
      */
     const {
-        userBandsInfo,
-    } = useBands();
-
-    const activeBandInfo = useMemo(() => {
-        if (!activeBandId) {
-            return null;
-        }
-
-        return (
-            userBandsInfo.find(
-                info => info.band.id === activeBandId
-            ) || null
-        );
-    }, [userBandsInfo, activeBandId]);
+        selectedBand,
+        permissions,
+    } = useBandContext();
 
     /**
-     * Permisos correspondientes EXCLUSIVAMENTE a la banda
-     * actualmente activa.
+     * La banda activa global de la sección Banda es la
+     * banda seleccionada en BandContext.
      */
-    const activeBandPermissions = useMemo(() => {
-        return getBandPermissions(
-            activeBandInfo?.role || null
-        );
-    }, [activeBandInfo]);
+    const activeBandId = selectedBand?.id ?? null;
 
     const canManageSetlists =
-        activeBandPermissions.canManageSetlists;
+        permissions.canManageSetlists;
 
     const canCreateDirectorSession =
-        activeBandPermissions.canCreateDirectorSession;
-
-    console.log(
-        '[BandSetlistDetail] ACTIVE BAND PERMISSIONS:',
-        {
-            activeBandId,
-            activeBandRole: activeBandInfo?.role || null,
-            canManageSetlists,
-            canCreateDirectorSession,
-        }
-    );
+        permissions.canCreateDirectorSession;
 
     const {
         setlists: bandSetlists,
@@ -163,27 +144,6 @@ export default function BandSetlistDetailScreen() {
         activeSession,
         isDirectorOfSession,
     } = useDirectorSession(activeBandId);
-
-    const userId = user?.uid || user.id;
-
-    useEffect(() => {
-        console.log('[BandSetlistDetail] Director Session:', {
-            activeBandId,
-            setlistId: id,
-            activeSessionId: activeSession?.id,
-            activeSessionSetlistId: activeSession?.setlistId,
-            activeSessionDirectorId:
-                activeSession?.directorId,
-            userId,
-            isDirectorOfSession,
-        });
-    }, [
-        activeBandId,
-        id,
-        activeSession,
-        userId,
-        isDirectorOfSession,
-    ]);
 
     /**
      * Busca el repertorio actual dentro de los repertorios
@@ -685,6 +645,25 @@ export default function BandSetlistDetailScreen() {
         } as any);
     };
 
+    const handleOpenEditSetlist = () => {
+        if (!canManageSetlists || !setlist) {
+            return;
+        }
+
+        setIsEditModalOpen(true);
+    };
+
+    const handleSaveSetlist = async (
+        updatedSetlist: BandSetlist
+    ) => {
+        if (!canManageSetlists) {
+            return;
+        }
+
+        await updateBandSetlist(updatedSetlist);
+        setIsEditModalOpen(false);
+    };
+
     const handleGoBack = () => {
         router.back();
     };
@@ -938,21 +917,31 @@ export default function BandSetlistDetailScreen() {
                 </View>
 
                 {canManageSetlists && (
-                    <TouchableOpacity
-                        style={styles.addButton}
-                        activeOpacity={0.8}
-                        onPress={handleAddSongs}
-                        disabled={isSaving}
-                    >
-                        <Plus
-                            size={19}
-                            color={COLORS.background}
-                        />
+                    <View style={styles.headerActions}>
+                        <TouchableOpacity
+                            style={styles.headerActionButton}
+                            activeOpacity={0.8}
+                            onPress={handleAddSongs}
+                            disabled={isSaving}
+                        >
+                            <Plus
+                                size={19}
+                                color={COLORS.foreground}
+                            />
+                        </TouchableOpacity>
 
-                        <Text style={styles.addButtonText}>
-                            Agregar
-                        </Text>
-                    </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.headerActionButton}
+                            activeOpacity={0.8}
+                            onPress={handleOpenEditSetlist}
+                            disabled={isSaving}
+                        >
+                            <Edit2
+                                size={18}
+                                color={COLORS.foreground}
+                            />
+                        </TouchableOpacity>
+                    </View>
                 )}
             </View>
 
@@ -1208,37 +1197,20 @@ export default function BandSetlistDetailScreen() {
                 </TouchableOpacity>
             )}
 
-            {!activeSession &&
-                canCreateDirectorSession && (
-                    <TouchableOpacity
-                        style={styles.directorButton}
-                        activeOpacity={0.8}
-                        onPress={handleStartDirectorMode}
-                        disabled={isStartingDirector}
-                    >
-                        {isStartingDirector ? (
-                            <ActivityIndicator
-                                size="small"
-                                color={COLORS.background}
-                            />
-                        ) : (
-                            <Radio
-                                size={18}
-                                color={COLORS.background}
-                            />
-                        )}
-
-                        <Text
-                            style={
-                                styles.directorButtonText
-                            }
-                        >
-                            {isStartingDirector
-                                ? 'Iniciando Director Mode...'
-                                : 'Iniciar Director Mode'}
-                        </Text>
-                    </TouchableOpacity>
-                )}
+            {!activeSession && canCreateDirectorSession && (
+                <Button
+                    title={
+                        isStartingDirector
+                            ? 'Iniciando Director Mode...'
+                            : 'Iniciar Director Mode'
+                    }
+                    icon={<Radio size={18} />}
+                    onPress={handleStartDirectorMode}
+                    loading={isStartingDirector}
+                    disabled={setlistSongs.length === 0}
+                    style={styles.directorButton}
+                />
+            )}
 
             {hasAnotherActiveSetlist &&
                 activeSession && (
@@ -1349,6 +1321,17 @@ export default function BandSetlistDetailScreen() {
                 confirmText="Aceptar"
                 onConfirm={closeFeedbackModal}
             />
+
+            {canManageSetlists && (
+                <EditBandSetlistModal
+                    visible={isEditModalOpen}
+                    setlist={setlist}
+                    onClose={() =>
+                        setIsEditModalOpen(false)
+                    }
+                    onSave={handleSaveSetlist}
+                />
+            )}
         </View>
     );
 }
@@ -1399,22 +1382,19 @@ const styles = StyleSheet.create({
     headerSpacer: {
         width: 42,
     },
-
-    addButton: {
+    headerActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
         gap: 5,
-        paddingHorizontal: 13,
-        height: 42,
-        borderRadius: 12,
-        backgroundColor: COLORS.accent,
     },
 
-    addButtonText: {
-        color: COLORS.background,
-        fontSize: 13,
-        fontWeight: '700',
+    headerActionButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(255,255,255,0.1)',
     },
 
     listContainer: {

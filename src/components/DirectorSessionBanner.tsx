@@ -20,7 +20,6 @@ import {
     Text,
     TouchableOpacity,
     StyleSheet,
-    Alert,
     ActivityIndicator,
 } from 'react-native';
 import { router } from 'expo-router';
@@ -30,6 +29,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { COLORS } from '../constants/theme';
 import { useDirectorSession } from '../hooks/useDirectorSession';
 import { useAppContext } from '../context/AppContext';
+import AppModal from './common/AppModal';
+import { useBandContext } from '../context/BandContext';
+
 
 function DirectorSessionBannerInner({ bandId }: { bandId: string }) {
     const {
@@ -40,6 +42,18 @@ function DirectorSessionBannerInner({ bandId }: { bandId: string }) {
     } = useDirectorSession(bandId);
 
     const [isEnding, setIsEnding] = useState(false);
+
+    const [isEndSessionModalVisible, setIsEndSessionModalVisible] =
+        useState(false);
+
+    const [errorModal, setErrorModal] = useState<{
+        visible: boolean;
+        message: string;
+    }>({
+        visible: false,
+        message: '',
+    });
+
     const insets = useSafeAreaInsets();
 
     if (loading || !activeSession) {
@@ -69,138 +83,196 @@ function DirectorSessionBannerInner({ bandId }: { bandId: string }) {
     };
 
     /**
-     * Finaliza la sesión activa del director.
+     * Abre la confirmación para finalizar la sesión.
      */
     const handleEndSession = () => {
-        Alert.alert(
-            'Finalizar Director Mode',
-            '¿Querés finalizar la sesión? Los miembros seguidores dejarán de recibir la sincronización.',
-            [
-                {
-                    text: 'Cancelar',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Finalizar',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setIsEnding(true);
+        if (isEnding) {
+            return;
+        }
 
-                        try {
-                            await endSession();
-                        } catch (err: any) {
-                            Alert.alert(
-                                'Error',
-                                err?.message ||
-                                'No se pudo finalizar la sesión.'
-                            );
-                        } finally {
-                            setIsEnding(false);
-                        }
-                    },
-                },
-            ]
-        );
+        setIsEndSessionModalVisible(true);
+    };
+
+    /**
+     * Cancela la finalización de la sesión.
+     */
+    const handleCancelEndSession = () => {
+        if (isEnding) {
+            return;
+        }
+
+        setIsEndSessionModalVisible(false);
+    };
+
+    /**
+     * Confirma y finaliza la sesión activa.
+     */
+    const handleConfirmEndSession = async () => {
+        if (isEnding) {
+            return;
+        }
+
+        setIsEnding(true);
+
+        try {
+            await endSession();
+
+            setIsEndSessionModalVisible(false);
+        } catch (err: any) {
+            setIsEndSessionModalVisible(false);
+
+            setErrorModal({
+                visible: true,
+                message:
+                    err?.message ||
+                    'No se pudo finalizar la sesión.',
+            });
+        } finally {
+            setIsEnding(false);
+        }
+    };
+
+    /**
+     * Cierra el modal de error.
+     */
+    const handleCloseError = () => {
+        setErrorModal({
+            visible: false,
+            message: '',
+        });
     };
 
     return (
-        <View
-            style={[
-                styles.container,
-                bannerBackground,
-                {
-                    paddingTop: insets.top,
-                },
-            ]}
-        >
-            <View style={styles.bar}>
-                {/* Indicador en vivo y texto */}
-                <TouchableOpacity
-                    style={styles.infoRow}
-                    onPress={handleReturnToSession}
-                    activeOpacity={0.8}
-                >
-                    <View style={styles.liveBadge}>
-                        <View style={styles.redDot} />
-                        <Radio size={12} color="#fff" />
-                    </View>
-
-                    <Text
-                        style={styles.sessionText}
-                        numberOfLines={1}
-                    >
-                        {isDirectorOfSession ? (
-                            <>
-                                <Text style={styles.boldText}>
-                                    Director Mode
-                                </Text>
-
-                                <Text style={styles.dimText}>
-                                    {' · '}
-                                </Text>
-
-                                {activeSession.setlistName}
-                            </>
-                        ) : (
-                            <>
-                                <Text style={styles.boldText}>
-                                    {activeSession.directorName}
-                                </Text>
-
-                                <Text style={styles.dimText}>
-                                    {' está dirigiendo · '}
-                                </Text>
-
-                                {activeSession.setlistName}
-                            </>
-                        )}
-                    </Text>
-                </TouchableOpacity>
-
-                {/* Acciones compactas a la derecha */}
-                <View style={styles.actionButtons}>
+        <>
+            <View
+                style={[
+                    styles.container,
+                    bannerBackground,
+                    {
+                        paddingTop: insets.top,
+                    },
+                ]}
+            >
+                <View style={styles.bar}>
+                    {/* Indicador en vivo y texto */}
                     <TouchableOpacity
-                        style={styles.returnBtn}
+                        style={styles.infoRow}
                         onPress={handleReturnToSession}
                         activeOpacity={0.8}
                     >
-                        <Text style={styles.returnBtnText}>
-                            Volver
-                        </Text>
+                        <View style={styles.liveBadge}>
+                            <View style={styles.redDot} />
 
-                        <ArrowRight
-                            size={11}
-                            color="#fff"
-                        />
+                            <Radio
+                                size={12}
+                                color="#fff"
+                            />
+                        </View>
+
+                        <Text
+                            style={styles.sessionText}
+                            numberOfLines={1}
+                        >
+                            {isDirectorOfSession ? (
+                                <>
+                                    <Text style={styles.boldText}>
+                                        Director Mode
+                                    </Text>
+
+                                    <Text style={styles.dimText}>
+                                        {' · '}
+                                    </Text>
+
+                                    {activeSession.setlistName}
+                                </>
+                            ) : (
+                                <>
+                                    <Text style={styles.boldText}>
+                                        {activeSession.directorName}
+                                    </Text>
+
+                                    <Text style={styles.dimText}>
+                                        {' está dirigiendo · '}
+                                    </Text>
+
+                                    {activeSession.setlistName}
+                                </>
+                            )}
+                        </Text>
                     </TouchableOpacity>
 
-                    {isDirectorOfSession && (
+                    {/* Acciones compactas a la derecha */}
+                    <View style={styles.actionButtons}>
                         <TouchableOpacity
-                            style={styles.endBtn}
-                            onPress={handleEndSession}
-                            disabled={isEnding}
+                            style={styles.returnBtn}
+                            onPress={handleReturnToSession}
                             activeOpacity={0.8}
                         >
-                            {isEnding ? (
-                                <ActivityIndicator
-                                    size={10}
-                                    color="#fca5a5"
-                                />
-                            ) : (
-                                <Text style={styles.endBtnText}>
-                                    Finalizar
-                                </Text>
-                            )}
+                            <Text style={styles.returnBtnText}>
+                                Volver
+                            </Text>
+
+                            <ArrowRight
+                                size={11}
+                                color="#fff"
+                            />
                         </TouchableOpacity>
-                    )}
+
+                        {isDirectorOfSession && (
+                            <TouchableOpacity
+                                style={styles.endBtn}
+                                onPress={handleEndSession}
+                                disabled={isEnding}
+                                activeOpacity={0.8}
+                            >
+                                {isEnding ? (
+                                    <ActivityIndicator
+                                        size={10}
+                                        color="#fca5a5"
+                                    />
+                                ) : (
+                                    <Text style={styles.endBtnText}>
+                                        Finalizar
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </View>
             </View>
-        </View>
+
+            {/* Confirmación para finalizar Director Mode */}
+            <AppModal
+                visible={isEndSessionModalVisible}
+                type="danger"
+                title="Finalizar Director Mode"
+                message="¿Querés finalizar la sesión? Los miembros seguidores dejarán de recibir la sincronización."
+                confirmText="Finalizar"
+                cancelText="Cancelar"
+                onConfirm={handleConfirmEndSession}
+                onCancel={handleCancelEndSession}
+                loading={isEnding}
+                dismissOnBackdrop={false}
+            />
+
+            {/* Error al finalizar */}
+            <AppModal
+                visible={errorModal.visible}
+                type="danger"
+                title="Error"
+                message={errorModal.message}
+                confirmText="Aceptar"
+                onConfirm={handleCloseError}
+                dismissOnBackdrop={false}
+            />
+        </>
     );
 }
 
 export const DirectorSessionBanner = () => {
-    const { activeBandId } = useAppContext();
+    const { selectedBand } = useBandContext();
+
+    const activeBandId = selectedBand?.id ?? null;
 
     if (!activeBandId) {
         return null;

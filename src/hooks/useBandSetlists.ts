@@ -47,7 +47,10 @@ export function useBandSetlists(
     }, [bandId]);
 
     const createSetlist = useCallback(
-        async (name: string) => {
+        async (
+            name: string,
+            date?: Date
+        ) => {
             if (!bandId) {
                 throw new Error(
                     'No hay una banda seleccionada.'
@@ -56,12 +59,12 @@ export function useBandSetlists(
 
             return BandSetlistService.createBandSetlist(
                 bandId,
-                name
+                name,
+                date
             );
         },
         [bandId]
     );
-
     const updateSetlist = useCallback(
         async (setlist: BandSetlist) => {
             await BandSetlistService.updateBandSetlist(

@@ -37,7 +37,6 @@ export class UserService {
           updatedAt: now,
         };
         await userDocRef.set(newUserProfile);
-        console.log('[UserService] Perfil de usuario creado exitosamente en Firestore:', email);
         return newUserProfile;
       } else {
         const existingData = docSnapshot.data() as UserProfile;
@@ -55,7 +54,6 @@ export class UserService {
           photoURL: updatedProfile.photoURL,
           updatedAt: now,
         });
-        console.log('[UserService] Perfil de usuario actualizado en Firestore:', email);
         return updatedProfile;
       }
     } catch (error) {

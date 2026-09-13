@@ -1,8 +1,30 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
-import { Music, List, TrendingUp, Star, Play, Radio, BookOpen, Heart, Settings, Folder, Mic, Headphones, Bookmark, Volume2 } from 'lucide-react-native';
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
+import {
+  Music,
+  List,
+  TrendingUp,
+  Star,
+  Play,
+  Radio,
+  BookOpen,
+  Heart,
+  Settings,
+  Folder,
+  Mic,
+  Headphones,
+  Bookmark,
+  Volume2,
+} from 'lucide-react-native';
 import { useAppContext } from '../context/AppContext';
-import { useBands } from '../hooks/useBands';
+import { useUserContext } from '../context/UserContext';
+import { useBandContext } from '../context/BandContext';
 import { COLORS } from '../constants/theme';
 import { AppHeader } from '../components/layout/AppHeader';
 import { router } from 'expo-router';
@@ -11,165 +33,386 @@ import { ActiveDirectorSessionsBanner } from '../components/band/ActiveDirectorS
 
 export const HomeScreen = () => {
   const {
-    user,
     songs,
     topSongs,
     setlists,
     activeLibrary,
-    activeBandId,
     handleSongPress,
     handleStartSetlistLocally,
     setActiveSetlist,
     isSyncing,
     handleSync,
-    loadingActions
   } = useAppContext();
 
-  const { bands } = useBands();
+  const { user } = useUserContext();
+  const { bands } = useBandContext();
 
   const handleSetlistPress = (setlist: any) => {
     setActiveSetlist(setlist);
-    router.push({ pathname: "/(tabs)/setlists/[id]", params: { id: setlist.id } } as any);
+    router.push({
+      pathname: '/(tabs)/setlists/[id]',
+      params: { id: setlist.id },
+    } as any);
   };
 
-  const renderLibraryIcon = (iconName: string, color: string) => {
+  const renderLibraryIcon = (
+    iconName: string,
+    color: string
+  ) => {
     const size = 18;
+
+
     switch (iconName) {
-      case 'music': return <Music size={size} color={color} />;
-      case 'star': return <Star size={size} color={color} />;
-      case 'heart': return <Heart size={size} color={color} />;
-      case 'settings': return <Settings size={size} color={color} />;
-      case 'folder': return <Folder size={size} color={color} />;
-      case 'mic': return <Mic size={size} color={color} />;
-      case 'headphones': return <Headphones size={size} color={color} />;
-      case 'radio': return <Radio size={size} color={color} />;
-      case 'bookmark': return <Bookmark size={size} color={color} />;
-      case 'list': return <List size={size} color={color} />;
-      case 'play': return <Play size={size} color={color} />;
-      case 'volume2': return <Volume2 size={size} color={color} />;
+      case 'music':
+        return <Music size={size} color={color} />;
+
+      case 'star':
+        return <Star size={size} color={color} />;
+
+      case 'heart':
+        return <Heart size={size} color={color} />;
+
+      case 'settings':
+        return <Settings size={size} color={color} />;
+
+      case 'folder':
+        return <Folder size={size} color={color} />;
+
+      case 'mic':
+        return <Mic size={size} color={color} />;
+
+      case 'headphones':
+        return (
+          <Headphones
+            size={size}
+            color={color}
+          />
+        );
+
+      case 'radio':
+        return <Radio size={size} color={color} />;
+
+      case 'bookmark':
+        return (
+          <Bookmark
+            size={size}
+            color={color}
+          />
+        );
+
+      case 'list':
+        return <List size={size} color={color} />;
+
+      case 'play':
+        return <Play size={size} color={color} />;
+
+      case 'volume2':
+        return (
+          <Volume2
+            size={size}
+            color={color}
+          />
+        );
+
       case 'book-open':
       default:
-        return <BookOpen size={size} color={color} />;
+        return (
+          <BookOpen
+            size={size}
+            color={color}
+          />
+        );
     }
+
+
   };
 
-  return (
-    <ScrollView style={styles.container} showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-      <AppHeader
-        title="Cancionero"
-        isSyncing={isSyncing}
-        onSync={handleSync}
-        onSettings={() => router.push("/(tabs)/user")}
-        hasUser={!!user}
-      />
-      {/* SECCIÓN DE BIENVENIDA */}
-      <LinearGradient
-        colors={['#1e3a8a', '#3b82f6']}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={styles.welcomeCard}
-      >
-        <View style={styles.welcomeLeft}>
-          <Text style={styles.welcomeTitle}>
-            ¡Hola, {user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Invitado'}!
-          </Text>
-          {!user ? (
-            <View style={styles.connectionWarning}>
-              <Text style={styles.connectionWarningText}>Sin conexión a Google Drive</Text>
-            </View>
-          ) : (
-            <Text style={styles.welcomeSub}>¿Qué vamos a tocar hoy?</Text>
-          )}
-        </View>
+  return (<ScrollView
+    style={styles.container}
+    showsVerticalScrollIndicator={false}
+    contentContainerStyle={styles.scrollContent}
+  >
+    <AppHeader
+      title="Cancionero"
+      isSyncing={isSyncing}
+      onSync={handleSync}
+      onSettings={() =>
+        router.push('/(tabs)/user')
+      }
+      hasUser={!!user}
+    />
 
-        {/* Badge Biblioteca Activa */}
-        {activeLibrary && (
-          <View style={styles.libraryBadge}>
-            {renderLibraryIcon(activeLibrary.icon || 'book-open', '#fff')}
-            <Text style={styles.libraryBadgeText}>
-              {activeLibrary.name}
+
+    {/* SECCIÓN DE BIENVENIDA */}
+    <LinearGradient
+      colors={['#1e3a8a', '#3b82f6']}
+      start={{ x: 0, y: 0 }}
+      end={{ x: 1, y: 1 }}
+      style={styles.welcomeCard}
+    >
+      <View style={styles.welcomeLeft}>
+        <Text style={styles.welcomeTitle}>
+          ¡Hola,{' '}
+          {user?.user_metadata?.full_name ||
+            user?.email?.split('@')[0] ||
+            'Invitado'}
+          !
+        </Text>
+
+        {!user ? (
+          <View style={styles.connectionWarning}>
+            <Text style={styles.connectionWarningText}>
+              Sin conexión a Google Drive
             </Text>
           </View>
+        ) : (
+          <Text style={styles.welcomeSub}>
+            ¿Qué vamos a tocar hoy?
+          </Text>
         )}
-      </LinearGradient>
-
-      <ActiveDirectorSessionsBanner bands={bands} />
-      {/* ESTADÍSTICAS RÁPIDAS */}
-      <View style={styles.statsRow}>
-        <TouchableOpacity style={styles.statCard} onPress={() => router.push('/(tabs)/songs')}>
-          <Music size={24} color={activeLibrary?.color || COLORS.accent} />
-          <Text style={styles.statValue}>{songs.length}</Text>
-          <Text style={styles.statLabel}>Canciones</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.statCard} onPress={() => router.push('/(tabs)/setlists')}>
-          <List size={24} color="#10b981" />
-          <Text style={styles.statValue}>{setlists.length}</Text>
-          <Text style={styles.statLabel}>Listas</Text>
-        </TouchableOpacity>
       </View>
 
-      {/* MÁS ELEGIDAS */}
-      <View style={styles.sectionHeader}>
-        <TrendingUp size={20} color={activeLibrary?.color || COLORS.accent} />
-        <Text style={styles.sectionTitle}>Más Elegidas</Text>
-      </View>
+      {/* Badge Biblioteca Activa */}
+      {activeLibrary && (
+        <View style={styles.libraryBadge}>
+          {renderLibraryIcon(
+            activeLibrary.icon || 'book-open',
+            '#fff'
+          )}
 
-      <View style={styles.topSongsList}>
-        {topSongs.map((song, index) => (
-          <TouchableOpacity
-            key={song.id}
-            style={styles.topSongItem}
-            onPress={() => handleSongPress(song)}
+          <Text style={styles.libraryBadgeText}>
+            {activeLibrary.name}
+          </Text>
+        </View>
+      )}
+    </LinearGradient>
+
+    <ActiveDirectorSessionsBanner bands={bands} />
+
+    {/* ESTADÍSTICAS RÁPIDAS */}
+    <View style={styles.statsRow}>
+      <TouchableOpacity
+        style={styles.statCard}
+        onPress={() =>
+          router.push('/(tabs)/songs')
+        }
+      >
+        <Music
+          size={24}
+          color={
+            activeLibrary?.color ||
+            COLORS.accent
+          }
+        />
+
+        <Text style={styles.statValue}>
+          {songs.length}
+        </Text>
+
+        <Text style={styles.statLabel}>
+          Canciones
+        </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.statCard}
+        onPress={() =>
+          router.push('/(tabs)/setlists')
+        }
+      >
+        <List
+          size={24}
+          color="#10b981"
+        />
+
+        <Text style={styles.statValue}>
+          {setlists.length}
+        </Text>
+
+        <Text style={styles.statLabel}>
+          Listas
+        </Text>
+      </TouchableOpacity>
+    </View>
+
+    {/* MÁS ELEGIDAS */}
+    <View style={styles.sectionHeader}>
+      <TrendingUp
+        size={20}
+        color={
+          activeLibrary?.color ||
+          COLORS.accent
+        }
+      />
+
+      <Text style={styles.sectionTitle}>
+        Más Elegidas
+      </Text>
+    </View>
+
+    <View style={styles.topSongsList}>
+      {topSongs.map((song, index) => (
+        <TouchableOpacity
+          key={song.id}
+          style={styles.topSongItem}
+          onPress={() =>
+            handleSongPress(song)
+          }
+        >
+          <View style={styles.topSongRank}>
+            <Text
+              style={
+                styles.topSongRankText
+              }
+            >
+              {index + 1}
+            </Text>
+          </View>
+
+          <Text
+            style={styles.topSongName}
+            numberOfLines={1}
           >
-            <View style={styles.topSongRank}>
-              <Text style={styles.topSongRankText}>{index + 1}</Text>
-            </View>
-            <Text style={styles.topSongName} numberOfLines={1}>{song.name}</Text>
-          </TouchableOpacity>
-        ))}
-        {topSongs.length === 0 && (
-          <Text style={styles.emptyText}>Sincroniza tus canciones para empezar.</Text>
-        )}
-      </View>
+            {song.name}
+          </Text>
+        </TouchableOpacity>
+      ))}
 
-      {/* LISTAS RECIENTES */}
-      <View style={styles.sectionHeader}>
-        <Star size={20} color="#fbbf24" />
-        <Text style={styles.sectionTitle}>Listas Recientes</Text>
-      </View>
+      {topSongs.length === 0 && (
+        <Text style={styles.emptyText}>
+          Sincroniza tus canciones para empezar.
+        </Text>
+      )}
+    </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.recentSetlists} contentContainerStyle={{ paddingRight: 20 }}>
-        {setlists.slice(0, 5).map((setlist, idx) => (
+    {/* LISTAS RECIENTES */}
+    <View style={styles.sectionHeader}>
+      <Star
+        size={20}
+        color="#fbbf24"
+      />
+
+      <Text style={styles.sectionTitle}>
+        Listas Recientes
+      </Text>
+    </View>
+
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={styles.recentSetlists}
+      contentContainerStyle={{
+        paddingRight: 20,
+      }}
+    >
+      {setlists.slice(0, 5).map(
+        (setlist, idx) => (
           <LinearGradient
             key={setlist.id}
-            colors={idx % 2 === 0 ? ['#0f172a', '#1e293b'] : ['#1e1b4b', '#312e81']}
+            colors={
+              idx % 2 === 0
+                ? [
+                  '#0f172a',
+                  '#1e293b',
+                ]
+                : [
+                  '#1e1b4b',
+                  '#312e81',
+                ]
+            }
             style={styles.setlistCard}
           >
-            <TouchableOpacity onPress={() => handleSetlistPress(setlist)}>
-              <View style={styles.setlistCardIcon}>
-                <List size={24} color="#fff" />
+            <TouchableOpacity
+              onPress={() =>
+                handleSetlistPress(
+                  setlist
+                )
+              }
+            >
+              <View
+                style={
+                  styles.setlistCardIcon
+                }
+              >
+                <List
+                  size={24}
+                  color="#fff"
+                />
               </View>
-              <Text style={styles.setlistCardName} numberOfLines={2}>
+
+              <Text
+                style={
+                  styles.setlistCardName
+                }
+                numberOfLines={2}
+              >
                 {setlist.name}
               </Text>
-              <Text style={styles.setlistCardCount}>{setlist.songIds.length} temas</Text>
-            </TouchableOpacity>
-            <View style={{ flexDirection: 'row', gap: 5, marginTop: 8 }}>
-              <TouchableOpacity
-                style={[styles.startShowBtn, { marginTop: 0, flex: 1, justifyContent: 'center' }]}
-                onPress={() => handleStartSetlistLocally(setlist)}
+
+              <Text
+                style={
+                  styles.setlistCardCount
+                }
               >
-                <Play size={12} color="#fff" />
-                <Text style={styles.startShowText}>Iniciar</Text>
+                {setlist.songIds.length}{' '}
+                temas
+              </Text>
+            </TouchableOpacity>
+
+            <View
+              style={{
+                flexDirection: 'row',
+                gap: 5,
+                marginTop: 8,
+              }}
+            >
+              <TouchableOpacity
+                style={[
+                  styles.startShowBtn,
+                  {
+                    marginTop: 0,
+                    flex: 1,
+                    justifyContent:
+                      'center',
+                  },
+                ]}
+                onPress={() =>
+                  handleStartSetlistLocally(
+                    setlist
+                  )
+                }
+              >
+                <Play
+                  size={12}
+                  color="#fff"
+                />
+
+                <Text
+                  style={
+                    styles.startShowText
+                  }
+                >
+                  Iniciar
+                </Text>
               </TouchableOpacity>
             </View>
           </LinearGradient>
-        ))}
-        {setlists.length === 0 && (
-          <Text style={styles.emptyTextHorizontal}>No hay listas creadas recientemente.</Text>
-        )}
-      </ScrollView>
+        )
+      )}
+
+      {setlists.length === 0 && (
+        <Text
+          style={
+            styles.emptyTextHorizontal
+          }
+        >
+          No hay listas creadas recientemente.
+        </Text>
+      )}
     </ScrollView>
+  </ScrollView>
+
+
   );
 };
 
@@ -178,10 +421,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+
   scrollContent: {
     padding: 20,
     paddingBottom: 40,
   },
+
   welcomeCard: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -190,24 +435,31 @@ const styles = StyleSheet.create({
     padding: 20,
     borderRadius: 20,
     shadowColor: '#3b82f6',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
+
   welcomeLeft: {
     flex: 1,
   },
+
   welcomeTitle: {
     fontSize: 24,
     fontWeight: '900',
     color: '#ffffff',
   },
+
   welcomeSub: {
     fontSize: 14,
     color: 'rgba(255, 255, 255, 0.8)',
     marginTop: 6,
   },
+
   connectionWarning: {
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     alignSelf: 'flex-start',
@@ -216,11 +468,13 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginTop: 6,
   },
+
   connectionWarningText: {
     color: '#ef4444',
     fontSize: 11,
     fontWeight: '600',
   },
+
   libraryBadge: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -228,18 +482,22 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor:
+      'rgba(255, 255, 255, 0.2)',
   },
+
   libraryBadgeText: {
     fontSize: 12,
     fontWeight: '700',
     color: '#fff',
   },
+
   statsRow: {
     flexDirection: 'row',
     gap: 15,
     marginBottom: 25,
   },
+
   statCard: {
     flex: 1,
     backgroundColor: '#18181b',
@@ -250,31 +508,39 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
     shadowOpacity: 0.3,
     shadowRadius: 4,
     elevation: 3,
   },
+
   statValue: {
     fontSize: 24,
     fontWeight: 'bold',
     color: COLORS.foreground,
   },
+
   statLabel: {
     fontSize: 12,
     color: COLORS.mutedForeground,
   },
+
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     marginBottom: 15,
   },
+
   sectionTitle: {
     fontSize: 16,
     fontWeight: 'bold',
     color: COLORS.foreground,
   },
+
   topSongsList: {
     backgroundColor: COLORS.surface,
     borderRadius: 12,
@@ -283,6 +549,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginBottom: 25,
   },
+
   topSongItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -292,6 +559,7 @@ const styles = StyleSheet.create({
     borderBottomColor: COLORS.border,
     gap: 12,
   },
+
   topSongRank: {
     width: 28,
     height: 28,
@@ -302,33 +570,39 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#3b82f640',
   },
+
   topSongRankText: {
     color: '#3b82f6',
     fontSize: 12,
     fontWeight: '900',
   },
+
   topSongName: {
     flex: 1,
     color: COLORS.foreground,
     fontSize: 14,
     fontWeight: '500',
   },
+
   emptyText: {
     color: COLORS.mutedForeground,
     textAlign: 'center',
     paddingVertical: 15,
     fontSize: 13,
   },
+
   emptyTextHorizontal: {
     color: COLORS.mutedForeground,
     paddingVertical: 20,
     paddingLeft: 10,
     fontSize: 13,
   },
+
   recentSetlists: {
     flexDirection: 'row',
     marginBottom: 10,
   },
+
   setlistCard: {
     borderRadius: 16,
     borderWidth: 1,
@@ -337,13 +611,18 @@ const styles = StyleSheet.create({
     width: 150,
     marginRight: 15,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
     shadowOpacity: 0.2,
     shadowRadius: 6,
     elevation: 5,
   },
+
   setlistCardIcon: {
-    backgroundColor: 'rgba(255,255,255,0.15)',
+    backgroundColor:
+      'rgba(255,255,255,0.15)',
     width: 36,
     height: 36,
     borderRadius: 10,
@@ -351,30 +630,36 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 10,
   },
+
   setlistCardName: {
     color: COLORS.foreground,
     fontSize: 13,
     fontWeight: 'bold',
     height: 36,
   },
+
   setlistCardCount: {
     color: COLORS.mutedForeground,
     fontSize: 11,
     marginTop: 4,
   },
+
   startShowBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor:
+      'rgba(255,255,255,0.2)',
     paddingVertical: 8,
     paddingHorizontal: 8,
     borderRadius: 8,
     marginTop: 12,
   },
+
   startShowBtnActive: {
     backgroundColor: '#ef4444',
   },
+
   startShowText: {
     color: '#fff',
     fontSize: 10,

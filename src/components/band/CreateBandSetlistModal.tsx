@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import {
     ActivityIndicator,
+    Keyboard,
     KeyboardAvoidingView,
     Modal,
     Platform,
@@ -10,16 +11,19 @@ import {
     TouchableOpacity,
     TouchableWithoutFeedback,
     View,
-    Keyboard,
 } from 'react-native';
 import { X, ListMusic } from 'lucide-react-native';
 
 import { COLORS } from '../../constants/theme';
+import { DatePickerField } from '../common/DatePickerField';
 
 interface CreateBandSetlistModalProps {
     visible: boolean;
     onClose: () => void;
-    onCreate: (name: string) => Promise<void>;
+    onCreate: (
+        name: string,
+        date?: Date
+    ) => Promise<void>;
 }
 
 export function CreateBandSetlistModal({
@@ -28,12 +32,14 @@ export function CreateBandSetlistModal({
     onCreate,
 }: CreateBandSetlistModalProps) {
     const [name, setName] = useState('');
+    const [date, setDate] = useState<Date | undefined>(undefined);
     const [creating, setCreating] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
         if (visible) {
             setName('');
+            setDate(undefined);
             setError(null);
             setCreating(false);
         }
@@ -43,7 +49,9 @@ export function CreateBandSetlistModal({
         const trimmedName = name.trim();
 
         if (!trimmedName) {
-            setError('Ingresá un nombre para el repertorio.');
+            setError(
+                'Ingresá un nombre para el repertorio.'
+            );
             return;
         }
 
@@ -51,9 +59,13 @@ export function CreateBandSetlistModal({
             setCreating(true);
             setError(null);
 
-            await onCreate(trimmedName);
+            await onCreate(
+                trimmedName,
+                date
+            );
 
             setName('');
+            setDate(undefined);
             onClose();
         } catch (err: any) {
             console.error(
@@ -86,7 +98,9 @@ export function CreateBandSetlistModal({
             animationType="fade"
             onRequestClose={handleClose}
         >
-            <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <TouchableWithoutFeedback
+                onPress={Keyboard.dismiss}
+            >
                 <View style={styles.overlay}>
                     <KeyboardAvoidingView
                         behavior={
@@ -134,7 +148,7 @@ export function CreateBandSetlistModal({
                                     </TouchableOpacity>
                                 </View>
 
-                                {/* Campo */}
+                                {/* Nombre */}
                                 <View style={styles.fieldContainer}>
                                     <Text style={styles.label}>
                                         Nombre
@@ -160,13 +174,27 @@ export function CreateBandSetlistModal({
                                         onSubmitEditing={handleCreate}
                                         maxLength={100}
                                     />
-
-                                    {error && (
-                                        <Text style={styles.errorText}>
-                                            {error}
-                                        </Text>
-                                    )}
                                 </View>
+
+                                {/* Fecha */}
+                                <View style={styles.fieldContainer}>
+                                    <Text style={styles.label}>
+                                        Fecha
+                                    </Text>
+
+                                    <DatePickerField
+                                        value={date}
+                                        onChange={setDate}
+                                        disabled={creating}
+                                    />
+                                </View>
+
+                                {/* Error */}
+                                {error && (
+                                    <Text style={styles.errorText}>
+                                        {error}
+                                    </Text>
+                                )}
 
                                 {/* Acciones */}
                                 <View style={styles.actions}>
@@ -288,7 +316,7 @@ const styles = StyleSheet.create({
     },
 
     fieldContainer: {
-        marginBottom: 24,
+        marginBottom: 18,
     },
 
     label: {
@@ -312,7 +340,7 @@ const styles = StyleSheet.create({
     errorText: {
         color: '#ef4444',
         fontSize: 13,
-        marginTop: 8,
+        marginBottom: 18,
     },
 
     actions: {

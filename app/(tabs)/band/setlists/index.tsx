@@ -6,16 +6,16 @@ import {
     Text,
 } from 'react-native';
 import { CreateBandSetlistModal } from '../../../../src/components/band/CreateBandSetlistModal';
+import EditBandSetlistModal from '../../../../src/components/band/EditBandSetlistModal';
 import { router } from 'expo-router';
 import { ChevronLeft } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useBands } from '../../../../src/hooks/useBands';
+import { useBandContext } from '../../../../src/context/BandContext';
 import { BandSetlistList } from '../../../../src/components/band/BandSetlistList';
 import { BandSetlist } from '../../../../src/types/band';
 import { COLORS } from '../../../../src/constants/theme';
 import { useBandSetlists } from '../../../../src/hooks/useBandSetlists';
-import { useAppContext } from '../../../../src/context/AppContext';
 import { useDirectorSession } from '../../../../src/hooks/useDirectorSession';
 import { BandSetlistService } from '../../../../src/services/BandSetlistService';
 import AppModal from '../../../../src/components/common/AppModal';
@@ -36,6 +36,8 @@ interface FeedbackModalState {
 export default function BandSetlistsScreen() {
     const [isCreateModalOpen, setIsCreateModalOpen] =
         useState(false);
+    const [setlistToEdit, setSetlistToEdit] =
+        useState<BandSetlist | null>(null);
 
     const [deletingSetlistId, setDeletingSetlistId] =
         useState<string | null>(null);
@@ -64,33 +66,33 @@ export default function BandSetlistsScreen() {
 
     const insets = useSafeAreaInsets();
 
-    const { activeBandId } = useAppContext();
+    // ============================================================
+    // Banda seleccionada: BandContext es la fuente de verdad.
+    // ============================================================
+    const {
+        selectedBand,
+        userBandsInfo,
+    } = useBandContext();
+
+    const bandId = selectedBand?.id ?? null;
 
     const { activeSession } =
-        useDirectorSession(activeBandId);
+        useDirectorSession(bandId);
 
-    const {
-        userBandsInfo,
-    } = useBands();
-
-    // La banda activa y su rol salen de la misma entrada.
-    const activeBandInfo =
-        userBandsInfo.find(
-            info => info.band.id === activeBandId
-        ) || null;
-
-    const activeBand =
-        activeBandInfo?.band || null;
+    const activeBand = selectedBand;
 
     const activeBandRole =
-        activeBandInfo?.role || null;
+        userBandsInfo.find(
+            info => info.band.id === bandId
+        )?.role ?? null;
 
     const {
         setlists,
         loading,
         error,
         createSetlist,
-    } = useBandSetlists(activeBandId);
+        updateSetlist,
+    } = useBandSetlists(bandId);
 
     // Owner y Director pueden administrar repertorios.
     const canManageSetlists =
@@ -138,6 +140,30 @@ export default function BandSetlistsScreen() {
     };
 
     // ============================================================
+    // Editar repertorio
+    // ============================================================
+    const handleEditSetlist = (
+        setlist: BandSetlist
+    ) => {
+        if (!canManageSetlists) {
+            return;
+        }
+
+        // Por seguridad, no permitimos editar desde acá
+        // un repertorio que tiene una sesión activa.
+        if (activeSession?.setlistId === setlist.id) {
+            showFeedbackModal(
+                'warning',
+                'Repertorio en vivo',
+                'Este repertorio está siendo reproducido actualmente. Finalizá la sesión de Director Mode antes de editarlo.'
+            );
+            return;
+        }
+
+        setSetlistToEdit(setlist);
+    };
+
+    // ============================================================
     // Crear repertorio
     // ============================================================
     const handleCreateSetlist = () => {
@@ -148,13 +174,28 @@ export default function BandSetlistsScreen() {
         setIsCreateModalOpen(true);
     };
 
-    const handleCreate = async (name: string) => {
+    const handleCreate = async (
+        name: string,
+        date?: Date
+    ) => {
         if (!canCreateSetlist) {
             return;
         }
 
-        await createSetlist(name);
+        await createSetlist(name, date);
         setIsCreateModalOpen(false);
+    };
+
+    const handleSaveSetlist = async (
+        setlist: BandSetlist
+    ) => {
+        if (!canManageSetlists) {
+            return;
+        }
+
+        await updateSetlist(setlist);
+
+        setSetlistToEdit(null);
     };
 
     // ============================================================
@@ -189,7 +230,7 @@ export default function BandSetlistsScreen() {
             return;
         }
 
-        if (!activeBandId) {
+        if (!bandId) {
             setSetlistToDelete(null);
 
             showFeedbackModal(
@@ -208,7 +249,7 @@ export default function BandSetlistsScreen() {
             );
 
             await BandSetlistService.deleteBandSetlist(
-                activeBandId,
+                bandId,
                 setlistToDelete.id
             );
 
@@ -279,7 +320,7 @@ export default function BandSetlistsScreen() {
 
             {/* Lista de repertorios */}
             <BandSetlistList
-                bandId={activeBandId}
+                bandId={bandId}
                 setlists={setlists}
                 loading={loading}
                 error={error}
@@ -342,6 +383,16 @@ export default function BandSetlistsScreen() {
                         setIsCreateModalOpen(false)
                     }
                     onCreate={handleCreate}
+                />
+            )}
+
+            {/* Editar repertorio */}
+            {canManageSetlists && (
+                <EditBandSetlistModal
+                    visible={!!setlistToEdit}
+                    setlist={setlistToEdit}
+                    onClose={() => setSetlistToEdit(null)}
+                    onSave={handleSaveSetlist}
                 />
             )}
         </View>

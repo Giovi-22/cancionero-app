@@ -1,7 +1,8 @@
-import React, { useCallback } from 'react';
+import React from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { router } from 'expo-router';
 import { useAppContext } from '../../src/context/AppContext';
+import { useBandContext } from '../../src/context/BandContext';
 import { useDirectorSession } from '../../src/hooks/useDirectorSession';
 import { SongViewer } from '../../src/components/SongViewer';
 import { COLORS } from '../../src/constants/theme';
@@ -12,8 +13,6 @@ export default function SongScreen() {
         songContent,
         songSettings,
         handleSaveSongSettings,
-        activeBandId,
-        handleFollowSongChange,
         setlistSongs,
         setSelectedSong,
         setSongContent,
@@ -21,6 +20,11 @@ export default function SongScreen() {
         globalTheme,
         handleSaveGlobalTheme,
     } = useAppContext();
+
+
+    const { selectedBand } = useBandContext();
+
+    const activeBandId = selectedBand?.id ?? null;
 
     const {
         activeSession,
@@ -86,7 +90,6 @@ export default function SongScreen() {
                 isFollower={isFollower}
                 onSendDirectorEvent={isDirector ? sendEvent : undefined}
                 incomingDirectorEvent={!isDirector ? latestEvent : null}
-                onFollowSongChange={!isDirector ? handleFollowSongChange : undefined}
                 setlistSongs={setlistSongs}
                 onDirectorNext={handleDirectorNext}
                 onDirectorPrev={handleDirectorPrev}

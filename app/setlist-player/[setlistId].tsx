@@ -36,6 +36,7 @@ interface SongPage {
   content: string | null;
   settings: any;
   loaded: boolean;
+  unavailable: boolean;
 }
 
 export default function SetlistPlayerScreen() {
@@ -51,7 +52,6 @@ export default function SetlistPlayerScreen() {
     songs,
     setlists,
     activeLibrary,
-    handleFollowSongChange,
     handleSaveSongSettings,
     setSetlistSongs,
     globalTheme,
@@ -68,16 +68,6 @@ export default function SetlistPlayerScreen() {
 
   const resolvedBandId =
     isBandMode ? bandIdParam : null;
-
-  console.log(
-    '[SetlistPlayer] Params:',
-    {
-      setlistId,
-      bandIdParam,
-      isBandMode,
-      resolvedBandId,
-    }
-  );
 
   const {
     setlists: bandSetlists,
@@ -324,6 +314,7 @@ export default function SetlistPlayerScreen() {
           content: null,
           settings: null,
           loaded: false,
+          unavailable: false,
         })
       );
 
@@ -335,9 +326,18 @@ export default function SetlistPlayerScreen() {
 
     setReady(true);
 
-    setSetlistSongs(
-      songsOfList
-    );
+    /**
+     * setlistSongs pertenece al flujo de
+     * repertorios personales del AppContext.
+     *
+     * Un repertorio de banda permanece dentro
+     * de este player y no se copia al estado global.
+     */
+    if (!isBandMode) {
+      setSetlistSongs(
+        songsOfList
+      );
+    }
   }, [
     setlistId,
     isBandMode,
@@ -390,14 +390,39 @@ export default function SetlistPlayerScreen() {
            * localmente en este dispositivo.
            *
            * En ese caso mantenemos la posición
-           * del setlist pero no marcamos la página
-           * como cargada.
+           * del setlist y marcamos la página como
+           * cargada pero no disponible.
+           *
+           * De esta manera el player deja de
+           * mostrar el spinner y puede montar
+           * SongViewer normalmente.
            */
           if (content === null) {
             console.warn(
               '[SetlistPlayer] Canción no disponible localmente:',
               song.id
             );
+
+            setPages(prev => {
+              const updated =
+                [...prev];
+
+              if (
+                !updated[index]
+              ) {
+                return prev;
+              }
+
+              updated[index] = {
+                ...updated[index],
+                content: null,
+                settings: null,
+                loaded: true,
+                unavailable: true,
+              };
+
+              return updated;
+            });
 
             return;
           }
@@ -440,6 +465,7 @@ export default function SetlistPlayerScreen() {
               content,
               settings,
               loaded: true,
+              unavailable: false,
             };
 
             return updated;
@@ -456,8 +482,13 @@ export default function SetlistPlayerScreen() {
     );
 
   /**
-   * Precarga la canción actual,
-   * siguiente y anterior.
+   * Carga explícitamente la primera canción
+   * cuando el player termina de construir
+   * sus páginas.
+   *
+   * Esto evita depender de una actualización
+   * posterior de pages para iniciar la carga
+   * de la primera página.
    */
   useEffect(() => {
     if (
@@ -471,6 +502,27 @@ export default function SetlistPlayerScreen() {
       currentIndex,
       pages
     );
+  }, [
+    ready,
+    currentIndex,
+    pages.length,
+    loadPage,
+  ]);
+
+  /**
+   * Precarga la canción siguiente y anterior
+   * una vez que el player ya está funcionando.
+   *
+   * La canción actual se carga mediante
+   * el efecto anterior.
+   */
+  useEffect(() => {
+    if (
+      !ready ||
+      pages.length === 0
+    ) {
+      return;
+    }
 
     loadPage(
       currentIndex + 1,
@@ -493,9 +545,20 @@ export default function SetlistPlayerScreen() {
    */
   const handleClose =
     useCallback(() => {
-      setSetlistSongs([]);
+      /**
+       * Solamente limpiamos el estado
+       * personal del AppContext.
+       *
+       * En Band Mode el repertorio vive
+       * exclusivamente dentro del player.
+       */
+      if (!isBandMode) {
+        setSetlistSongs([]);
+      }
+
       router.back();
     }, [
+      isBandMode,
       setSetlistSongs,
     ]);
 
@@ -724,12 +787,21 @@ export default function SetlistPlayerScreen() {
       eventId;
 
     /**
-     * Actualizamos el estado global de la
-     * aplicación.
+     * El contenido de la canción se carga
+     * mediante el mecanismo normal de pages.
+     *
+     * No modificamos selectedSong,
+     * songContent ni songSettings del
+     * AppContext.
      */
-    handleFollowSongChange(
-      newSongId
-    );
+    if (
+      !pages[idx].loaded
+    ) {
+      loadPage(
+        idx,
+        pages
+      );
+    }
 
     /**
      * Si ya estamos en esa canción no
@@ -761,7 +833,7 @@ export default function SetlistPlayerScreen() {
     followDirector,
     pages,
     currentIndex,
-    handleFollowSongChange,
+    loadPage,
   ]);
 
   /**
@@ -812,9 +884,14 @@ export default function SetlistPlayerScreen() {
       }
     );
 
-    handleFollowSongChange(
-      directorSongId
-    );
+    if (
+      !pages[idx].loaded
+    ) {
+      loadPage(
+        idx,
+        pages
+      );
+    }
 
     flatListRef.current?.scrollToIndex(
       {
@@ -831,7 +908,7 @@ export default function SetlistPlayerScreen() {
     isDirector,
     pages,
     currentIndex,
-    handleFollowSongChange,
+    loadPage,
   ]);
 
   /**
@@ -1005,9 +1082,15 @@ export default function SetlistPlayerScreen() {
     item: SongPage;
     index: number;
   }) => {
+    /**
+     * El spinner solamente aparece mientras
+     * todavía estamos intentando cargar la página.
+     *
+     * Una canción no disponible tiene loaded=true,
+     * por lo tanto debe montar SongViewer.
+     */
     if (
-      !item.loaded ||
-      !item.content
+      !item.loaded
     ) {
       return (
         <View
@@ -1055,7 +1138,10 @@ export default function SetlistPlayerScreen() {
             item.song.id
           }
           content={
-            item.content
+            item.content ?? ''
+          }
+          isSongUnavailable={
+            item.unavailable
           }
           onClose={
             handleClose
@@ -1149,10 +1235,10 @@ export default function SetlistPlayerScreen() {
           /**
            * SONG_CHANGED se procesa
            * exclusivamente en este SetlistPlayer.
+           *
+           * El prop onFollowSongChange ya no
+           * participa en el flujo.
            */
-          onFollowSongChange={
-            undefined
-          }
 
           /**
            * Setlist navigation.

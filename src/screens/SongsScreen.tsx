@@ -8,6 +8,7 @@ import { SongMetadata } from '../types';
 import { router } from 'expo-router';
 import { AppHeader } from '../components/layout/AppHeader';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useUserContext } from '../context/UserContext';
 
 export const SongsScreen = () => {
   const {
@@ -16,9 +17,10 @@ export const SongsScreen = () => {
     setSearchQuery,
     handleSongPress,
     handleSync,
-    user,
     isSyncing
   } = useAppContext();
+
+  const { user } = useUserContext();
 
   const [sortBy, setSortBy] = useState<'default' | 'az' | 'za'>('default');
   const [isSortOpen, setIsSortOpen] = useState(false);

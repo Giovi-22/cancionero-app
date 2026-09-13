@@ -22,6 +22,7 @@ import { useBandSetlists } from '../../hooks/useBandSetlists';
 import { SongMetadata } from '../../types';
 import { COLORS } from '../../constants/theme';
 import AppModal from '../common/AppModal';
+import { useBandContext } from '../../context/BandContext';
 
 type FeedbackModalType =
     | 'danger'
@@ -44,9 +45,12 @@ export default function BandSongSelector() {
     } = useLocalSearchParams<{ id: string }>();
 
     const {
-        songs,
-        activeBandId,
+        songs
     } = useAppContext();
+
+    const { selectedBand } = useBandContext();
+
+    const activeBandId = selectedBand?.id ?? null;
 
     const {
         setlists: bandSetlists,
@@ -54,6 +58,7 @@ export default function BandSongSelector() {
         error,
         updateSetlist: updateBandSetlist,
     } = useBandSetlists(activeBandId);
+
 
     const [search, setSearch] = useState('');
     const [selectedIds, setSelectedIds] = useState<Set<string>>(

@@ -11,9 +11,15 @@ import { COLORS } from "../src/constants/theme";
 
 import { FolderPickerModal } from "../src/components/FolderPickerModal";
 import { LibrarySelectorModal } from "../src/components/LibrarySelectorModal";
-import { CreateSetlistModal, EditSetlistModal } from "../src/components/SetlistModals";
-import { DirectorSessionBanner } from "../src/components/DirectorSessionBanner";
+//import { DirectorSessionBanner } from "../src/components/DirectorSessionBanner";
+
+//App Contexts
 import { useAppContext } from "../src/context/AppContext";
+import { UserContextProvider } from "../src/context/UserContext";
+import { DebugContextProvider } from "../src/context/DebugContext";
+import { BandContextProvider } from "../src/context/BandContext";
+import CreateSetlistModal from "../src/components/CreateSetlistModal";
+import EditSetlistModal from "../src/components/EditSetlistModal";
 
 function GlobalModals() {
     const { isLibrariesOpen, setIsLibrariesOpen } = useAppContext();
@@ -37,6 +43,7 @@ function GlobalModals() {
  * Si el usuario se encuentra dentro de /setlist-player o /song/[id], no se renderiza
  * para evitar duplicar controles ya presentes en el SongViewer.
  */
+/*
 function GlobalDirectorBanner() {
     const pathname = usePathname();
 
@@ -49,7 +56,7 @@ function GlobalDirectorBanner() {
         <DirectorSessionBanner />
     );
 }
-
+*/
 export default function RootLayout() {
     useEffect(() => {
         if (Platform.OS === 'android') {
@@ -70,28 +77,34 @@ export default function RootLayout() {
                     backgroundColor: COLORS.background,
                 }}
             >
-                <StatusBar style="light" backgroundColor="#0a0a0a" translucent />
-                <AppContextProvider>
-                    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-                        <GlobalDirectorBanner />
-                        <View style={{ flex: 1 }}>
-                            <Stack
-                                screenOptions={{
-                                    headerShown: false,
-                                }}
-                            >
-                                <Stack.Screen name="(tabs)" />
-                                <Stack.Screen name="song/[id]" />
-                                <Stack.Screen name="pedal-config" />
-                                <Stack.Screen
-                                    name="setlist-player/[setlistId]"
-                                    options={{ animation: 'slide_from_bottom' }}
-                                />
-                            </Stack>
-                        </View>
-                    </View>
-                    <GlobalModals />
-                </AppContextProvider>
+                <UserContextProvider>
+                    <StatusBar style="light" backgroundColor="#0a0a0a" translucent />
+                    <BandContextProvider>
+                        <DebugContextProvider>
+                            <AppContextProvider>
+                                <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+                                    {/*<GlobalDirectorBanner />*/}
+                                    <View style={{ flex: 1 }}>
+                                        <Stack
+                                            screenOptions={{
+                                                headerShown: false,
+                                            }}
+                                        >
+                                            <Stack.Screen name="(tabs)" />
+                                            <Stack.Screen name="song/[id]" />
+                                            <Stack.Screen name="pedal-config" />
+                                            <Stack.Screen
+                                                name="setlist-player/[setlistId]"
+                                                options={{ animation: 'slide_from_bottom' }}
+                                            />
+                                        </Stack>
+                                    </View>
+                                </View>
+                                <GlobalModals />
+                            </AppContextProvider>
+                        </DebugContextProvider>
+                    </BandContextProvider>
+                </UserContextProvider>
             </SafeAreaProvider>
         </GestureHandlerRootView>
     );
