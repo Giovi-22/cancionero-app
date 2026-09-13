@@ -11,7 +11,7 @@ import { COLORS } from "../src/constants/theme";
 
 import { FolderPickerModal } from "../src/components/FolderPickerModal";
 import { LibrarySelectorModal } from "../src/components/LibrarySelectorModal";
-import { DirectorSessionBanner } from "../src/components/DirectorSessionBanner";
+//import { DirectorSessionBanner } from "../src/components/DirectorSessionBanner";
 
 //App Contexts
 import { useAppContext } from "../src/context/AppContext";
@@ -43,6 +43,7 @@ function GlobalModals() {
  * Si el usuario se encuentra dentro de /setlist-player o /song/[id], no se renderiza
  * para evitar duplicar controles ya presentes en el SongViewer.
  */
+/*
 function GlobalDirectorBanner() {
     const pathname = usePathname();
 
@@ -55,7 +56,7 @@ function GlobalDirectorBanner() {
         <DirectorSessionBanner />
     );
 }
-
+*/
 export default function RootLayout() {
     useEffect(() => {
         if (Platform.OS === 'android') {
@@ -82,7 +83,7 @@ export default function RootLayout() {
                         <DebugContextProvider>
                             <AppContextProvider>
                                 <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-                                    <GlobalDirectorBanner />
+                                    {/*<GlobalDirectorBanner />*/}
                                     <View style={{ flex: 1 }}>
                                         <Stack
                                             screenOptions={{

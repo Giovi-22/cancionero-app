@@ -261,6 +261,7 @@ export default function SetlistDetailScreen() {
         songNotes={activeSetlist?.songNotes}
         onSaveSongNote={handleSaveSongNote}
         onDeleteSongNote={handleDeleteSongNote}
+        canManageSetlist={true}
       />
     </View>
   );
