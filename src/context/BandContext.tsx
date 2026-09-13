@@ -5,6 +5,7 @@ import React, {
     useContext,
     useEffect,
     useMemo,
+    useRef,
     useState,
 } from 'react';
 
@@ -47,6 +48,8 @@ interface BandContextType {
     ) => Promise<Band>;
 
     refreshBands: () => Promise<void>;
+
+    deleteBand: (bandId: string) => Promise<void>;
 }
 
 const BandContext = createContext<BandContextType | undefined>(
@@ -82,6 +85,29 @@ export const BandContextProvider = ({
 
     const [error, setError] =
         useState<string | null>(null);
+
+    // ============================================================
+    // Control de suscripción global de bandas
+    // ============================================================
+
+    const userBandsUnsubscribeRef =
+        useRef<(() => void) | null>(null);
+
+    /**
+     * Identifica la generación actual de la suscripción.
+     *
+     * Si un callback de Firestore llega tarde después de haber
+     * cancelado una suscripción, podemos ignorarlo.
+     */
+    const userBandsSubscriptionIdRef =
+        useRef(0);
+
+    /**
+     * Permite forzar una nueva suscripción sin duplicar la lógica
+     * dentro de deleteBand.
+     */
+    const [bandsSubscriptionKey, setBandsSubscriptionKey] =
+        useState(0);
 
     // ============================================================
     // Permisos derivados de la banda/rol actual
@@ -176,10 +202,21 @@ export const BandContextProvider = ({
             return;
         }
 
+        const subscriptionId =
+            ++userBandsSubscriptionIdRef.current;
+
         const unsubscribe =
             BandService.subscribeToUserBands(
                 userId,
                 updatedBands => {
+                    // Ignorar callbacks de una suscripción vieja.
+                    if (
+                        subscriptionId !==
+                        userBandsSubscriptionIdRef.current
+                    ) {
+                        return;
+                    }
+
                     setUserBandsInfo(updatedBands);
 
                     // Mantener la banda actualmente seleccionada
@@ -224,6 +261,15 @@ export const BandContextProvider = ({
                     setError(null);
                 },
                 subscriptionError => {
+                    // Ignorar errores provenientes de una
+                    // suscripción que ya no es la activa.
+                    if (
+                        subscriptionId !==
+                        userBandsSubscriptionIdRef.current
+                    ) {
+                        return;
+                    }
+
                     console.error(
                         '[BandContext] Error en suscripción de bandas:',
                         subscriptionError
@@ -237,10 +283,19 @@ export const BandContextProvider = ({
                 }
             );
 
+        userBandsUnsubscribeRef.current = unsubscribe;
+
         return () => {
             unsubscribe();
+
+            if (
+                userBandsUnsubscribeRef.current ===
+                unsubscribe
+            ) {
+                userBandsUnsubscribeRef.current = null;
+            }
         };
-    }, [user]);
+    }, [user, bandsSubscriptionKey]);
 
     // ============================================================
     // Suscripción a miembros de la banda seleccionada
@@ -364,6 +419,138 @@ export const BandContextProvider = ({
     );
 
     // ============================================================
+    // Eliminar banda
+    // ============================================================
+
+    const deleteBand = useCallback(
+        async (bandId: string) => {
+            if (!user) {
+                throw new Error(
+                    'Usuario no autenticado'
+                );
+            }
+
+            const bandInfo = userBandsInfo.find(
+                info => info.band.id === bandId
+            );
+
+            if (!bandInfo) {
+                throw new Error(
+                    'La banda no pertenece al usuario actual.'
+                );
+            }
+
+            if (bandInfo.role !== 'owner') {
+                throw new Error(
+                    'Solo el propietario puede eliminar la banda.'
+                );
+            }
+
+            // Guardamos el estado actual antes de eliminar.
+            const wasSelected =
+                selectedBand?.id === bandId;
+
+            const remainingBands =
+                userBandsInfo.filter(
+                    info => info.band.id !== bandId
+                );
+
+            setLoading(true);
+            setError(null);
+
+            // ========================================================
+            // Suspender temporalmente la suscripción global.
+            //
+            // La banda y sus members van a desaparecer durante la
+            // eliminación. No queremos que el listener intente
+            // reaccionar a ese proceso.
+            // ========================================================
+
+            userBandsSubscriptionIdRef.current += 1;
+
+            userBandsUnsubscribeRef.current?.();
+            userBandsUnsubscribeRef.current = null;
+
+            // Si la banda eliminada era la seleccionada,
+            // dejamos de escuchar sus miembros.
+            if (wasSelected) {
+                setSelectedBand(null);
+                setUserRole(null);
+                setMembers([]);
+            }
+
+            try {
+                await BandService.deleteBand(bandId);
+
+                // Actualizar inmediatamente el estado local.
+                setUserBandsInfo(remainingBands);
+
+                // Si había otras bandas, seleccionar
+                // automáticamente la primera.
+                if (
+                    wasSelected &&
+                    remainingBands.length > 0
+                ) {
+                    setSelectedBand(
+                        remainingBands[0].band
+                    );
+
+                    setUserRole(
+                        remainingBands[0].role
+                    );
+                }
+
+                // Si no quedan bandas, dejamos todo vacío.
+                if (remainingBands.length === 0) {
+                    setSelectedBand(null);
+                    setUserRole(null);
+                    setMembers([]);
+                }
+            } catch (e: any) {
+                console.error(
+                    '[BandContext] Error al eliminar banda:',
+                    e
+                );
+
+                const message =
+                    e instanceof Error
+                        ? e.message
+                        : 'No se pudo eliminar la banda.';
+
+                setError(message);
+
+                // Si la eliminación falló y habíamos limpiado
+                // la banda seleccionada, restauramos el estado.
+                if (wasSelected) {
+                    setSelectedBand(bandInfo.band);
+                    setUserRole(bandInfo.role);
+                }
+
+                throw e;
+            } finally {
+                setLoading(false);
+
+                // ====================================================
+                // Pedimos al useEffect que cree una nueva suscripción.
+                //
+                // Importante:
+                // NO recreamos acá manualmente el listener.
+                // El useEffect es el único responsable de eso.
+                // ====================================================
+
+                setBandsSubscriptionKey(
+                    currentKey => currentKey + 1
+                );
+            }
+        },
+        [
+            user,
+            userBandsInfo,
+            selectedBand?.id,
+        ]
+    );
+
+    // ============================================================
     // Estado expuesto por el contexto
     // ============================================================
 
@@ -381,6 +568,7 @@ export const BandContextProvider = ({
             error,
             selectBand,
             createBand,
+            deleteBand,
             refreshBands: loadBands,
         }),
         [
@@ -393,6 +581,7 @@ export const BandContextProvider = ({
             error,
             selectBand,
             createBand,
+            deleteBand,
             loadBands,
         ]
     );

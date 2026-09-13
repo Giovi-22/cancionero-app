@@ -168,6 +168,11 @@ service cloud.firestore {
         );
 
       // Eliminación: solamente el OWNER.
+      //
+      // IMPORTANTE:
+      // isBandOwner() utiliza el estado actual de la base de datos, por lo que
+      // el owner sigue siendo considerado owner durante el batch que elimina
+      // también su documento de miembro.
       allow delete: if isBandOwner(bandId);
 
 
@@ -237,13 +242,29 @@ service cloud.firestore {
         // ---------------------------------------------------------------------
 
         allow delete: if (
+          // OWNER elimina a otro miembro
           isBandOwner(bandId)
           && memberUserId != request.auth.uid
         ) ||
         (
+          // Un miembro puede eliminar su propia membresía,
+          // siempre que NO sea owner.
           isSignedIn()
           && request.auth.uid == memberUserId
           && resource.data.role != 'owner'
+        ) ||
+        (
+          // El OWNER puede eliminar su propia membresía únicamente
+          // como parte del borrado completo de la banda.
+          //
+          // existsAfter() permite comprobar que bands/{bandId}
+          // también está siendo eliminado en el mismo batch.
+          isBandOwner(bandId)
+          && memberUserId == request.auth.uid
+          && resource.data.role == 'owner'
+          && !existsAfter(
+            /databases/$(database)/documents/bands/$(bandId)
+          )
         );
       }
 
@@ -425,8 +446,15 @@ service cloud.firestore {
               || isBandOwner(bandId)
             );
 
-          // Inmutabilidad
-          allow update, delete: if false;
+          // Los eventos son inmutables para actualizaciones.
+          allow update: if false;
+
+          // El OWNER puede eliminar eventos.
+          //
+          // Esto es necesario para poder limpiar las subcolecciones
+          // sessions/{sessionId}/events/{eventId} antes de eliminar
+          // las sesiones y finalmente la banda.
+          allow delete: if isBandOwner(bandId);
         }
       }
     }

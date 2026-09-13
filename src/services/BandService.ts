@@ -8,6 +8,18 @@ export interface UserBandInfo {
 
 export class BandService {
   private static COLLECTION = 'bands';
+  private static BATCH_SIZE = 450;
+
+  /**
+   * Bandas que están siendo eliminadas desde esta instancia de la app.
+   * Se utiliza para evitar manejar como error algunos eventos de listeners
+   * durante el proceso de eliminación.
+   */
+  private static deletingBands = new Set<string>();
+
+  static isBandBeingDeleted(bandId: string): boolean {
+    return this.deletingBands.has(bandId);
+  }
 
   /**
    * Crea una nueva banda y asigna al usuario creador como 'owner'.
@@ -101,6 +113,7 @@ export class BandService {
           role: memberData.role,
         });
       }
+
       return results;
     } catch (error) {
       console.warn(
@@ -216,6 +229,49 @@ export class BandService {
               error => {
                 if (cancelled) return;
 
+                /*
+                 * Si el usuario perdió acceso a la banda porque fue
+                 * eliminado de members, Firestore puede devolver
+                 * permission-denied al listener del documento.
+                 *
+                 * En ese caso dejamos que el listener principal de
+                 * members sea quien determine el estado real.
+                 */
+                const errorCode =
+                  error &&
+                    typeof error === 'object' &&
+                    'code' in error
+                    ? String(error.code)
+                    : '';
+
+                if (
+                  errorCode === 'permission-denied' ||
+                  errorCode === 'firestore/permission-denied'
+                ) {
+                  bands.delete(bandId);
+                  memberships.delete(bandId);
+
+                  const unsubscribe =
+                    bandUnsubscribes.get(bandId);
+
+                  if (unsubscribe) {
+                    unsubscribe();
+                    bandUnsubscribes.delete(bandId);
+                  }
+
+                  emitUpdate();
+                  return;
+                }
+
+                /*
+                 * Si la banda está siendo eliminada desde esta misma
+                 * instancia, no propagamos el error como fallo de
+                 * sincronización.
+                 */
+                if (this.deletingBands.has(bandId)) {
+                  return;
+                }
+
                 console.warn(
                   `[BandService] Error escuchando banda ${bandId}:`,
                   error
@@ -225,7 +281,9 @@ export class BandService {
                   onError(
                     error instanceof Error
                       ? error
-                      : new Error('No se pudo sincronizar una banda.')
+                      : new Error(
+                        'No se pudo sincronizar una banda.'
+                      )
                   );
                 }
               }
@@ -241,7 +299,8 @@ export class BandService {
             memberships.delete(bandId);
             bands.delete(bandId);
 
-            const unsubscribeBand = bandUnsubscribes.get(bandId);
+            const unsubscribeBand =
+              bandUnsubscribes.get(bandId);
 
             if (unsubscribeBand) {
               unsubscribeBand();
@@ -264,7 +323,9 @@ export class BandService {
           onError(
             error instanceof Error
               ? error
-              : new Error('No se pudieron sincronizar las bandas.')
+              : new Error(
+                'No se pudieron sincronizar las bandas.'
+              )
           );
         }
       }
@@ -379,6 +440,205 @@ export class BandService {
       .doc(memberUserId);
 
     await memberRef.delete();
+  }
 
+  /**
+   * Elimina todos los documentos recibidos utilizando batches
+   * para no superar el límite de operaciones de Firestore.
+   */
+  private static async deleteDocumentRefsInBatches(
+    refs: any[]
+  ): Promise<void> {
+    for (
+      let index = 0;
+      index < refs.length;
+      index += this.BATCH_SIZE
+    ) {
+      const batchRefs = refs.slice(
+        index,
+        index + this.BATCH_SIZE
+      );
+
+      const batch = firestore().batch();
+
+      batchRefs.forEach(ref => {
+        batch.delete(ref);
+      });
+
+      await batch.commit();
+    }
+  }
+
+  /**
+   * Elimina completamente una banda y todos sus datos asociados.
+   *
+   * NO elimina datos personales del usuario.
+   *
+   * Orden:
+   * 1. Invitaciones
+   * 2. Eventos de sesiones
+   * 3. Sesiones
+   * 4. Setlists de banda
+   * 5. Miembros que no son owner
+   * 6. Owner + documento de banda en el mismo batch
+   */
+  static async deleteBand(
+    bandId: string
+  ): Promise<void> {
+    if (!bandId) {
+      throw new Error(
+        'Faltan datos necesarios para eliminar la banda.'
+      );
+    }
+
+    this.deletingBands.add(bandId);
+
+    try {
+      console.log(
+        `[BandService] Iniciando eliminación completa de la banda ${bandId}`
+      );
+
+      const bandRef = firestore()
+        .collection(this.COLLECTION)
+        .doc(bandId);
+
+      /*
+       * Obtener la banda antes de eliminarla para conocer
+       * quién es el owner.
+       */
+      const bandSnapshot = await bandRef.get();
+
+      if (!bandSnapshot.exists) {
+        throw new Error(
+          'La banda no existe o ya fue eliminada.'
+        );
+      }
+
+      const bandData =
+        bandSnapshot.data() as Band;
+
+      const ownerId = bandData.ownerId;
+
+      if (!ownerId) {
+        throw new Error(
+          'La banda no tiene un propietario válido.'
+        );
+      }
+
+      /*
+       * 1. Eliminar invitaciones relacionadas con la banda.
+       */
+      const invitationsSnapshot = await firestore()
+        .collection('invitations')
+        .where('bandId', '==', bandId)
+        .get();
+
+      await this.deleteDocumentRefsInBatches(
+        invitationsSnapshot.docs.map(
+          doc => doc.ref
+        )
+      );
+
+      console.log(
+        `[BandService] Invitaciones eliminadas: ${invitationsSnapshot.size}`
+      );
+
+      /*
+       * 2. Eliminar sesiones y sus eventos.
+       */
+      const sessionsSnapshot = await bandRef
+        .collection('sessions')
+        .get();
+
+      const sessionRefs: any[] = [];
+
+      for (const sessionDoc of sessionsSnapshot.docs) {
+        const eventsSnapshot =
+          await sessionDoc.ref
+            .collection('events')
+            .get();
+
+        await this.deleteDocumentRefsInBatches(
+          eventsSnapshot.docs.map(
+            doc => doc.ref
+          )
+        );
+
+        sessionRefs.push(sessionDoc.ref);
+      }
+
+      await this.deleteDocumentRefsInBatches(
+        sessionRefs
+      );
+
+      console.log(
+        `[BandService] Sesiones eliminadas: ${sessionsSnapshot.size}`
+      );
+
+      /*
+       * 3. Eliminar setlists de la banda.
+       */
+      const setlistsSnapshot = await bandRef
+        .collection('setlists')
+        .get();
+
+      await this.deleteDocumentRefsInBatches(
+        setlistsSnapshot.docs.map(
+          doc => doc.ref
+        )
+      );
+
+      console.log(
+        `[BandService] Setlists de banda eliminados: ${setlistsSnapshot.size}`
+      );
+
+      /*
+       * 4. Eliminar miembros que NO son el owner.
+       */
+      const membersSnapshot = await bandRef
+        .collection('members')
+        .get();
+
+      const nonOwnerMemberRefs =
+        membersSnapshot.docs
+          .filter(
+            doc => doc.id !== ownerId
+          )
+          .map(doc => doc.ref);
+
+      await this.deleteDocumentRefsInBatches(
+        nonOwnerMemberRefs
+      );
+
+      console.log(
+        `[BandService] Miembros no-owner eliminados: ${nonOwnerMemberRefs.length}`
+      );
+
+      /*
+       * 5. Eliminar owner + banda en el mismo batch.
+       *
+       * Esto es necesario porque las reglas de Firestore
+       * permiten eliminar el documento del owner únicamente
+       * cuando la banda también se elimina en la misma
+       * operación.
+       */
+      const ownerMemberRef = bandRef
+        .collection('members')
+        .doc(ownerId);
+
+      const finalBatch =
+        firestore().batch();
+
+      finalBatch.delete(ownerMemberRef);
+      finalBatch.delete(bandRef);
+
+      await finalBatch.commit();
+
+      console.log(
+        `[BandService] Banda ${bandId} eliminada correctamente.`
+      );
+    } finally {
+      this.deletingBands.delete(bandId);
+    }
   }
 }
