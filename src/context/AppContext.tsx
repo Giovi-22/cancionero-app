@@ -43,17 +43,17 @@ export interface AppContextType {
   // Folder Explorer state
   folders: any[];
   isLoadingFolders: boolean;
-  setFolderPickerCallback: (cb: ((id: string) => void) | null) => void;
+  setFolderPickerCallback: (cb: ((id: string, name: string) => void) | null) => void;
   navigationStack: any[];
   showShared: boolean;
   openFolderPicker: (
     parentId?: string,
     folderName?: string,
     shared?: boolean,
-    onSelect?: (id: string) => void
+    onSelect?: (id: string, name: string) => void
   ) => Promise<void>;
   navigateBack: () => void;
-  selectFolder: (id: string) => void;
+  selectFolder: (id: string, name: string) => void;
 
   // Selected Viewer state
   selectedSong: SongMetadata | null;
@@ -181,7 +181,7 @@ export const AppContextProvider = ({
   // Estado para el explorador de carpetas
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [folderPickerCallback, setFolderPickerCallback] = useState<
-    ((id: string) => void) | null
+    ((id: string, name: string) => void) | null
   >(null);
   const [folders, setFolders] = useState<any[]>([]);
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
@@ -1066,7 +1066,7 @@ export const AppContextProvider = ({
     parentId: string = 'root',
     folderName: string = 'Mi unidad',
     shared: boolean = false,
-    onSelect?: (id: string) => void
+    onSelect?: (id: string, name: string) => void
   ) => {
     if (onSelect) {
       setFolderPickerCallback(
@@ -1148,11 +1148,9 @@ export const AppContextProvider = ({
     );
   };
 
-  const selectFolder = (
-    id: string
-  ) => {
+  const selectFolder = (id: string, name: string) => {
     if (folderPickerCallback) {
-      folderPickerCallback(id);
+      folderPickerCallback(id, name);
     } else {
       handleSaveConfig(id);
     }
@@ -1161,7 +1159,6 @@ export const AppContextProvider = ({
     setFolderPickerCallback(null);
     Keyboard.dismiss();
   };
-
   return (
     <AppContext.Provider
       value={{

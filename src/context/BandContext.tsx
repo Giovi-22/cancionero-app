@@ -44,7 +44,9 @@ interface BandContextType {
 
     createBand: (
         name: string,
-        description?: string
+        description: string,
+        driveFolderId: string,
+        driveFolderName: string
     ) => Promise<Band>;
 
     refreshBands: () => Promise<void>;
@@ -361,7 +363,9 @@ export const BandContextProvider = ({
     const createBand = useCallback(
         async (
             name: string,
-            description: string = ''
+            description: string,
+            driveFolderId: string,
+            driveFolderName: string
         ) => {
             if (!user) {
                 throw new Error(
@@ -395,6 +399,8 @@ export const BandContextProvider = ({
                     await BandService.createBand(
                         name,
                         description,
+                        driveFolderId,
+                        driveFolderName,
                         userProfile
                     );
 

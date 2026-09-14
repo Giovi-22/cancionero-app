@@ -242,11 +242,15 @@ export default function BandScreen() {
     // ============================================================
     const handleCreateBand = async (
         name: string,
-        description: string
+        description: string,
+        driveFolderId: string,
+        driveFolderName: string
     ) => {
         await createBand(
             name,
-            description
+            description,
+            driveFolderId,
+            driveFolderName
         );
     };
 

@@ -24,9 +24,23 @@ export interface Band {
   name: string;
   description?: string;
   ownerId: string;
+
+  // Carpeta de Google Drive utilizada como fuente
+  // de canciones para Band Mode.
+  driveFolderId?: string;
+  driveFolderName?: string;
+
   activeSessionId?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface BandSong {
+  id: string;
+  name: string;
+  mimeType: string;
+  modifiedTime: string;
+  folderName?: string;
 }
 
 export type InvitationStatus = 'pending' | 'accepted' | 'rejected' | 'expired' | 'cancelled';

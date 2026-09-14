@@ -24,6 +24,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppContext } from '../../../../src/context/AppContext';
 import { useBandContext } from '../../../../src/context/BandContext';
 import { useBandSetlists } from '../../../../src/hooks/useBandSetlists';
+import { useBandSongs } from '../../../../src/hooks/useBandSongs';
 import { useDirectorSession } from '../../../../src/hooks/useDirectorSession';
 import { BandSetlist } from '../../../../src/types/band';
 import { SongMetadata } from '../../../../src/types';
@@ -71,6 +72,7 @@ export default function BandSetlistDetailScreen() {
             title: '',
             message: '',
         });
+
     const [isEditModalOpen, setIsEditModalOpen] =
         useState(false);
 
@@ -101,9 +103,12 @@ export default function BandSetlistDetailScreen() {
      * que esta pantalla necesita.
      *
      * La banda activa ya NO se obtiene desde AppContext.
+     *
+     * IMPORTANTE:
+     * Las canciones ya no se obtienen desde AppContext.
+     * La fuente de canciones de Band Mode es useBandSongs().
      */
     const {
-        songs,
         handleSongPress,
         loadingSongId,
     } = useAppContext();
@@ -138,6 +143,16 @@ export default function BandSetlistDetailScreen() {
         error: bandSetlistsError,
         updateSetlist: updateBandSetlist,
     } = useBandSetlists(activeBandId);
+
+    /**
+     * Canciones disponibles en la carpeta de Google Drive
+     * configurada para la banda.
+     */
+    const {
+        songs: bandSongs,
+        loading: bandSongsLoading,
+        error: bandSongsError,
+    } = useBandSongs();
 
     const {
         startSession,
@@ -200,43 +215,66 @@ export default function BandSetlistDetailScreen() {
 
     /**
      * Convierte los IDs almacenados en Firestore en
-     * SongMetadata disponibles localmente.
+     * canciones disponibles en la carpeta de Google Drive
+     * de la banda.
      *
      * Se recorre songIds para conservar exactamente
      * el orden del repertorio.
+     *
+     * SongList todavía trabaja con SongMetadata, por lo que
+     * adaptamos BandSong al formato que necesita ese componente.
      */
     const setlistSongs = useMemo<SongMetadata[]>(() => {
         if (!setlist) {
             return [];
         }
 
+        const bandSongsById = new Map(
+            bandSongs.map(song => [song.id, song])
+        );
+
         return setlist.songIds
-            .map(songId =>
-                songs.find(song => song.id === songId)
-            )
+            .map((songId): SongMetadata | null => {
+                const song = bandSongsById.get(songId);
+
+                if (!song) {
+                    return null;
+                }
+
+                return {
+                    id: song.id,
+                    name: song.name,
+                    mimeType: song.mimeType,
+                    modifiedTime: song.modifiedTime,
+                    folderName: song.folderName,
+                };
+            })
             .filter(
                 (song): song is SongMetadata =>
-                    Boolean(song)
+                    song !== null
             );
-    }, [setlist, songs]);
-
+    }, [setlist, bandSongs]);
     /**
      * Detecta canciones que existen en Firestore pero
-     * no están disponibles actualmente en la biblioteca local.
+     * ya no están disponibles en la carpeta de Google Drive
+     * configurada para la banda.
+     *
+     * IMPORTANTE:
+     * No se compara contra la biblioteca local/personal.
      */
     const missingSongIds = useMemo(() => {
         if (!setlist) {
             return [];
         }
 
-        const localSongIds = new Set(
-            songs.map(song => song.id)
+        const bandSongIds = new Set(
+            bandSongs.map(song => song.id)
         );
 
         return setlist.songIds.filter(
-            songId => !localSongIds.has(songId)
+            songId => !bandSongIds.has(songId)
         );
-    }, [setlist, songs]);
+    }, [setlist, bandSongs]);
 
     /**
      * Entra a la sesión activa.
@@ -369,7 +407,11 @@ export default function BandSetlistDetailScreen() {
             return;
         }
 
-        const song = songs.find(
+        /**
+         * La canción debe buscarse dentro de las canciones
+         * disponibles para la banda, no en la biblioteca personal.
+         */
+        const song = setlistSongs.find(
             item => item.id === songId
         );
 
@@ -723,10 +765,14 @@ export default function BandSetlistDetailScreen() {
 
     /**
      * Estado: cargando repertorios.
+     *
+     * También esperamos las canciones de la banda para
+     * evitar mostrar temporalmente todas las canciones
+     * como faltantes mientras Drive todavía está cargando.
      */
     if (
-        bandSetlistsLoading &&
-        !setlist
+        (bandSetlistsLoading && !setlist) ||
+        (bandSongsLoading && bandSongs.length === 0)
     ) {
         return (
             <View
@@ -958,7 +1004,8 @@ export default function BandSetlistDetailScreen() {
                             ? 'canción'
                             : 'canciones'}{' '}
                         guardadas en el repertorio que no
-                        están disponibles en la biblioteca local.
+                        están disponibles en la carpeta de
+                        Google Drive de la banda.
                     </Text>
                 </View>
             )}
@@ -968,6 +1015,19 @@ export default function BandSetlistDetailScreen() {
                 <View style={styles.warningContainer}>
                     <Text style={styles.warningText}>
                         {bandSetlistsError}
+                    </Text>
+                </View>
+            )}
+
+            {/* Error al cargar canciones de la banda */}
+            {bandSongsError && (
+                <View style={styles.warningContainer}>
+                    <Text style={styles.warningTitle}>
+                        No se pudieron cargar las canciones
+                    </Text>
+
+                    <Text style={styles.warningText}>
+                        {bandSongsError}
                     </Text>
                 </View>
             )}
@@ -1382,6 +1442,7 @@ const styles = StyleSheet.create({
     headerSpacer: {
         width: 42,
     },
+
     headerActions: {
         flexDirection: 'row',
         alignItems: 'center',

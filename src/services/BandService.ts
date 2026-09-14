@@ -28,8 +28,21 @@ export class BandService {
   static async createBand(
     name: string,
     description: string = '',
+    driveFolderId: string,
+    driveFolderName: string,
     userProfile: UserProfile
   ): Promise<Band> {
+    if (!driveFolderId) {
+      throw new Error(
+        'Debes seleccionar una carpeta de Google Drive para la banda'
+      );
+    }
+
+    if (!driveFolderName?.trim()) {
+      throw new Error(
+        'La carpeta de canciones seleccionada no es válida'
+      );
+    }
     if (!name.trim()) {
       throw new Error('El nombre de la banda no puede estar vacío');
     }
@@ -47,6 +60,8 @@ export class BandService {
       name: name.trim(),
       description: description.trim(),
       ownerId: userProfile.uid,
+      driveFolderId,
+      driveFolderName: driveFolderName.trim(),
       createdAt: now,
       updatedAt: now,
     };
