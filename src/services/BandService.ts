@@ -87,6 +87,67 @@ export class BandService {
   }
 
   /**
+ * Actualiza los datos editables de una banda.
+ *
+ * Solamente autorizado para el Owner mediante Security Rules.
+ *
+ * Campos editables:
+ * - name
+ * - description
+ * - driveFolderId
+ * - driveFolderName
+ */
+  static async updateBand(
+    bandId: string,
+    data: {
+      name: string;
+      description?: string;
+      driveFolderId: string;
+      driveFolderName: string;
+    }
+  ): Promise<void> {
+    if (!bandId) {
+      throw new Error(
+        'Falta el identificador de la banda.'
+      );
+    }
+
+    if (!data.name?.trim()) {
+      throw new Error(
+        'El nombre de la banda no puede estar vacío.'
+      );
+    }
+
+    if (!data.driveFolderId) {
+      throw new Error(
+        'Debes seleccionar una carpeta de Google Drive para la banda.'
+      );
+    }
+
+    if (!data.driveFolderName?.trim()) {
+      throw new Error(
+        'La carpeta de canciones seleccionada no es válida.'
+      );
+    }
+
+    const bandRef = firestore()
+      .collection(this.COLLECTION)
+      .doc(bandId);
+
+    await bandRef.update({
+      name: data.name.trim(),
+      description:
+        data.description?.trim() ?? '',
+      driveFolderId:
+        data.driveFolderId,
+      driveFolderName:
+        data.driveFolderName.trim(),
+      updatedAt:
+        new Date().toISOString(),
+    });
+  }
+
+  /**
    * Obtiene la lista de bandas a las que pertenece un usuario.
    *
    * Busca las membresías mediante collectionGroup('members').
