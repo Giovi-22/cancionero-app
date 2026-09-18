@@ -17,6 +17,8 @@ import {
 } from '../context/DebugContext';
 
 import { COLORS } from '../constants/theme';
+import { Button } from './common/Button';
+import { router } from 'expo-router';
 
 const MODULES = [
     'Auth',
@@ -58,6 +60,10 @@ export function DebugPanel() {
 
     if (isLoading) {
         return null;
+    }
+
+    const handlePress = () => {
+        router.push('/user/settings/debug/udp-test');
     }
 
     return (
@@ -198,6 +204,13 @@ export function DebugPanel() {
                     Restablecer configuración
                 </Text>
             </TouchableOpacity>
+
+            <Button
+                onPress={handlePress}
+                title='UDP Test'
+                variant='secondary'
+                style={{ marginTop: 10 }}
+            />
         </ScrollView>
     );
 }

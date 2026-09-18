@@ -55,7 +55,14 @@ module.exports = {
       'expo-updates',
       '@react-native-firebase/app',
       '@react-native-firebase/auth',
-      '@react-native-google-signin/google-signin'
+      '@react-native-google-signin/google-signin',
+      [
+        '@isvend/expo-udp',
+        {
+          localNetworkUsageDescription:
+            'Esta aplicación utiliza la red local para comunicarse con dispositivos como el pedal Cancionero.'
+        }
+      ]
     ],
     extra: {
       router: {},
