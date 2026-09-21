@@ -1,405 +1,174 @@
-import { createSocket } from '@isvend/expo-udp';
-import TcpSocket from 'react-native-tcp-socket';
-
+/**
+ * PedalService
+ *
+ * Fachada/orquestador central del sistema de pedal.
+ *
+ * Responsabilidad:
+ *   Ocultar los adapters concretos (Bluetooth, WiFi) del resto de la aplicación.
+ *   Exponer una API unificada e independiente del transporte.
+ *
+ * Regla de dependencias:
+ *   UI / React → usePedal → PedalService → adapters
+ *
+ * INVARIANTES:
+ * - connect() NUNCA hace discover() automáticamente.
+ * - discover() escucha pasivamente el broadcast UDP del ESP32 (puerto 4444).
+ * - No se inventa ningún protocolo que el firmware no soporta.
+ * - Los eventos de ambos adapters se fanout a todos los listeners registrados.
+ */
 import {
     PedalDevice,
     PedalEvent,
 } from '../types/pedal';
 
-const DISCOVERY_PORT = 4444;
-const TCP_PORT = 8080;
+import { bluetoothPedalAdapter } from './pedal/BluetoothPedalAdapter';
+import { wifiPedalAdapter } from './pedal/WifiPedalAdapter';
 
-const DISCOVERY_TIMEOUT = 5000;
-
-type PedalEventListener = (
-    event: PedalEvent
-) => void;
-
-type ConnectionListener = (
-    connected: boolean
-) => void;
+export type PedalEventListener = (event: PedalEvent) => void;
+export type PedalConnectionListener = (connected: boolean) => void;
 
 class PedalServiceClass {
-    private tcpClient: any = null;
-
-    private device: PedalDevice | null = null;
-
     private eventListeners = new Set<PedalEventListener>();
+    private connectionListeners = new Set<PedalConnectionListener>();
 
-    private connectionListeners =
-        new Set<ConnectionListener>();
+    constructor() {
+        // Fan-out de eventos de ambos adapters a todos los listeners del servicio
+        bluetoothPedalAdapter.onEvent(event => this.emitEvent(event));
+        wifiPedalAdapter.onEvent(event => this.emitEvent(event));
 
-    private receiveBuffer = '';
-
-    private connecting = false;
-
-    /**
-     * Busca el ESP32 mediante UDP broadcast.
-     */
-    async discover(): Promise<PedalDevice | null> {
-        console.log(
-            '[PedalService] Iniciando descubrimiento UDP...'
+        // Fan-out de cambios de conexión
+        bluetoothPedalAdapter.onConnectionChange(connected =>
+            this.emitConnectionChange(connected)
         );
-
-        const socket = await createSocket({
-            type: 'udp4',
-            reuseAddress: true,
-        });
-
-        try {
-            await socket.bind({
-                port: 0,
-                address: '0.0.0.0',
-            });
-
-            await socket.setBroadcast(true);
-
-            const devicePromise =
-                new Promise<PedalDevice | null>(
-                    resolve => {
-                        let finished = false;
-
-                        const finish = (
-                            device: PedalDevice | null
-                        ) => {
-                            if (finished) {
-                                return;
-                            }
-
-                            finished = true;
-                            resolve(device);
-                        };
-
-                        const subscription =
-                            socket.addListener(
-                                'message',
-                                event => {
-                                    try {
-                                        const message =
-                                            new TextDecoder().decode(
-                                                event.data
-                                            );
-
-                                        console.log(
-                                            '[PedalService] UDP recibido:',
-                                            message
-                                        );
-
-                                        const data =
-                                            JSON.parse(message);
-
-                                        if (
-                                            typeof data.ip !==
-                                            'string' ||
-                                            typeof data.port !==
-                                            'number'
-                                        ) {
-                                            return;
-                                        }
-
-                                        const device: PedalDevice = {
-                                            ip: data.ip,
-                                            port: data.port,
-                                        };
-
-                                        this.device =
-                                            device;
-
-                                        subscription.remove();
-
-                                        finish(device);
-                                    } catch (error) {
-                                        console.warn(
-                                            '[PedalService] UDP inválido:',
-                                            error
-                                        );
-                                    }
-                                }
-                            );
-
-                        setTimeout(() => {
-                            subscription.remove();
-
-                            finish(null);
-                        }, DISCOVERY_TIMEOUT);
-                    }
-                );
-
-            await socket.send(
-                JSON.stringify({
-                    type: 'discover',
-                }),
-                {
-                    host: '255.255.255.255',
-                    port: DISCOVERY_PORT,
-                }
-            );
-
-            return await devicePromise;
-        } finally {
-            await socket.close();
-        }
-    }
-
-    /**
-     * Conecta al ESP32 por TCP.
-     */
-    async connect(
-        device?: PedalDevice
-    ): Promise<void> {
-        if (this.tcpClient) {
-            console.log(
-                '[PedalService] Ya existe una conexión TCP.'
-            );
-            return;
-        }
-
-        const target =
-            device ??
-            this.device ??
-            (await this.discover());
-
-        if (!target) {
-            throw new Error(
-                'No se encontró el pedal.'
-            );
-        }
-
-        this.connecting = true;
-
-        this.receiveBuffer = '';
-
-        console.log(
-            `[PedalService] Conectando a ${target.ip}:${target.port}...`
-        );
-
-        return new Promise(
-            (resolve, reject) => {
-                const client =
-                    TcpSocket.createConnection(
-                        {
-                            host: target.ip,
-                            port:
-                                target.port ||
-                                TCP_PORT,
-                            connectTimeout: 5000,
-                        },
-                        () => {
-                            console.log(
-                                '[PedalService] TCP conectado.'
-                            );
-
-                            this.tcpClient =
-                                client;
-
-                            this.connecting =
-                                false;
-
-                            this.notifyConnection(
-                                true
-                            );
-
-                            resolve();
-                        }
-                    );
-
-                client.on(
-                    'data',
-                    data => {
-                        this.handleData(data);
-                    }
-                );
-
-                client.on(
-                    'error',
-                    error => {
-                        console.error(
-                            '[PedalService] TCP error:',
-                            error
-                        );
-
-                        this.connecting =
-                            false;
-
-                        if (
-                            !this.tcpClient
-                        ) {
-                            reject(error);
-                        }
-                    }
-                );
-
-                client.on(
-                    'close',
-                    () => {
-                        console.log(
-                            '[PedalService] TCP cerrado.'
-                        );
-
-                        this.tcpClient =
-                            null;
-
-                        this.connecting =
-                            false;
-
-                        this.notifyConnection(
-                            false
-                        );
-                    }
-                );
-
-                this.tcpClient = client;
-            }
+        wifiPedalAdapter.onConnectionChange(connected =>
+            this.emitConnectionChange(connected)
         );
     }
 
+    // ──────────────────────────────────────────────────────────
+    // Eventos unificados
+    // ──────────────────────────────────────────────────────────
+
+    private emitEvent(event: PedalEvent): void {
+        this.eventListeners.forEach(listener => listener(event));
+    }
+
+    private emitConnectionChange(connected: boolean): void {
+        this.connectionListeners.forEach(listener => listener(connected));
+    }
+
     /**
-     * Desconecta el pedal.
+     * Suscribe a eventos normalizados del pedal (de cualquier transporte).
+     * Retorna una función para cancelar la suscripción.
+     */
+    onEvent(listener: PedalEventListener): () => void {
+        this.eventListeners.add(listener);
+        return () => {
+            this.eventListeners.delete(listener);
+        };
+    }
+
+    /** @deprecated Alias de onEvent para compatibilidad con código existente. */
+    addEventListener(listener: PedalEventListener): () => void {
+        return this.onEvent(listener);
+    }
+
+    /**
+     * Suscribe a cambios de conexión de cualquier transporte.
+     * Retorna una función para cancelar la suscripción.
+     */
+    onConnectionChange(listener: PedalConnectionListener): () => void {
+        this.connectionListeners.add(listener);
+        return () => {
+            this.connectionListeners.delete(listener);
+        };
+    }
+
+    /** @deprecated Alias de onConnectionChange para compatibilidad con código existente. */
+    addConnectionListener(listener: PedalConnectionListener): () => void {
+        return this.onConnectionChange(listener);
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // Bluetooth HID
+    // ──────────────────────────────────────────────────────────
+
+    /**
+     * Entrega una tecla HID al adaptador Bluetooth.
+     * Llamado exclusivamente desde BluetoothInputBridge.
+     */
+    handleRawKey(key: string): void {
+        bluetoothPedalAdapter.handleRawKey(key);
+    }
+
+    /**
+     * Notifica al adaptador Bluetooth si el puente HID está activo.
+     * Llamado exclusivamente desde BluetoothInputBridge.
+     */
+    setBtBridgeActive(active: boolean): void {
+        bluetoothPedalAdapter.setBridgeActive(active);
+    }
+
+    /**
+     * Recarga los mappings del adaptador Bluetooth desde el almacenamiento.
+     * Llamado desde BluetoothInputBridge cuando la app vuelve a primer plano.
+     */
+    loadBtMappings(): Promise<void> {
+        return bluetoothPedalAdapter.loadMappings();
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // WiFi — Discovery
+    // ──────────────────────────────────────────────────────────
+
+    /**
+     * Escucha pasivamente el broadcast UDP del ESP32 en el puerto 4444.
+     * El ESP32 envía {"ip":"...","port":8080} cada ~3 segundos.
+     * NUNCA envía {"type":"discover"} — el firmware no lo soporta.
+     */
+    async discover(timeoutMs?: number): Promise<PedalDevice | null> {
+        return wifiPedalAdapter.discover(timeoutMs);
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // WiFi — Conexión TCP
+    // ──────────────────────────────────────────────────────────
+
+    /**
+     * Conecta al pedal WiFi por TCP :8080.
+     * NUNCA llama discover() internamente.
+     * Si no se especifica target ni hay un device descubierto, lanza error.
+     */
+    async connect(device?: PedalDevice): Promise<void> {
+        return wifiPedalAdapter.connect(device);
+    }
+
+    /**
+     * Desconecta el socket TCP WiFi.
      */
     disconnect(): void {
-        if (!this.tcpClient) {
-            return;
-        }
-
-        console.log(
-            '[PedalService] Desconectando pedal...'
-        );
-
-        this.tcpClient.destroy();
-
-        this.tcpClient = null;
-
-        this.connecting = false;
-
-        this.notifyConnection(false);
+        wifiPedalAdapter.disconnect();
     }
 
-    /**
-     * Procesa datos TCP.
-     *
-     * El ESP32 utiliza println(), por lo que cada
-     * evento termina en \\n.
-     */
-    private handleData(
-        data: string | Uint8Array
-    ): void {
-        const chunk =
-            typeof data === 'string'
-                ? data
-                : new TextDecoder().decode(data);
-
-        this.receiveBuffer += chunk;
-
-        const lines =
-            this.receiveBuffer.split('\n');
-
-        this.receiveBuffer =
-            lines.pop() ?? '';
-
-        for (const rawLine of lines) {
-            const line =
-                rawLine.trim();
-
-            if (!line) {
-                continue;
-            }
-
-            this.handleEvent(line);
-        }
-    }
-
-    private handleEvent(
-        value: string
-    ): void {
-        const validEvents: PedalEvent[] = [
-            'UP_PRESS',
-            'UP_RELEASE',
-            'DOWN_PRESS',
-            'DOWN_RELEASE',
-            'HOME',
-            'END',
-        ];
-
-        if (
-            !validEvents.includes(
-                value as PedalEvent
-            )
-        ) {
-            console.log(
-                '[PedalService] Evento desconocido:',
-                value
-            );
-
-            return;
-        }
-
-        console.log(
-            '[PedalService] Evento:',
-            value
-        );
-
-        for (
-            const listener of this.eventListeners
-        ) {
-            listener(value as PedalEvent);
-        }
-    }
-
-    /**
-     * Suscribe eventos provenientes del pedal.
-     */
-    addEventListener(
-        listener: PedalEventListener
-    ): () => void {
-        this.eventListeners.add(listener);
-
-        return () => {
-            this.eventListeners.delete(
-                listener
-            );
-        };
-    }
-
-    /**
-     * Suscribe cambios de conexión.
-     */
-    addConnectionListener(
-        listener: ConnectionListener
-    ): () => void {
-        this.connectionListeners.add(
-            listener
-        );
-
-        return () => {
-            this.connectionListeners.delete(
-                listener
-            );
-        };
-    }
-
-    private notifyConnection(
-        connected: boolean
-    ): void {
-        for (
-            const listener of
-            this.connectionListeners
-        ) {
-            listener(connected);
-        }
-    }
+    // ──────────────────────────────────────────────────────────
+    // Estado
+    // ──────────────────────────────────────────────────────────
 
     getDevice(): PedalDevice | null {
-        return this.device;
+        return wifiPedalAdapter.getDiscoveredDevice();
     }
 
     isConnected(): boolean {
-        return this.tcpClient !== null;
+        return wifiPedalAdapter.isConnected() || bluetoothPedalAdapter.isConnected();
     }
 
     isConnecting(): boolean {
-        return this.connecting;
+        return wifiPedalAdapter.isConnecting();
+    }
+
+    isDiscovering(): boolean {
+        return wifiPedalAdapter.isDiscovering();
     }
 }
 
-export const PedalService =
-    new PedalServiceClass();
+export const PedalService = new PedalServiceClass();

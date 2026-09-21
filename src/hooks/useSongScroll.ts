@@ -55,6 +55,8 @@ export interface UseSongScrollReturn {
         progress: number,
         animated?: boolean
     ) => void;
+    goToSongStart: (animated?: boolean) => void;
+    goToSongEnd: (animated?: boolean) => void;
     scrollAreaPageY: React.MutableRefObject<number>;
     scrollAreaPageX: React.MutableRefObject<number>;
     measureScrollArea: () => void;
@@ -601,6 +603,40 @@ export const useSongScroll = ({
             startPedalScroll('down');
         }, [startPedalScroll]);
 
+    const goToSongStart = useCallback(
+        (animated = true) => {
+            stopPedalScroll();
+
+            scrollPosRef.current = 0;
+
+            scrollRef.current?.scrollTo({
+                y: 0,
+                animated,
+            });
+
+            notifyProgress(getScrollProgress(), true);
+        },
+        [stopPedalScroll, scrollRef, notifyProgress, getScrollProgress]
+    );
+
+    const goToSongEnd = useCallback(
+        (animated = true) => {
+            stopPedalScroll();
+
+            const maxScroll = getMaxScroll();
+
+            scrollPosRef.current = maxScroll;
+
+            scrollRef.current?.scrollTo({
+                y: maxScroll,
+                animated,
+            });
+
+            notifyProgress(getScrollProgress(), true);
+        },
+        [stopPedalScroll, getMaxScroll, scrollRef, notifyProgress, getScrollProgress]
+    );
+
     useEffect(() => {
         return () => {
             if (
@@ -651,6 +687,8 @@ export const useSongScroll = ({
         handleContentSizeChange,
         getScrollProgress,
         scrollToProgress,
+        goToSongStart,
+        goToSongEnd,
         scrollAreaPageY,
         scrollAreaPageX,
         measureScrollArea,

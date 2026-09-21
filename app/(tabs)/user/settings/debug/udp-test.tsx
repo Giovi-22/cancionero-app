@@ -2,7 +2,6 @@ import React, {
     useCallback,
     useEffect,
     useMemo,
-    useRef,
     useState,
 } from 'react';
 import {
@@ -13,93 +12,49 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { useUdpSocket } from '@isvend/expo-udp';
-import TcpSocket from 'react-native-tcp-socket';
-import Socket from 'react-native-tcp-socket/lib/types/Socket';
 
-const UDP_PORT = 4444;
-const DEFAULT_TCP_PORT = 8080;
+import { usePedal } from '../../../../../src/hooks/usePedal';
 
 interface ReceivedMessage {
     id: string;
     message: string;
-    remoteAddress: string;
-    remotePort: number;
     timestamp: string;
-    protocol: 'UDP' | 'TCP';
-}
-
-interface PedalDiscovery {
-    ip: string;
-    port: number;
-}
-
-interface TcpStatus {
-    status:
-    | 'disconnected'
-    | 'connecting'
-    | 'connected'
-    | 'error';
-
-    error?: string;
-}
-
-function decodeMessage(data: Uint8Array): string {
-    try {
-        return new TextDecoder().decode(data);
-    } catch {
-        return Array.from(data)
-            .map((byte) => String.fromCharCode(byte))
-            .join('');
-    }
+    protocol: 'TCP';
 }
 
 export default function UdpTestScreen() {
-    const [messages, setMessages] = useState<ReceivedMessage[]>([]);
+    const {
+        connected,
+        connecting,
+        discovering,
+        device,
+        lastEvent,
+        discover,
+        connect,
+        disconnect,
+    } = usePedal();
 
-    const [pedal, setPedal] =
-        useState<PedalDiscovery | null>(null);
+    const [messages, setMessages] =
+        useState<ReceivedMessage[]>([]);
 
-    const [tcpStatus, setTcpStatus] =
-        useState<TcpStatus>({
-            status: 'disconnected',
-        });
+    const [discoveryError, setDiscoveryError] =
+        useState<string | null>(null);
 
-    const tcpSocketRef =
-        useRef<Socket | null>(null);
-
-    const tcpBufferRef =
-        useRef('');
-
-    /**
-     * IP:puerto del pedal al que estamos conectados
-     * o intentando conectarnos.
-     *
-     * Esto evita que cada broadcast UDP genere
-     * una nueva conexión TCP.
-     */
-    const tcpTargetRef =
-        useRef<string | null>(null);
+    const [connectError, setConnectError] =
+        useState<string | null>(null);
 
     // ========================================================
     // Agregar mensaje al log
     // ========================================================
 
     const addMessage = useCallback(
-        (
-            message: string,
-            protocol: 'UDP' | 'TCP',
-            remoteAddress: string,
-            remotePort: number,
-        ) => {
+        (message: string) => {
             const receivedMessage: ReceivedMessage = {
                 id: `${Date.now()}-${Math.random()}`,
                 message,
-                remoteAddress,
-                remotePort,
                 timestamp:
                     new Date().toLocaleTimeString(),
-                protocol,
+                protocol: 'TCP',
             };
 
             setMessages((current) =>
@@ -110,450 +65,137 @@ export default function UdpTestScreen() {
     );
 
     // ========================================================
-    // TCP
+    // Discovery — escucha pasiva UDP :4444
+    // NUNCA conecta automáticamente
     // ========================================================
 
-    const disconnectTcp = useCallback(() => {
-        const socket = tcpSocketRef.current;
-
-        console.log('[TCP] Desconectando manualmente...');
-
-        /**
-         * Primero limpiamos el target para que el próximo
-         * discovery UDP pueda volver a conectar.
-         */
-        tcpTargetRef.current = null;
-        tcpBufferRef.current = '';
-
-        if (socket) {
-            try {
-                socket.destroy();
-            } catch {
-                // El socket puede ya estar cerrado.
-            }
-        }
-
-        tcpSocketRef.current = null;
-
-        setTcpStatus({
-            status: 'disconnected',
-        });
-    }, []);
-
-    const connectTcp = useCallback(
-        (ip: string, port: number) => {
-            const target = `${ip}:${port}`;
-
-            /**
-             * Si ya estamos conectados o conectándonos
-             * al mismo pedal, no hacemos absolutamente nada.
-             *
-             * Esta es la protección principal contra los
-             * broadcasts UDP cada 3 segundos.
-             */
-            if (
-                tcpTargetRef.current === target &&
-                tcpSocketRef.current
-            ) {
-                console.log(
-                    `[TCP] Ya conectado/conectando a ${target}, ignorando discovery.`,
+    const startDiscover = useCallback(
+        async () => {
+            setDiscoveryError(null);
+            const found = await discover();
+            if (!found) {
+                setDiscoveryError(
+                    'No se encontró el pedal en la red. Verificá que esté encendido y en modo WiFi.'
                 );
+            }
+        },
+        [discover],
+    );
 
+    // ========================================================
+    // Conexión TCP — solo cuando el usuario lo pide
+    // ========================================================
+
+    const connectPedal = useCallback(
+        async () => {
+            if (connected || connecting || !device) {
                 return;
             }
 
-            /**
-             * Si había otro socket conectado a otro destino,
-             * lo cerramos antes de conectar al nuevo.
-             */
-            if (tcpSocketRef.current) {
-                console.log(
-                    '[TCP] Cerrando conexión anterior...',
-                );
-
-                try {
-                    tcpSocketRef.current.destroy();
-                } catch {
-                    // Ignorar.
-                }
-
-                tcpSocketRef.current = null;
-            }
-
-            tcpBufferRef.current = '';
-
-            /**
-             * Importante:
-             * establecemos el target ANTES de crear el socket.
-             *
-             * Así, si llega otro broadcast UDP mientras
-             * createConnection todavía está conectando,
-             * no se crea otra conexión.
-             */
-            tcpTargetRef.current = target;
-
-            setTcpStatus({
-                status: 'connecting',
-                error: undefined,
-            });
-
-            console.log(
-                `[TCP] Conectando a ${target}...`,
-            );
-
-            const socket = TcpSocket.createConnection(
-                {
-                    host: ip,
-                    port,
-                },
-                () => {
-                    /**
-                     * Verificamos que este siga siendo
-                     * el socket activo.
-                     */
-                    if (
-                        tcpTargetRef.current !== target
-                    ) {
-                        return;
-                    }
-
-                    console.log(
-                        `[TCP] Conectado a ${target}`,
-                    );
-
-                    setTcpStatus({
-                        status: 'connected',
-                        error: undefined,
-                    });
-
-                    addMessage(
-                        'TCP_CONNECTED',
-                        'TCP',
-                        ip,
-                        port,
-                    );
-                },
-            );
-
-            tcpSocketRef.current = socket;
-
-            // ------------------------------------------------
-            // Datos TCP
-            // ------------------------------------------------
-
-            socket.on('data', (data) => {
-                /**
-                 * El ESP32 utiliza println(), por lo que
-                 * esperamos mensajes terminados en \n.
-                 *
-                 * TCP no garantiza que cada evento llegue
-                 * en un único paquete, por eso usamos buffer.
-                 */
-                const chunk =
-                    typeof data === 'string'
-                        ? data
-                        : data.toString();
-
-                console.log(
-                    '[TCP] Datos recibidos:',
-                    JSON.stringify(chunk),
-                );
-
-                tcpBufferRef.current += chunk;
-
-                const lines =
-                    tcpBufferRef.current.split('\n');
-
-                /**
-                 * La última parte puede estar incompleta.
-                 * La conservamos para el siguiente paquete.
-                 */
-                tcpBufferRef.current =
-                    lines.pop() ?? '';
-
-                for (const line of lines) {
-                    const message =
-                        line.trim();
-
-                    if (!message) {
-                        continue;
-                    }
-
-                    addMessage(
-                        message,
-                        'TCP',
-                        ip,
-                        port,
-                    );
-                }
-            });
-
-            // ------------------------------------------------
-            // Error TCP
-            // ------------------------------------------------
-
-            socket.on('error', (error) => {
-                console.log(
-                    '[TCP] Error:',
-                    error.message,
-                );
-
-                /**
-                 * Solo modificamos el estado si este
-                 * continúa siendo el socket activo.
-                 */
-                if (
-                    tcpSocketRef.current === socket
-                ) {
-                    setTcpStatus({
-                        status: 'error',
-                        error: error.message,
-                    });
-                }
-            });
-
-            // ------------------------------------------------
-            // Cierre TCP
-            // ------------------------------------------------
-
-            socket.on('close', () => {
-                console.log(
-                    `[TCP] Conexión cerrada: ${target}`,
-                );
-
-                /**
-                 * Este control es importante.
-                 *
-                 * Puede ocurrir que un socket viejo cierre
-                 * después de que ya exista otro socket nuevo.
-                 *
-                 * En ese caso NO debemos borrar la referencia
-                 * del socket nuevo.
-                 */
-                if (
-                    tcpSocketRef.current === socket
-                ) {
-                    tcpSocketRef.current = null;
-
-                    tcpTargetRef.current = null;
-
-                    tcpBufferRef.current = '';
-
-                    setTcpStatus({
-                        status: 'disconnected',
-                    });
-                }
-
-                addMessage(
-                    'TCP_DISCONNECTED',
-                    'TCP',
-                    ip,
-                    port,
-                );
-            });
-        },
-        [addMessage],
-    );
-
-    // ========================================================
-    // UDP
-    // ========================================================
-
-    const handleMessage = useCallback(
-        (event: {
-            data: Uint8Array;
-            remoteAddress: string;
-            remotePort: number;
-            family: string;
-        }) => {
-            const message =
-                decodeMessage(event.data).trim();
-
-            addMessage(
-                message,
-                'UDP',
-                event.remoteAddress,
-                event.remotePort,
-            );
-
-            console.log(
-                '[UDP] Mensaje:',
-                message,
-            );
-
-            // ------------------------------------------------
-            // Interpretar discovery del pedal.
-            //
-            // Ejemplo:
-            // {"ip":"192.168.137.118","port":8080}
-            // ------------------------------------------------
+            setConnectError(null);
 
             try {
-                const data =
-                    JSON.parse(message);
+                await connect(device);
+            } catch (error) {
+                const message =
+                    error instanceof Error
+                        ? error.message
+                        : 'No se pudo conectar al pedal.';
 
-                if (
-                    typeof data.ip !== 'string'
-                ) {
-                    return;
-                }
-
-                const port =
-                    typeof data.port === 'number'
-                        ? data.port
-                        : DEFAULT_TCP_PORT;
-
-                const discoveredPedal: PedalDiscovery = {
-                    ip: data.ip,
-                    port,
-                };
-
-                setPedal(discoveredPedal);
-
-                const target =
-                    `${data.ip}:${port}`;
-
-                console.log(
-                    `[UDP] Pedal descubierto: ${target}`,
+                console.error(
+                    '[PedalTest] Error conectando:',
+                    error,
                 );
 
-                /**
-                 * UDP es solamente discovery.
-                 *
-                 * Si ya estamos conectados/conectando
-                 * al mismo pedal, ignoramos el broadcast.
-                 */
-                if (
-                    tcpTargetRef.current === target &&
-                    tcpSocketRef.current
-                ) {
-                    console.log(
-                        `[UDP] El TCP ya está activo hacia ${target}.`,
-                    );
-
-                    return;
-                }
-
-                /**
-                 * Si el TCP se había desconectado,
-                 * tcpTargetRef será null y acá se
-                 * intentará reconectar.
-                 */
-                connectTcp(
-                    data.ip,
-                    port,
-                );
-            } catch {
-                /**
-                 * No era JSON de discovery.
-                 *
-                 * No hacemos nada.
-                 */
+                setConnectError(message);
             }
         },
-        [addMessage, connectTcp],
+        [
+            connected,
+            connecting,
+            device,
+            connect,
+        ],
     );
 
-    const {
-        status: udpStatus,
-        error: udpError,
-        localAddress,
-    } = useUdpSocket({
-        socket: {
-            type: 'udp4',
-            reuseAddress: true,
-        },
-
-        bind: {
-            port: UDP_PORT,
-            address: '0.0.0.0',
-        },
-
-        onMessage: handleMessage,
-    });
-
     // ========================================================
-    // Cleanup
+    // Eventos del pedal
     // ========================================================
 
     useEffect(() => {
+        if (!lastEvent) {
+            return;
+        }
+
+        addMessage(`[${lastEvent.source.toUpperCase()}] ${lastEvent.type}`);
+    }, [
+        lastEvent,
+        addMessage,
+    ]);
+
+    // ========================================================
+    // Discovery al entrar (pasivo, NO conecta)
+    // ========================================================
+
+    useEffect(() => {
+        startDiscover();
+
         return () => {
-            console.log(
-                '[TCP] Cerrando conexión...',
-            );
-
-            tcpTargetRef.current = null;
-            tcpBufferRef.current = '';
-
-            if (tcpSocketRef.current) {
-                try {
-                    tcpSocketRef.current.destroy();
-                } catch {
-                    // Ignorar.
-                }
-
-                tcpSocketRef.current = null;
-            }
+            disconnect();
         };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     // ========================================================
     // Estados visuales
     // ========================================================
 
-    const udpStatusText = useMemo(() => {
-        switch (udpStatus) {
-            case 'idle':
-                return 'Inactivo';
-
-            case 'creating':
-                return 'Creando socket...';
-
-            case 'binding':
-                return 'Abriendo puerto...';
-
-            case 'listening':
-                return 'Escuchando';
-
-            case 'error':
-                return 'Error';
-
-            case 'closed':
-                return 'Cerrado';
-
-            default:
-                return udpStatus;
+    const discoveryStatusText = useMemo(() => {
+        if (device) {
+            return 'Pedal descubierto';
         }
-    }, [udpStatus]);
 
-    const udpStatusColor =
-        udpStatus === 'listening'
-            ? '#22c55e'
-            : '#f59e0b';
-
-    const tcpStatusText = useMemo(() => {
-        switch (tcpStatus.status) {
-            case 'connecting':
-                return 'Conectando...';
-
-            case 'connected':
-                return 'Conectado';
-
-            case 'error':
-                return 'Error';
-
-            case 'disconnected':
-            default:
-                return 'Desconectado';
+        if (discovering) {
+            return 'Buscando pedal...';
         }
-    }, [tcpStatus.status]);
 
-    const tcpStatusColor =
-        tcpStatus.status === 'connected'
+        if (discoveryError) {
+            return 'Error';
+        }
+
+        return 'Sin discovery';
+    }, [
+        device,
+        discovering,
+        discoveryError,
+    ]);
+
+    const discoveryStatusColor =
+        device
             ? '#22c55e'
-            : tcpStatus.status === 'error'
+            : discoveryError
                 ? '#ef4444'
                 : '#f59e0b';
+
+    const tcpStatusText = useMemo(() => {
+        if (connected) {
+            return 'Conectado';
+        }
+
+        if (connecting) {
+            return 'Conectando...';
+        }
+
+        return 'Desconectado';
+    }, [
+        connected,
+        connecting,
+    ]);
+
+    const tcpStatusColor =
+        connected
+            ? '#22c55e'
+            : '#f59e0b';
 
     // ========================================================
     // Limpiar mensajes
@@ -568,7 +210,13 @@ export default function UdpTestScreen() {
     // ========================================================
 
     return (
-        <View style={styles.container}>
+        <ScrollView
+            style={styles.container}
+            contentContainerStyle={
+                styles.contentContainer
+            }
+            showsVerticalScrollIndicator={true}
+        >
             <View style={styles.header}>
                 <Text style={styles.title}>
                     Pedal Communication Test
@@ -596,10 +244,7 @@ export default function UdpTestScreen() {
                     </Text>
 
                     <View style={styles.statusContainer}>
-                        {(
-                            udpStatus === 'creating' ||
-                            udpStatus === 'binding'
-                        ) ? (
+                        {discovering ? (
                             <ActivityIndicator
                                 size="small"
                             />
@@ -610,11 +255,11 @@ export default function UdpTestScreen() {
                                 styles.status,
                                 {
                                     color:
-                                        udpStatusColor,
+                                        discoveryStatusColor,
                                 },
                             ]}
                         >
-                            {udpStatusText}
+                            {discoveryStatusText}
                         </Text>
                     </View>
                 </View>
@@ -625,19 +270,7 @@ export default function UdpTestScreen() {
                     </Text>
 
                     <Text style={styles.value}>
-                        {UDP_PORT}
-                    </Text>
-                </View>
-
-                <View style={styles.infoRow}>
-                    <Text style={styles.label}>
-                        Dirección local
-                    </Text>
-
-                    <Text style={styles.value}>
-                        {localAddress
-                            ? `${localAddress.address}:${localAddress.port}`
-                            : '---'}
+                        4444
                     </Text>
                 </View>
 
@@ -651,25 +284,42 @@ export default function UdpTestScreen() {
                     <Text
                         style={[
                             styles.value,
-                            !pedal &&
+                            !device &&
                             styles.mutedValue,
                         ]}
                     >
-                        {pedal
-                            ? `${pedal.ip}:${pedal.port}`
+                        {device
+                            ? `${device.ip}:${device.port}`
                             : 'Esperando...'}
                     </Text>
                 </View>
+
+                <TouchableOpacity
+                    style={[
+                        styles.connectButton,
+                        discovering && styles.connectButtonDisabled,
+                    ]}
+                    onPress={startDiscover}
+                    disabled={discovering}
+                >
+                    {discovering ? (
+                        <ActivityIndicator size="small" />
+                    ) : (
+                        <Text style={styles.connectButtonText}>
+                            Buscar pedal (UDP)
+                        </Text>
+                    )}
+                </TouchableOpacity>
             </View>
 
-            {udpError ? (
+            {discoveryError ? (
                 <View style={styles.errorCard}>
                     <Text style={styles.errorTitle}>
-                        Error UDP
+                        Sin respuesta
                     </Text>
 
                     <Text style={styles.errorText}>
-                        {udpError.message}
+                        {discoveryError}
                     </Text>
                 </View>
             ) : null}
@@ -691,8 +341,7 @@ export default function UdpTestScreen() {
                     </Text>
 
                     <View style={styles.statusContainer}>
-                        {tcpStatus.status ===
-                            'connecting' ? (
+                        {connecting ? (
                             <ActivityIndicator
                                 size="small"
                             />
@@ -720,39 +369,22 @@ export default function UdpTestScreen() {
                     <Text
                         style={[
                             styles.value,
-                            !pedal &&
+                            !device &&
                             styles.mutedValue,
                         ]}
                     >
-                        {pedal
-                            ? `${pedal.ip}:${pedal.port}`
+                        {device
+                            ? `${device.ip}:${device.port}`
                             : '---'}
                     </Text>
                 </View>
 
-                {tcpStatus.error ? (
-                    <>
-                        <View
-                            style={styles.separator}
-                        />
-
-                        <Text
-                            style={styles.tcpErrorText}
-                        >
-                            {tcpStatus.error}
-                        </Text>
-                    </>
-                ) : null}
-
-                {tcpStatus.status ===
-                    'connected' ? (
+                {connected ? (
                     <TouchableOpacity
                         style={
                             styles.disconnectButton
                         }
-                        onPress={
-                            disconnectTcp
-                        }
+                        onPress={disconnect}
                     >
                         <Text
                             style={
@@ -762,8 +394,43 @@ export default function UdpTestScreen() {
                             Desconectar TCP
                         </Text>
                     </TouchableOpacity>
-                ) : null}
+                ) : (
+                    <TouchableOpacity
+                        style={[
+                            styles.connectButton,
+                            (!device || connecting) && styles.connectButtonDisabled,
+                        ]}
+                        onPress={connectPedal}
+                        disabled={!device || connecting}
+                    >
+                        {connecting ? (
+                            <ActivityIndicator
+                                size="small"
+                            />
+                        ) : (
+                            <Text
+                                style={
+                                    styles.connectButtonText
+                                }
+                            >
+                                {device ? 'Conectar TCP' : 'Buscá el pedal primero'}
+                            </Text>
+                        )}
+                    </TouchableOpacity>
+                )}
             </View>
+
+            {connectError ? (
+                <View style={styles.errorCard}>
+                    <Text style={styles.errorTitle}>
+                        Error de conexión TCP
+                    </Text>
+
+                    <Text style={styles.errorText}>
+                        {connectError}
+                    </Text>
+                </View>
+            ) : null}
 
             {/* =================================================
                 EVENTS
@@ -771,7 +438,7 @@ export default function UdpTestScreen() {
 
             <View style={styles.messagesHeader}>
                 <Text style={styles.messagesTitle}>
-                    Mensajes recibidos ({messages.length})
+                    Eventos recibidos ({messages.length})
                 </Text>
 
                 <TouchableOpacity
@@ -788,88 +455,75 @@ export default function UdpTestScreen() {
                 </TouchableOpacity>
             </View>
 
-            <ScrollView
-                style={styles.messagesList}
-                contentContainerStyle={
-                    messages.length === 0
-                        ? styles.emptyContainer
-                        : undefined
-                }
-            >
-                {messages.length === 0 ? (
-                    <Text style={styles.emptyText}>
-                        Esperando discovery UDP y
-                        eventos TCP del ESP32...
-                    </Text>
-                ) : (
-                    messages.map((item) => (
-                        <View
-                            key={item.id}
-                            style={
-                                styles.messageCard
-                            }
-                        >
+            <View style={styles.messagesContainer}>
+                <ScrollView
+                    style={styles.messagesList}
+                    nestedScrollEnabled={true}
+                    contentContainerStyle={
+                        messages.length === 0
+                            ? styles.emptyContainer
+                            : styles.messagesContent
+                    }
+                    showsVerticalScrollIndicator={true}
+                >
+                    {messages.length === 0 ? (
+                        <Text style={styles.emptyText}>
+                            Esperando discovery UDP y
+                            eventos TCP del ESP32...
+                        </Text>
+                    ) : (
+                        messages.map((item) => (
                             <View
+                                key={item.id}
                                 style={
-                                    styles.messageHeader
+                                    styles.messageCard
                                 }
                             >
                                 <View
                                     style={
-                                        styles.protocolContainer
+                                        styles.messageHeader
                                     }
                                 >
-                                    <Text
-                                        style={[
-                                            styles.protocol,
-                                            {
-                                                color:
-                                                    item.protocol ===
-                                                        'TCP'
-                                                        ? '#60a5fa'
-                                                        : '#a78bfa',
-                                            },
-                                        ]}
-                                    >
-                                        {item.protocol}
-                                    </Text>
-
-                                    <Text
+                                    <View
                                         style={
-                                            styles.messageTime
+                                            styles.protocolContainer
                                         }
                                     >
-                                        {item.timestamp}
-                                    </Text>
+                                        <Text
+                                            style={[
+                                                styles.protocol,
+                                                {
+                                                    color:
+                                                        '#60a5fa',
+                                                },
+                                            ]}
+                                        >
+                                            {item.protocol}
+                                        </Text>
+
+                                        <Text
+                                            style={
+                                                styles.messageTime
+                                            }
+                                        >
+                                            {item.timestamp}
+                                        </Text>
+                                    </View>
                                 </View>
 
                                 <Text
                                     style={
-                                        styles.messageSource
+                                        styles.messageText
                                     }
                                 >
-                                    {
-                                        item.remoteAddress
-                                    }
-                                    :
-                                    {
-                                        item.remotePort
-                                    }
+                                    {item.message}
                                 </Text>
                             </View>
-
-                            <Text
-                                style={
-                                    styles.messageText
-                                }
-                            >
-                                {item.message}
-                            </Text>
-                        </View>
-                    ))
-                )}
-            </ScrollView>
-        </View>
+                        ))
+                    )}
+                </ScrollView>
+            </View>
+        </ScrollView>
     );
 }
 
@@ -877,7 +531,11 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
         backgroundColor: '#0a0a0a',
+    },
+
+    contentContainer: {
         padding: 20,
+        paddingBottom: 40,
     },
 
     header: {
@@ -973,12 +631,6 @@ const styles = StyleSheet.create({
         fontSize: 14,
     },
 
-    tcpErrorText: {
-        color: '#fca5a5',
-        fontSize: 13,
-        marginTop: 4,
-    },
-
     disconnectButton: {
         marginTop: 12,
         paddingVertical: 10,
@@ -991,6 +643,25 @@ const styles = StyleSheet.create({
         color: '#cccccc',
         fontSize: 13,
         fontWeight: '600',
+    },
+
+    connectButton: {
+        marginTop: 12,
+        paddingVertical: 10,
+        borderRadius: 8,
+        backgroundColor: '#1d4ed8',
+        alignItems: 'center',
+    },
+
+    connectButtonText: {
+        color: '#ffffff',
+        fontSize: 13,
+        fontWeight: '600',
+    },
+
+    connectButtonDisabled: {
+        backgroundColor: '#374151',
+        opacity: 0.6,
     },
 
     messagesHeader: {
@@ -1018,8 +689,17 @@ const styles = StyleSheet.create({
         fontSize: 13,
     },
 
+    messagesContainer: {
+        height: 350,
+        marginBottom: 20,
+    },
+
     messagesList: {
         flex: 1,
+    },
+
+    messagesContent: {
+        paddingBottom: 10,
     },
 
     emptyContainer: {
@@ -1061,11 +741,6 @@ const styles = StyleSheet.create({
     },
 
     messageTime: {
-        color: '#777777',
-        fontSize: 11,
-    },
-
-    messageSource: {
         color: '#777777',
         fontSize: 11,
     },
