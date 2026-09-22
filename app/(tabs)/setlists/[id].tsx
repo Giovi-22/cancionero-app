@@ -4,7 +4,8 @@ import { ArrowLeft, Plus, Edit2, Play, Radio, Search, X, Square, FileText, Check
 import { useAppContext } from '../../../src/context/AppContext';
 import { SongList } from '../../../src/components/SongList';
 import { COLORS } from '../../../src/constants/theme';
-import { SongMetadata } from '../../../src/types';
+import { SongMetadata, Setlist } from '../../../src/types';
+import { StorageService } from '../../../src/services/StorageService';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,6 +15,8 @@ export default function SetlistDetailScreen() {
     songs,
     activeSetlist,
     setActiveSetlist,
+    activeLibrary,
+    libraries,
     searchQuery,
     setSearchQuery,
     handleSongPress,
@@ -34,15 +37,59 @@ export default function SetlistDetailScreen() {
   const [notesText, setNotesText] = useState('');
   const [isNotesExpanded, setIsNotesExpanded] = useState(false);
   const [isSavingNotes, setIsSavingNotes] = useState(false);
+  const [foreignSetlist, setForeignSetlist] = useState<Setlist | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  const [loadingSetlist, setLoadingSetlist] = useState(true);
 
   useEffect(() => {
-    if (!activeSetlist || activeSetlist.id !== id) {
-      const found = setlists.find(s => s.id === id);
-      if (found) {
-        setActiveSetlist(found);
+    let isMounted = true;
+
+    const loadTarget = async () => {
+      if (!id || typeof id !== 'string') {
+        if (isMounted) {
+          setNotFound(true);
+          setLoadingSetlist(false);
+        }
+        return;
       }
-    }
-  }, [id, setlists]);
+
+      // 1. Buscar en las listas de la biblioteca activa
+      const foundInActive = setlists.find(s => s.id === id);
+      if (foundInActive) {
+        if (isMounted) {
+          setActiveSetlist(foundInActive);
+          setForeignSetlist(null);
+          setNotFound(false);
+          setLoadingSetlist(false);
+        }
+        return;
+      }
+
+      // 2. Si no está en la activa, consultar SQLite directamente
+      try {
+        const dbSetlist = await StorageService.getSetlist(id);
+        if (!isMounted) return;
+
+        if (dbSetlist) {
+          setForeignSetlist(dbSetlist);
+          setNotFound(false);
+        } else {
+          setNotFound(true);
+          setForeignSetlist(null);
+        }
+      } catch (e) {
+        if (isMounted) setNotFound(true);
+      } finally {
+        if (isMounted) setLoadingSetlist(false);
+      }
+    };
+
+    loadTarget();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [id, setlists, activeLibrary?.id]);
 
   useEffect(() => {
     if (activeSetlist) {
@@ -53,6 +100,57 @@ export default function SetlistDetailScreen() {
       }
     }
   }, [activeSetlist?.id, activeSetlist?.notes]);
+
+  if (loadingSetlist) {
+    return (
+      <View style={[styles.container, styles.centerContainer, { paddingTop: insets.top }]}>
+        <ActivityIndicator size="large" color={COLORS.accent} />
+      </View>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <View style={[styles.container, styles.centerContainer, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
+        <Text style={styles.errorTitle}>Lista no encontrada</Text>
+        <Text style={styles.errorSubtitle}>
+          La lista solicitada no existe o ha sido eliminada.
+        </Text>
+        <TouchableOpacity
+          style={styles.errorBackButton}
+          onPress={() => {
+            setActiveSetlist(null);
+            router.back();
+          }}
+        >
+          <Text style={styles.errorBackButtonText}>Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (foreignSetlist && (!activeSetlist || activeSetlist.id !== id || activeSetlist.libraryId !== activeLibrary?.id)) {
+    const foreignLib = libraries.find(l => l.id === foreignSetlist.libraryId);
+    return (
+      <View style={[styles.container, styles.centerContainer, { paddingTop: insets.top, paddingHorizontal: 24 }]}>
+        <Text style={styles.errorTitle}>Esta lista pertenece a otra biblioteca</Text>
+        <Text style={styles.errorSubtitle}>
+          La lista "{foreignSetlist.name}" pertenece a la biblioteca "{foreignLib?.name || foreignSetlist.libraryId}".
+          {'\n\n'}
+          Para verla o editarla, selecciona esa biblioteca desde el selector de bibliotecas.
+        </Text>
+        <TouchableOpacity
+          style={styles.errorBackButton}
+          onPress={() => {
+            setActiveSetlist(null);
+            router.back();
+          }}
+        >
+          <Text style={styles.errorBackButtonText}>Volver</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   if (!activeSetlist) {
     return <View style={styles.container} />;
@@ -397,5 +495,34 @@ const styles = StyleSheet.create({
     color: COLORS.mutedForeground,
     fontSize: 13,
     fontStyle: 'italic',
+  },
+  centerContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.foreground,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  errorSubtitle: {
+    fontSize: 14,
+    color: COLORS.mutedForeground,
+    textAlign: 'center',
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  errorBackButton: {
+    backgroundColor: COLORS.accent,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 8,
+  },
+  errorBackButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    fontSize: 14,
   },
 });

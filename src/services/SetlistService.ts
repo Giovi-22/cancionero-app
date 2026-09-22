@@ -24,8 +24,12 @@ export class SetlistService {
    *
    * Los setlists personales NO dependen de ninguna banda.
    */
-  public async getSetlists(): Promise<Setlist[]> {
-    const localSetlists = await StorageService.getAllSetlists();
+  public async getSetlists(libraryId: string): Promise<Setlist[]> {
+    if (!libraryId || !libraryId.trim()) {
+      return [];
+    }
+
+    const localSetlists = await StorageService.getAllSetlists(libraryId.trim());
 
     const user = auth().currentUser;
 
@@ -37,16 +41,24 @@ export class SetlistService {
   }
 
   /**
-   * Crea un nuevo setlist personal.
+   * Crea un nuevo setlist personal para una biblioteca específica.
    *
-   * La persistencia y sincronización quedan delegadas
-   * completamente en StorageService.
+   * La persistencia queda delegada completamente en StorageService.
    */
-  public async createSetlist(name: string): Promise<Setlist> {
+  public async createSetlist(
+    name: string,
+    libraryId: string,
+    date?: string,
+    notes?: string
+  ): Promise<Setlist> {
     const trimmedName = name.trim();
 
     if (!trimmedName) {
       throw new Error('El nombre del setlist no puede estar vacío.');
+    }
+
+    if (!libraryId || !libraryId.trim()) {
+      throw new Error('El setlist debe pertenecer obligatoriamente a una biblioteca.');
     }
 
     const newSetlist: Setlist = {
@@ -54,11 +66,11 @@ export class SetlistService {
       name: trimmedName,
       songIds: [],
       isPublic: false,
-      date: undefined,
-      notes: undefined,
+      date: date || undefined,
+      notes: notes || undefined,
       songNotes: {},
       lastUpdated: new Date().toISOString(),
-      libraryId: 'default',
+      libraryId: libraryId.trim(),
     };
 
     await StorageService.saveSetlist(newSetlist);
@@ -68,14 +80,14 @@ export class SetlistService {
 
   /**
    * Actualiza un setlist personal.
-   *
-   * StorageService se ocupa de:
-   * - SQLite
-   * - Firestore
    */
   public async updateSetlist(setlist: Setlist): Promise<void> {
     if (!setlist?.id) {
       throw new Error('No se puede actualizar un setlist sin ID.');
+    }
+
+    if (!setlist.libraryId || !setlist.libraryId.trim()) {
+      throw new Error('No se puede actualizar un setlist sin libraryId.');
     }
 
     if (!setlist.name?.trim()) {
@@ -85,6 +97,7 @@ export class SetlistService {
     const updatedSetlist: Setlist = {
       ...setlist,
       name: setlist.name.trim(),
+      libraryId: setlist.libraryId.trim(),
       lastUpdated: new Date().toISOString(),
     };
 

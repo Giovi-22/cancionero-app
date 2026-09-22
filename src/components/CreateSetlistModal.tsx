@@ -19,6 +19,7 @@ const CreateSetlistModal = () => {
         isCreateSetlistOpen,
         setIsCreateSetlistOpen,
         handleCreateSetlist,
+        activeLibrary,
     } = useAppContext();
 
     const [name, setName] = useState('');
@@ -42,7 +43,7 @@ const CreateSetlistModal = () => {
     }
 
     const handleConfirm = async () => {
-        if (isCreating || !name.trim()) {
+        if (isCreating || !name.trim() || !activeLibrary) {
             return;
         }
 
@@ -84,9 +85,20 @@ const CreateSetlistModal = () => {
                 ]}
             >
                 <View style={styles.card}>
-                    <Text style={styles.title}>
-                        Nueva Lista
-                    </Text>
+                    <View>
+                        <Text style={styles.title}>
+                            Nueva Lista
+                        </Text>
+                        {activeLibrary ? (
+                            <Text style={styles.librarySubtitle}>
+                                Biblioteca: {activeLibrary.name}
+                            </Text>
+                        ) : (
+                            <Text style={[styles.librarySubtitle, { color: COLORS.destructive }]}>
+                                No hay biblioteca seleccionada
+                            </Text>
+                        )}
+                    </View>
 
                     <TextInput
                         style={styles.input}
@@ -98,7 +110,7 @@ const CreateSetlistModal = () => {
                         onChangeText={setName}
                         autoFocus
                         returnKeyType="next"
-                        editable={!isCreating}
+                        editable={!isCreating && !!activeLibrary}
                     />
 
                     <TextInput
@@ -114,13 +126,13 @@ const CreateSetlistModal = () => {
                         onChangeText={setNotes}
                         multiline
                         numberOfLines={3}
-                        editable={!isCreating}
+                        editable={!isCreating && !!activeLibrary}
                     />
 
                     <DatePickerField
                         value={date}
                         onChange={setDate}
-                        disabled={isCreating}
+                        disabled={isCreating || !activeLibrary}
                     />
 
                     <View style={styles.actions}>
@@ -137,12 +149,12 @@ const CreateSetlistModal = () => {
                         <TouchableOpacity
                             style={[
                                 styles.confirmButton,
-                                (!name.trim() || isCreating) &&
+                                (!name.trim() || isCreating || !activeLibrary) &&
                                 styles.confirmButtonDisabled,
                             ]}
                             onPress={handleConfirm}
                             disabled={
-                                !name.trim() || isCreating
+                                !name.trim() || isCreating || !activeLibrary
                             }
                         >
                             {isCreating ? (
@@ -189,6 +201,12 @@ const styles = StyleSheet.create({
         color: COLORS.foreground,
         fontSize: 18,
         fontWeight: 'bold',
+    },
+
+    librarySubtitle: {
+        color: COLORS.accent,
+        fontSize: 13,
+        marginTop: 2,
     },
 
     input: {

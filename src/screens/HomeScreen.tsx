@@ -30,6 +30,7 @@ import { AppHeader } from '../components/layout/AppHeader';
 import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { ActiveDirectorSessionsBanner } from '../components/band/ActiveDirectorSessionsBanner';
+import { PedalDiscoveryCard } from '../components/pedal/PedalDiscoveryCard';
 
 export const HomeScreen = () => {
   const {
@@ -188,6 +189,7 @@ export const HomeScreen = () => {
     </LinearGradient>
 
     <ActiveDirectorSessionsBanner bands={bands} />
+    <PedalDiscoveryCard />
 
     {/* ESTADÍSTICAS RÁPIDAS */}
     <View style={styles.statsRow}>

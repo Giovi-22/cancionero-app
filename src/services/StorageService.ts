@@ -48,7 +48,10 @@ export class StorageService {
         date TEXT,
         songIds TEXT NOT NULL,
         isPublic INTEGER DEFAULT 0,
-        lastUpdated TEXT
+        lastUpdated TEXT,
+        library_id TEXT NOT NULL,
+        notes TEXT,
+        song_notes TEXT
       );
 
       CREATE TABLE IF NOT EXISTS libraries (
@@ -83,11 +86,6 @@ export class StorageService {
       );
     } catch (e) { }
 
-    try {
-      await db.execAsync(
-        'ALTER TABLE setlists ADD COLUMN library_id TEXT;'
-      );
-    } catch (e) { }
 
     try {
       await db.execAsync(
@@ -151,10 +149,6 @@ export class StorageService {
 
         await db.runAsync(
           "UPDATE songs SET library_id = 'default' WHERE library_id IS NULL"
-        );
-
-        await db.runAsync(
-          "UPDATE setlists SET library_id = 'default' WHERE library_id IS NULL"
         );
 
         const activeLibRow = await db.getFirstAsync<any>(
@@ -578,15 +572,13 @@ export class StorageService {
   // ===========================================================================
 
   static async saveSetlist(
-    setlist: Setlist,
-    libraryId?: string
+    setlist: Setlist
   ) {
-    const db = await this.getDb();
+    if (!setlist.libraryId || !setlist.libraryId.trim()) {
+      throw new Error('No se puede guardar un setlist sin libraryId.');
+    }
 
-    const libId =
-      libraryId ||
-      setlist.libraryId ||
-      'default';
+    const db = await this.getDb();
 
     const songNotesJson = setlist.songNotes
       ? JSON.stringify(setlist.songNotes)
@@ -604,7 +596,7 @@ export class StorageService {
         JSON.stringify(setlist.songIds || []),
         setlist.isPublic ? 1 : 0,
         setlist.lastUpdated || new Date().toISOString(),
-        libId,
+        setlist.libraryId.trim(),
         setlist.notes || null,
         songNotesJson,
       ]
@@ -612,27 +604,21 @@ export class StorageService {
   }
 
   static async getAllSetlists(
-    libraryId?: string
+    libraryId: string
   ): Promise<Setlist[]> {
+    if (!libraryId || !libraryId.trim()) {
+      return [];
+    }
+
     const db = await this.getDb();
 
-    let rows;
-
-    if (libraryId) {
-      rows = await db.getAllAsync<any>(
-        `SELECT *
-         FROM setlists
-         WHERE library_id = ?
-         ORDER BY COALESCE(date, lastUpdated, id) DESC`,
-        [libraryId]
-      );
-    } else {
-      rows = await db.getAllAsync<any>(
-        `SELECT *
-         FROM setlists
-         ORDER BY COALESCE(date, lastUpdated, id) DESC`
-      );
-    }
+    const rows = await db.getAllAsync<any>(
+      `SELECT *
+       FROM setlists
+       WHERE library_id = ?
+       ORDER BY COALESCE(date, lastUpdated, id) DESC`,
+      [libraryId.trim()]
+    );
 
     return (rows || []).map(row => {
       let songNotes: Record<string, string> = {};
@@ -662,9 +648,54 @@ export class StorageService {
         notes: row.notes || undefined,
         songNotes,
         lastUpdated: row.lastUpdated || undefined,
-        libraryId: row.library_id || undefined,
+        libraryId: row.library_id,
       };
     });
+  }
+
+  static async getSetlist(
+    id: string
+  ): Promise<Setlist | null> {
+    if (!id) return null;
+
+    const db = await this.getDb();
+
+    const row = await db.getFirstAsync<any>(
+      'SELECT * FROM setlists WHERE id = ?',
+      [id]
+    );
+
+    if (!row) return null;
+
+    let songNotes: Record<string, string> = {};
+
+    if (row.song_notes) {
+      try {
+        songNotes = JSON.parse(row.song_notes);
+      } catch (e) {
+        songNotes = {};
+      }
+    }
+
+    let songIds: string[] = [];
+
+    try {
+      songIds = JSON.parse(row.songIds || '[]');
+    } catch (e) {
+      songIds = [];
+    }
+
+    return {
+      id: row.id,
+      name: row.name,
+      date: row.date || undefined,
+      songIds,
+      isPublic: row.isPublic === 1,
+      notes: row.notes || undefined,
+      songNotes,
+      lastUpdated: row.lastUpdated || undefined,
+      libraryId: row.library_id,
+    };
   }
 
   static async deleteSetlistLocal(

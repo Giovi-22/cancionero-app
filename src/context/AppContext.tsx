@@ -562,11 +562,20 @@ export const AppContextProvider = ({
     date?: Date,
     notes?: string
   ) => {
-    if (!activeLibrary) return;
+    if (!activeLibrary) {
+      Alert.alert(
+        'Biblioteca no seleccionada',
+        'Debes seleccionar una biblioteca antes de crear una lista.'
+      );
+      return;
+    }
 
     const trimmed = name.trim();
 
-    if (!trimmed) return;
+    if (!trimmed) {
+      Alert.alert('Error', 'El nombre de la lista no puede estar vacío.');
+      return;
+    }
 
     const dateStr = date
       ? formatDate(date.toISOString())
@@ -586,12 +595,10 @@ export const AppContextProvider = ({
       isPublic: false,
       notes: notes?.trim() || undefined,
       libraryId: activeLibrary.id,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      newSetlist,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(newSetlist);
 
     await refreshLocalData();
 
@@ -602,10 +609,7 @@ export const AppContextProvider = ({
   const handleRemoveSongFromSetlist = async (
     songId: string
   ) => {
-    if (
-      !activeSetlist ||
-      !activeLibrary
-    ) {
+    if (!activeSetlist) {
       return;
     }
 
@@ -614,15 +618,14 @@ export const AppContextProvider = ({
         id => id !== songId
       );
 
-    const updated = {
+    const updated: Setlist = {
       ...activeSetlist,
       songIds: newSongIds,
+      libraryId: activeSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     setActiveSetlist(updated);
 
@@ -633,10 +636,7 @@ export const AppContextProvider = ({
     fromIndex: number,
     toIndex: number
   ) => {
-    if (
-      !activeSetlist ||
-      !activeLibrary
-    ) {
+    if (!activeSetlist) {
       return;
     }
 
@@ -656,15 +656,14 @@ export const AppContextProvider = ({
       movedId
     );
 
-    const updated = {
+    const updated: Setlist = {
       ...activeSetlist,
       songIds: newSongIds,
+      libraryId: activeSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     setActiveSetlist(updated);
 
@@ -677,10 +676,20 @@ export const AppContextProvider = ({
     songIds: string[],
     notes?: string
   ) => {
-    if (
-      !activeSetlist ||
-      !activeLibrary
-    ) {
+    if (!activeSetlist) {
+      return;
+    }
+
+    // Validar que todas las canciones pertenezcan a la biblioteca del setlist
+    const librarySongs = await StorageService.getAllSongs(activeSetlist.libraryId);
+    const validSongIds = new Set(librarySongs.map(s => s.id));
+
+    const hasForeignSong = songIds.some(id => !validSongIds.has(id));
+    if (hasForeignSong) {
+      Alert.alert(
+        'Canción inválida',
+        'Una o más canciones seleccionadas no pertenecen a la biblioteca de esta lista.'
+      );
       return;
     }
 
@@ -695,23 +704,22 @@ export const AppContextProvider = ({
       ? `${cleanName} - ${dateStr}`
       : cleanName;
 
-    const updated = {
+    const updated: Setlist = {
       ...activeSetlist,
       name: finalName,
       date: date
         ? date.toISOString()
         : undefined,
       songIds,
+      libraryId: activeSetlist.libraryId,
       notes:
         notes !== undefined
           ? notes
           : activeSetlist.notes,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     setActiveSetlist(updated);
 
@@ -740,22 +748,18 @@ export const AppContextProvider = ({
         ? activeSetlist
         : null);
 
-    if (
-      !targetSetlist ||
-      !activeLibrary
-    ) {
+    if (!targetSetlist) {
       return;
     }
 
     const updated: Setlist = {
       ...targetSetlist,
       notes,
+      libraryId: targetSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     if (
       activeSetlist?.id === setlistId
@@ -785,10 +789,7 @@ export const AppContextProvider = ({
         ? activeSetlist
         : null);
 
-    if (
-      !targetSetlist ||
-      !activeLibrary
-    ) {
+    if (!targetSetlist) {
       return;
     }
 
@@ -808,12 +809,11 @@ export const AppContextProvider = ({
     const updated: Setlist = {
       ...targetSetlist,
       songNotes: currentNotes,
+      libraryId: targetSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     if (
       activeSetlist?.id === setlistId

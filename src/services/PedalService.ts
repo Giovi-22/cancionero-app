@@ -26,10 +26,12 @@ import { wifiPedalAdapter } from './pedal/WifiPedalAdapter';
 
 export type PedalEventListener = (event: PedalEvent) => void;
 export type PedalConnectionListener = (connected: boolean) => void;
+export type PedalDeviceListener = (device: PedalDevice | null) => void;
 
 class PedalServiceClass {
     private eventListeners = new Set<PedalEventListener>();
     private connectionListeners = new Set<PedalConnectionListener>();
+    private deviceListeners = new Set<PedalDeviceListener>();
 
     constructor() {
         // Fan-out de eventos de ambos adapters a todos los listeners del servicio
@@ -89,6 +91,26 @@ class PedalServiceClass {
         return this.onConnectionChange(listener);
     }
 
+    /**
+     * Suscribe a cambios en el dispositivo detectado.
+     * Retorna una función para cancelar la suscripción.
+     */
+    onDeviceChange(listener: PedalDeviceListener): () => void {
+        this.deviceListeners.add(listener);
+        return () => {
+            this.deviceListeners.delete(listener);
+        };
+    }
+
+    /** @deprecated Alias de onDeviceChange para compatibilidad con código existente. */
+    addDeviceListener(listener: PedalDeviceListener): () => void {
+        return this.onDeviceChange(listener);
+    }
+
+    private emitDeviceChange(device: PedalDevice | null): void {
+        this.deviceListeners.forEach(listener => listener(device));
+    }
+
     // ──────────────────────────────────────────────────────────
     // Bluetooth HID
     // ──────────────────────────────────────────────────────────
@@ -127,7 +149,11 @@ class PedalServiceClass {
      * NUNCA envía {"type":"discover"} — el firmware no lo soporta.
      */
     async discover(timeoutMs?: number): Promise<PedalDevice | null> {
-        return wifiPedalAdapter.discover(timeoutMs);
+        const found = await wifiPedalAdapter.discover(timeoutMs);
+        if (found) {
+            this.emitDeviceChange(found);
+        }
+        return found;
     }
 
     // ──────────────────────────────────────────────────────────

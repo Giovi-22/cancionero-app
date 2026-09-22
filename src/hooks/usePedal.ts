@@ -9,7 +9,11 @@ import {
     PedalEvent,
 } from '../types/pedal';
 
-import { PedalService, PedalEventListener } from '../services/PedalService';
+import {
+    PedalService,
+    PedalEventListener,
+    PedalDeviceListener,
+} from '../services/PedalService';
 
 interface UsePedalResult {
     connected: boolean;
@@ -26,13 +30,13 @@ interface UsePedalResult {
     /**
      * Suscripción directa a eventos del pedal (cualquier transporte).
      * No depende del ciclo de render. Retorna función de unsuscribe.
-     *
-     * @example
-     * useEffect(() => {
-     *     return onEvent(handlePedalEvent);
-     * }, [onEvent]);
      */
     onEvent: (listener: PedalEventListener) => () => void;
+
+    /**
+     * Suscripción a cambios en el dispositivo detectado (anuncios UDP).
+     */
+    onDeviceChange: (listener: PedalDeviceListener) => () => void;
 
     /** Escucha pasivamente el broadcast UDP del ESP32. NUNCA conecta. */
     discover: (timeoutMs?: number) => Promise<PedalDevice | null>;
@@ -75,9 +79,14 @@ export const usePedal = (): UsePedalResult => {
             }
         );
 
+        const removeDeviceListener = PedalService.onDeviceChange(
+            dev => setDevice(dev)
+        );
+
         return () => {
             removeEventListener();
             removeConnectionListener();
+            removeDeviceListener();
         };
     }, []);
 
@@ -93,12 +102,25 @@ export const usePedal = (): UsePedalResult => {
     );
 
     /**
+     * Suscripción directa a cambios en el dispositivo detectado.
+     */
+    const onDeviceChange = useCallback(
+        (listener: PedalDeviceListener): (() => void) => {
+            return PedalService.onDeviceChange(listener);
+        },
+        []
+    );
+
+    /**
      * Escucha pasivamente el broadcast UDP del ESP32 en el puerto 4444.
      * Actualiza `device` si encuentra uno.
      * NUNCA conecta por TCP.
      */
     const discover = useCallback(
         async (timeoutMs?: number): Promise<PedalDevice | null> => {
+            if (PedalService.isDiscovering()) {
+                return PedalService.getDevice();
+            }
             setDiscovering(true);
             try {
                 const found = await PedalService.discover(timeoutMs);
@@ -145,6 +167,7 @@ export const usePedal = (): UsePedalResult => {
         device,
         lastEvent,
         onEvent,
+        onDeviceChange,
         discover,
         connect,
         disconnect,

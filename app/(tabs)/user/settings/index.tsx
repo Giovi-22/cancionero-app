@@ -21,6 +21,7 @@ import { COLORS } from '../../../../src/constants/theme';
 import { useAppContext } from '../../../../src/context/AppContext';
 import { useUserContext } from '../../../../src/context/UserContext';
 import AppModal from '../../../../src/components/common/AppModal';
+import { PedalSettings } from '../../../../src/components/pedal/PedalSettings';
 
 export default function SettingsScreen() {
     const isDevelopment = __DEV__;
@@ -173,13 +174,15 @@ export default function SettingsScreen() {
                 </View>
             </View>
 
-            {/* Preferencias */}
+            {/* Pedal */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>
-                    Preferencias
+                    Pedal
                 </Text>
 
-                <View style={styles.card}>
+                <PedalSettings />
+
+                <View style={[styles.card, { marginTop: 10 }]}>
                     <SettingRow
                         icon={
                             <Bluetooth
