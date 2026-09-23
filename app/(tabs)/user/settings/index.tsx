@@ -22,6 +22,7 @@ import { useAppContext } from '../../../../src/context/AppContext';
 import { useUserContext } from '../../../../src/context/UserContext';
 import AppModal from '../../../../src/components/common/AppModal';
 import { PedalSettings } from '../../../../src/components/pedal/PedalSettings';
+import { ScrollView } from 'react-native-gesture-handler';
 
 export default function SettingsScreen() {
     const isDevelopment = __DEV__;
@@ -71,235 +72,237 @@ export default function SettingsScreen() {
     };
 
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>
-                    Configuración
-                </Text>
+        <ScrollView>
+            <View style={styles.container}>
+                <View style={styles.header}>
+                    <Text style={styles.title}>
+                        Configuración
+                    </Text>
 
-                <Text style={styles.subtitle}>
-                    Ajustes de la aplicación
-                </Text>
-            </View>
-
-            {/* Repertorio */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    Repertorio
-                </Text>
-
-                <View style={styles.card}>
-                    <View style={styles.settingRow}>
-                        <View style={styles.iconContainer}>
-                            <BookOpen
-                                size={21}
-                                color={
-                                    activeLibrary?.color ||
-                                    COLORS.accent
-                                }
-                            />
-                        </View>
-
-                        <View style={styles.rowContent}>
-                            <Text style={styles.rowTitle}>
-                                Biblioteca Activa
-                            </Text>
-
-                            <Text style={styles.rowSubtitle}>
-                                {activeLibrary?.name ||
-                                    'Cargando...'}
-                            </Text>
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={() =>
-                                setIsLibrariesOpen(true)
-                            }
-                            activeOpacity={0.7}
-                        >
-                            <Text style={styles.actionButtonText}>
-                                Administrar
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.settingRow}>
-                        <View style={styles.iconContainer}>
-                            <Search
-                                size={21}
-                                color={COLORS.foreground}
-                            />
-                        </View>
-
-                        <View style={styles.rowContent}>
-                            <Text style={styles.rowTitle}>
-                                Carpeta de Canciones
-                            </Text>
-
-                            <TextInput
-                                style={styles.input}
-                                value={driveFolderId}
-                                onChangeText={handleSaveConfig}
-                                placeholder="ID de la carpeta Drive..."
-                                placeholderTextColor={
-                                    COLORS.mutedForeground
-                                }
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                            />
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.browseButton}
-                            onPress={() => openFolderPicker()}
-                            disabled={!user || isLoadingFolders}
-                            activeOpacity={0.7}
-                        >
-                            {isLoadingFolders ? (
-                                <ActivityIndicator
-                                    size="small"
-                                    color="#fff"
-                                />
-                            ) : (
-                                <Search
-                                    size={18}
-                                    color="#fff"
-                                />
-                            )}
-                        </TouchableOpacity>
-                    </View>
+                    <Text style={styles.subtitle}>
+                        Ajustes de la aplicación
+                    </Text>
                 </View>
-            </View>
 
-            {/* Pedal */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    Pedal
-                </Text>
-
-                <PedalSettings />
-
-                <View style={[styles.card, { marginTop: 10 }]}>
-                    <SettingRow
-                        icon={
-                            <Bluetooth
-                                size={21}
-                                color={COLORS.accent}
-                            />
-                        }
-                        title="Pedal Bluetooth"
-                        subtitle="Configurar acciones de scroll y cambio"
-                        onPress={() =>
-                            router.push('/pedal-config')
-                        }
-                    />
-                </View>
-            </View>
-
-            {/* Avanzado */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    Avanzado
-                </Text>
-
-                <View
-                    style={[
-                        styles.card,
-                        styles.dangerCard,
-                    ]}
-                >
-                    <TouchableOpacity
-                        style={styles.settingRow}
-                        disabled={isSyncing}
-                        onPress={handleClearRepertoirePress}
-                        activeOpacity={0.7}
-                    >
-                        <View
-                            style={[
-                                styles.iconContainer,
-                                styles.dangerIconContainer,
-                            ]}
-                        >
-                            {isSyncing ? (
-                                <ActivityIndicator
-                                    size="small"
-                                    color="#ef4444"
-                                />
-                            ) : (
-                                <ShieldAlert
-                                    size={21}
-                                    color="#ef4444"
-                                />
-                            )}
-                        </View>
-
-                        <View style={styles.rowContent}>
-                            <Text style={styles.dangerTitle}>
-                                Limpiar Repertorio Local
-                            </Text>
-
-                            <Text style={styles.rowSubtitle}>
-                                {isSyncing
-                                    ? 'Borrando canciones...'
-                                    : 'Liberar espacio de almacenamiento local.'}
-                            </Text>
-                        </View>
-
-                        {!isSyncing && (
-                            <ChevronRight
-                                size={20}
-                                color="#ef4444"
-                                opacity={0.5}
-                            />
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            {/* Desarrollo */}
-            {isDevelopment && (
+                {/* Repertorio */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>
-                        Desarrollo
+                        Repertorio
                     </Text>
 
                     <View style={styles.card}>
+                        <View style={styles.settingRow}>
+                            <View style={styles.iconContainer}>
+                                <BookOpen
+                                    size={21}
+                                    color={
+                                        activeLibrary?.color ||
+                                        COLORS.accent
+                                    }
+                                />
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.rowTitle}>
+                                    Biblioteca Activa
+                                </Text>
+
+                                <Text style={styles.rowSubtitle}>
+                                    {activeLibrary?.name ||
+                                        'Cargando...'}
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.actionButton}
+                                onPress={() =>
+                                    setIsLibrariesOpen(true)
+                                }
+                                activeOpacity={0.7}
+                            >
+                                <Text style={styles.actionButtonText}>
+                                    Administrar
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.divider} />
+
+                        <View style={styles.settingRow}>
+                            <View style={styles.iconContainer}>
+                                <Search
+                                    size={21}
+                                    color={COLORS.foreground}
+                                />
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.rowTitle}>
+                                    Carpeta de Canciones
+                                </Text>
+
+                                <TextInput
+                                    style={styles.input}
+                                    value={driveFolderId}
+                                    onChangeText={handleSaveConfig}
+                                    placeholder="ID de la carpeta Drive..."
+                                    placeholderTextColor={
+                                        COLORS.mutedForeground
+                                    }
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.browseButton}
+                                onPress={() => openFolderPicker()}
+                                disabled={!user || isLoadingFolders}
+                                activeOpacity={0.7}
+                            >
+                                {isLoadingFolders ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#fff"
+                                    />
+                                ) : (
+                                    <Search
+                                        size={18}
+                                        color="#fff"
+                                    />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Pedal */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>
+                        Pedal
+                    </Text>
+
+                    <PedalSettings />
+
+                    <View style={[styles.card, { marginTop: 10 }]}>
                         <SettingRow
                             icon={
-                                <Bug
+                                <Bluetooth
                                     size={21}
                                     color={COLORS.accent}
                                 />
                             }
-                            title="Debug"
-                            subtitle="Configuración y filtros de logs"
+                            title="Pedal Bluetooth"
+                            subtitle="Configurar acciones de scroll y cambio"
                             onPress={() =>
-                                router.push(
-                                    '/user/settings/debug',
-                                )
+                                router.push('/pedal-config')
                             }
                         />
                     </View>
                 </View>
-            )}
 
-            {/* Confirmación: limpiar repertorio */}
-            <AppModal
-                visible={isClearRepertoireModalVisible}
-                type="danger"
-                title="Limpiar Repertorio Local"
-                message="¿Estás seguro de que querés borrar todas las canciones locales de esta biblioteca? Esto limpiará la base de datos pero no afectará a Google Drive."
-                confirmText="Borrar todo"
-                cancelText="Cancelar"
-                onConfirm={handleConfirmClearRepertoire}
-                onCancel={handleCancelClearRepertoire}
-                loading={isSyncing}
-                dismissOnBackdrop={false}
-            />
-        </View>
+                {/* Avanzado */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>
+                        Avanzado
+                    </Text>
+
+                    <View
+                        style={[
+                            styles.card,
+                            styles.dangerCard,
+                        ]}
+                    >
+                        <TouchableOpacity
+                            style={styles.settingRow}
+                            disabled={isSyncing}
+                            onPress={handleClearRepertoirePress}
+                            activeOpacity={0.7}
+                        >
+                            <View
+                                style={[
+                                    styles.iconContainer,
+                                    styles.dangerIconContainer,
+                                ]}
+                            >
+                                {isSyncing ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#ef4444"
+                                    />
+                                ) : (
+                                    <ShieldAlert
+                                        size={21}
+                                        color="#ef4444"
+                                    />
+                                )}
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.dangerTitle}>
+                                    Limpiar Repertorio Local
+                                </Text>
+
+                                <Text style={styles.rowSubtitle}>
+                                    {isSyncing
+                                        ? 'Borrando canciones...'
+                                        : 'Liberar espacio de almacenamiento local.'}
+                                </Text>
+                            </View>
+
+                            {!isSyncing && (
+                                <ChevronRight
+                                    size={20}
+                                    color="#ef4444"
+                                    opacity={0.5}
+                                />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
+                {/* Desarrollo */}
+                {isDevelopment && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>
+                            Desarrollo
+                        </Text>
+
+                        <View style={styles.card}>
+                            <SettingRow
+                                icon={
+                                    <Bug
+                                        size={21}
+                                        color={COLORS.accent}
+                                    />
+                                }
+                                title="Debug"
+                                subtitle="Configuración y filtros de logs"
+                                onPress={() =>
+                                    router.push(
+                                        '/user/settings/debug',
+                                    )
+                                }
+                            />
+                        </View>
+                    </View>
+                )}
+
+                {/* Confirmación: limpiar repertorio */}
+                <AppModal
+                    visible={isClearRepertoireModalVisible}
+                    type="danger"
+                    title="Limpiar Repertorio Local"
+                    message="¿Estás seguro de que querés borrar todas las canciones locales de esta biblioteca? Esto limpiará la base de datos pero no afectará a Google Drive."
+                    confirmText="Borrar todo"
+                    cancelText="Cancelar"
+                    onConfirm={handleConfirmClearRepertoire}
+                    onCancel={handleCancelClearRepertoire}
+                    loading={isSyncing}
+                    dismissOnBackdrop={false}
+                />
+            </View>
+        </ScrollView>
     );
 }
 

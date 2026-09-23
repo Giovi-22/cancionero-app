@@ -324,8 +324,12 @@ export class BandService {
                   errorCode === 'permission-denied' ||
                   errorCode === 'firestore/permission-denied'
                 ) {
+                  console.warn(
+                    `[BandService] Permiso denegado al escuchar banda ${bandId}. Se mantiene la membresía y se remueve listener de documento:`,
+                    error
+                  );
+
                   bands.delete(bandId);
-                  memberships.delete(bandId);
 
                   const unsubscribe =
                     bandUnsubscribes.get(bandId);
@@ -385,7 +389,23 @@ export class BandService {
           }
         }
 
-        emitUpdate();
+        // ============================================================
+        // Emisión condicional desde el listener de membresías
+        // ============================================================
+        // Si el usuario no tiene ninguna membresía (0 bandas), emitimos [] inmediatamente.
+        // Si existen membresías pero alguna de ellas todavía no tiene su documento
+        // de banda cargado en `bands` (está pendiente de resolución en bandRef.onSnapshot),
+        // NO emitimos un estado incompleto ni []. Esperamos a que los listeners de documento
+        // resuelvan y llamen a emitUpdate().
+        // Si todas las membresías ya están resueltas (ej. cambio de rol o eliminación),
+        // emitimos inmediatamente.
+        const hasPendingBands = Array.from(memberships.keys()).some(
+          id => !bands.has(id)
+        );
+
+        if (memberships.size === 0 || !hasPendingBands) {
+          emitUpdate();
+        }
       },
       error => {
         if (cancelled) return;
