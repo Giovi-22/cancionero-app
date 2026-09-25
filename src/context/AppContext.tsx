@@ -23,8 +23,10 @@ export interface AppContextType {
   topSongs: SongMetadata[];
   setlists: Setlist[];
   isSyncing: boolean;
+  // driveFolderId ya NO es un estado propio: se deriva siempre de
+  // activeLibrary.driveFolderId para que nunca pueda desincronizarse
+  // de la biblioteca activa (ver AppContextProvider).
   driveFolderId: string;
-  setDriveFolderId: (id: string) => void;
   loadingSongId: string | null;
   loadingActions: Record<string, boolean>;
 
@@ -131,7 +133,6 @@ export const AppContextProvider = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibrariesOpen, setIsLibrariesOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [driveFolderId, setDriveFolderId] = useState('');
   const [loadingSongId, setLoadingSongId] = useState<string | null>(null);
   const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>(
     {}
@@ -149,6 +150,15 @@ export const AppContextProvider = ({
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [activeLibrary, setActiveLibraryState] =
     useState<Library | null>(null);
+
+  // driveFolderId se DERIVA de activeLibrary en cada render, en vez de
+  // vivir en su propio useState. Antes existían dos fuentes de verdad
+  // (activeLibrary.driveFolderId y un driveFolderId suelto) que se
+  // desincronizaban cada vez que se agregaba un nuevo lugar que
+  // actualizaba una sin actualizar la otra (ej: handleUpdateLibrary,
+  // usado al editar una biblioteca desde "Administrar Bibliotecas").
+  // Derivarlo elimina esa clase de bug por completo.
+  const driveFolderId = activeLibrary?.driveFolderId || '';
 
   // Datos
   const [songs, setSongs] = useState<SongMetadata[]>([]);
@@ -238,7 +248,6 @@ export const AppContextProvider = ({
       setActiveLibraryState(activeLib);
 
       if (activeLib) {
-        setDriveFolderId(activeLib.driveFolderId || '');
         await refreshLocalDataForLibrary(activeLib.id);
       }
 
@@ -277,7 +286,6 @@ export const AppContextProvider = ({
 
     try {
       setActiveLibraryState(library);
-      setDriveFolderId(library.driveFolderId || '');
 
       await StorageService.saveSetting(
         'active_library_id',
@@ -332,7 +340,7 @@ export const AppContextProvider = ({
 
     try {
       await SyncService.syncFullRepertoire(
-        driveFolderId,
+        activeLibrary.driveFolderId || '',
         false,
         activeLibrary.id
       );
@@ -492,8 +500,6 @@ export const AppContextProvider = ({
   const handleSaveConfig = async (
     newFolderId: string
   ) => {
-    setDriveFolderId(newFolderId);
-
     if (activeLibrary) {
       const updated = {
         ...activeLibrary,
@@ -1170,7 +1176,6 @@ export const AppContextProvider = ({
         setlists,
         isSyncing,
         driveFolderId,
-        setDriveFolderId,
         isSettingsOpen,
         setIsSettingsOpen,
         isLibrariesOpen,

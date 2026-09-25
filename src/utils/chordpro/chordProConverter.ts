@@ -28,8 +28,15 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
         }
       }
 
+      // Google Docs representa un salto de línea "suave" (Shift+Enter)
+      // como \u000B (vertical tab) dentro del MISMO textRun, no como \n.
+      // Si no lo normalizamos acá, dos líneas de metadatos separadas
+      // visualmente en el doc (ej. "Compás: 4/4" y "Nota: ...") pueden
+      // llegar como una sola línea y terminar fusionadas en una sola
+      // directiva ChordPro (bug: {time: 4/4 Nota: ...}).
       const subLines = paragraphText
         .replace(/\r/g, "")
+        .replace(/[\u000B\u000C]/g, "\n")
         .split("\n");
 
       if (
@@ -572,32 +579,70 @@ export function mergeChordsAndLyrics(
     });
   }
 
-  // Insertar desde atrás hacia adelante
-  chordsToInsert.sort(
+  // ==============================================================
+  // Separamos los acordes en dos grupos usando SIEMPRE la longitud
+  // ORIGINAL de la letra (fija), no la del resultado (que va
+  // creciendo a medida que insertamos/appendeamos):
+  //
+  //  - withinBounds: caen dentro del texto → se insertan en su
+  //    posición exacta (de derecha a izquierda, para no correr
+  //    los índices de los que faltan insertar).
+  //
+  //  - beyond: quedan más allá del final del texto (acordes
+  //    "sobrantes" al final de la línea, ej: "...ir? [F] [G]")
+  //    → se agregan al final, EN SU ORDEN TEXTUAL ORIGINAL
+  //    (izquierda a derecha).
+  //
+  // Bug original: se ordenaban TODOS los acordes de forma
+  // descendente y se usaba `result.length` (mutando) para decidir
+  // insertar vs. appendear. Eso hacía que, al appendear el primer
+  // acorde sobrante, `result.length` creciera y el siguiente acorde
+  // sobrante terminara appendeado también, pero en orden inverso
+  // al original (ej. "G F" en el doc → "[F] [G]" en el ChordPro).
+  // ==============================================================
+
+  const originalLength = lyricLine.length;
+
+  const withinBounds = chordsToInsert.filter(
+    item => item.index <= originalLength
+  );
+
+  const beyond = chordsToInsert.filter(
+    item => item.index > originalLength
+  );
+
+  // Insertar desde atrás hacia adelante (orden descendente)
+  withinBounds.sort(
     (a, b) => b.index - a.index
+  );
+
+  // Appendear preservando el orden textual original (ascendente)
+  beyond.sort(
+    (a, b) => a.index - b.index
   );
 
   let result = lyricLine;
 
-  for (const item of chordsToInsert) {
+  for (const item of withinBounds) {
 
     const chordFormatted =
       `[${item.chord}]`;
 
-    if (item.index <= result.length) {
+    result =
+      result.slice(0, item.index) +
+      chordFormatted +
+      result.slice(item.index);
+  }
 
-      result =
-        result.slice(0, item.index) +
-        chordFormatted +
-        result.slice(item.index);
+  for (const item of beyond) {
 
-    } else {
+    const chordFormatted =
+      `[${item.chord}]`;
 
-      result =
-        result +
-        " " +
-        chordFormatted;
-    }
+    result =
+      result +
+      " " +
+      chordFormatted;
   }
 
   return result;
