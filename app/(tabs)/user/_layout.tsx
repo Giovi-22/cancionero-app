@@ -26,7 +26,7 @@ export default function UserLayout() {
             <Stack.Screen
                 name="settings"
                 options={{
-                    headerShown: true,
+                    headerShown: false,
                     title: 'Configuración',
                 }}
             />

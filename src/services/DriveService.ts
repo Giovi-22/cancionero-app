@@ -377,7 +377,7 @@ export class DriveService {
     );
 
     if (!exportResponse.ok) {
-      throw new Error('No se pudo exportar el Google Doc');
+      throw new Error(`No se pudo exportar el Google Doc ${fileId}`);
     }
 
     const plainText = await exportResponse.text();

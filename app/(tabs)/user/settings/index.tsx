@@ -23,6 +23,7 @@ import { useUserContext } from '../../../../src/context/UserContext';
 import AppModal from '../../../../src/components/common/AppModal';
 import { PedalSettings } from '../../../../src/components/pedal/PedalSettings';
 import { ScrollView } from 'react-native-gesture-handler';
+import CardContainer from '@/src/components/common/CardContainer';
 
 export default function SettingsScreen() {
     const isDevelopment = __DEV__;
@@ -72,17 +73,9 @@ export default function SettingsScreen() {
     };
 
     return (
-        <ScrollView>
+        <ScrollView style={{ backgroundColor: COLORS.background }}>
             <View style={styles.container}>
-                <View style={styles.header}>
-                    <Text style={styles.title}>
-                        Configuración
-                    </Text>
 
-                    <Text style={styles.subtitle}>
-                        Ajustes de la aplicación
-                    </Text>
-                </View>
 
                 {/* Repertorio */}
                 <View style={styles.section}>
@@ -177,13 +170,8 @@ export default function SettingsScreen() {
                 </View>
 
                 {/* Pedal */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
-                        Pedal
-                    </Text>
-
+                <CardContainer title='Pedal'>
                     <PedalSettings />
-
                     <View style={[styles.card, { marginTop: 10 }]}>
                         <SettingRow
                             icon={
@@ -199,14 +187,33 @@ export default function SettingsScreen() {
                             }
                         />
                     </View>
-                </View>
+                </CardContainer>
+
+                {/* Desarrollo */}
+                {isDevelopment && (
+                    <CardContainer title='Desarrollo'>
+                        <View style={styles.card}>
+                            <SettingRow
+                                icon={
+                                    <Bug
+                                        size={21}
+                                        color={COLORS.accent}
+                                    />
+                                }
+                                title="Debug"
+                                subtitle="Configuración y filtros de logs"
+                                onPress={() =>
+                                    router.push(
+                                        '/user/settings/debug',
+                                    )
+                                }
+                            />
+                        </View>
+                    </CardContainer>
+                )}
 
                 {/* Avanzado */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
-                        Avanzado
-                    </Text>
-
+                <CardContainer title='Avanzado'>
                     <View
                         style={[
                             styles.card,
@@ -259,34 +266,8 @@ export default function SettingsScreen() {
                             )}
                         </TouchableOpacity>
                     </View>
-                </View>
+                </CardContainer>
 
-                {/* Desarrollo */}
-                {isDevelopment && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>
-                            Desarrollo
-                        </Text>
-
-                        <View style={styles.card}>
-                            <SettingRow
-                                icon={
-                                    <Bug
-                                        size={21}
-                                        color={COLORS.accent}
-                                    />
-                                }
-                                title="Debug"
-                                subtitle="Configuración y filtros de logs"
-                                onPress={() =>
-                                    router.push(
-                                        '/user/settings/debug',
-                                    )
-                                }
-                            />
-                        </View>
-                    </View>
-                )}
 
                 {/* Confirmación: limpiar repertorio */}
                 <AppModal
