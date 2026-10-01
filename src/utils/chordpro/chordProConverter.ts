@@ -362,7 +362,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
       /^\[PRE[\s-]?CORO\]$/i.test(trimmed)
     ) {
 
-      openBlock("pre_chorus");
+      openBlock("pre_chorus", "PRE CORO");
 
       i++;
       continue;
