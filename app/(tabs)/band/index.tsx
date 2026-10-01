@@ -256,12 +256,14 @@ export default function BandScreen() {
         driveFolderId: string,
         driveFolderName: string
     ) => {
-        await createBand(
+        const result = await createBand(
             name,
             description,
             driveFolderId,
             driveFolderName
         );
+
+        console.log('resultado de la creación:', result);
     };
 
     const handleUpdateBand = async (

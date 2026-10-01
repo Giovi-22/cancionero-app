@@ -285,63 +285,85 @@ export class BandService {
           // Si todavía no tenemos listener para esta banda,
           // creamos uno.
           if (!bandUnsubscribes.has(bandId)) {
-            const unsubscribeBand = bandRef.onSnapshot(
-              bandSnapshot => {
-                if (cancelled) return;
+            const subscribeToBand = (retryCount: number = 0) => {
+              const unsubscribeBand = bandRef.onSnapshot(
+                bandSnapshot => {
+                  if (cancelled) return;
 
-                if (!bandSnapshot.exists) {
-                  bands.delete(bandId);
-                  emitUpdate();
-                  return;
-                }
-
-                bands.set(bandId, {
-                  id: bandSnapshot.id,
-                  ...bandSnapshot.data(),
-                } as Band);
-
-                emitUpdate();
-              },
-              error => {
-                if (cancelled) return;
-
-                /*
-                 * Si el usuario perdió acceso a la banda porque fue
-                 * eliminado de members, Firestore puede devolver
-                 * permission-denied al listener del documento.
-                 *
-                 * En ese caso dejamos que el listener principal de
-                 * members sea quien determine el estado real.
-                 */
-                const errorCode =
-                  error &&
-                    typeof error === 'object' &&
-                    'code' in error
-                    ? String(error.code)
-                    : '';
-
-                if (
-                  errorCode === 'permission-denied' ||
-                  errorCode === 'firestore/permission-denied'
-                ) {
-                  console.warn(
-                    `[BandService] Permiso denegado al escuchar banda ${bandId}. Se mantiene la membresía y se remueve listener de documento:`,
-                    error
-                  );
-
-                  bands.delete(bandId);
-
-                  const unsubscribe =
-                    bandUnsubscribes.get(bandId);
-
-                  if (unsubscribe) {
-                    unsubscribe();
-                    bandUnsubscribes.delete(bandId);
+                  if (!bandSnapshot.exists) {
+                    bands.delete(bandId);
+                    emitUpdate();
+                    return;
                   }
 
+                  bands.set(bandId, {
+                    id: bandSnapshot.id,
+                    ...bandSnapshot.data(),
+                  } as Band);
+
                   emitUpdate();
-                  return;
-                }
+                },
+                error => {
+                  if (cancelled) return;
+
+                  /*
+                   * Si el usuario perdió acceso a la banda porque fue
+                   * eliminado de members, Firestore puede devolver
+                   * permission-denied al listener del documento.
+                   *
+                   * Puede ocurrir también como condición de carrera al
+                   * crear la banda: el listener se suscribe antes de que
+                   * Firestore propague la membresía. En ese caso
+                   * reintentamos hasta 3 veces con un delay creciente.
+                   */
+                  const errorCode =
+                    error &&
+                      typeof error === 'object' &&
+                      'code' in error
+                      ? String(error.code)
+                      : '';
+
+                  if (
+                    errorCode === 'permission-denied' ||
+                    errorCode === 'firestore/permission-denied'
+                  ) {
+                    const MAX_RETRIES = 3;
+                    const RETRY_DELAY_MS = 2000;
+
+                    if (retryCount < MAX_RETRIES && memberships.has(bandId)) {
+                      console.warn(
+                        `[BandService] Permiso denegado al escuchar banda ${bandId}. Reintentando en ${RETRY_DELAY_MS}ms (intento ${retryCount + 1}/${MAX_RETRIES})...`
+                      );
+
+                      // Cancelar el listener actual antes de reintentar
+                      bandUnsubscribes.delete(bandId);
+
+                      setTimeout(() => {
+                        if (cancelled || !memberships.has(bandId)) return;
+                        subscribeToBand(retryCount + 1);
+                      }, RETRY_DELAY_MS);
+
+                      return;
+                    }
+
+                    console.warn(
+                      `[BandService] Permiso denegado al escuchar banda ${bandId}. Se mantiene la membresía y se remueve listener de documento:`,
+                      error
+                    );
+
+                    bands.delete(bandId);
+
+                    const unsubscribe =
+                      bandUnsubscribes.get(bandId);
+
+                    if (unsubscribe) {
+                      unsubscribe();
+                      bandUnsubscribes.delete(bandId);
+                    }
+
+                    emitUpdate();
+                    return;
+                  }
 
                 /*
                  * Si la banda está siendo eliminada desde esta misma
@@ -369,7 +391,11 @@ export class BandService {
               }
             );
 
-            bandUnsubscribes.set(bandId, unsubscribeBand);
+              // Registrar el nuevo listener (reemplaza al anterior en reintentos)
+              bandUnsubscribes.set(bandId, unsubscribeBand);
+            };
+
+            subscribeToBand();
           }
         });
 
