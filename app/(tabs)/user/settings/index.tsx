@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     StyleSheet,
     Text,
     TextInput,
@@ -12,10 +13,15 @@ import {
     Bluetooth,
     Bug,
     ChevronRight,
+    RefreshCw,
     Search,
     ShieldAlert,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
+import * as Updates from 'expo-updates';
+import * as Application from 'expo-application';
+
+import { checkAndFetchUpdate } from '../../../../src/hooks/useOtaUpdate';
 
 import { COLORS } from '../../../../src/constants/theme';
 import { useAppContext } from '../../../../src/context/AppContext';
@@ -69,6 +75,45 @@ export default function SettingsScreen() {
             // El AppContext debería encargarse de informar errores
             // de la operación. El modal de confirmación simplemente
             // permanece abierto si la operación falla.
+        }
+    };
+
+    const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+    const handleCheckUpdate = async () => {
+        if (isCheckingUpdate) return;
+
+        setIsCheckingUpdate(true);
+
+        try {
+            const result = await checkAndFetchUpdate();
+
+            switch (result) {
+                case 'none':
+                    Alert.alert(
+                        'Sin novedades',
+                        'Ya estás en la última versión.',
+                    );
+                    break;
+                case 'available':
+                    // El hook global muestra el alert de reinicio;
+                    // no mostramos un segundo alert acá.
+                    break;
+                case 'disabled':
+                    Alert.alert(
+                        'No disponible',
+                        'Las actualizaciones no están disponibles en modo desarrollo.',
+                    );
+                    break;
+                case 'error':
+                    Alert.alert(
+                        'Error',
+                        'No se pudo buscar actualizaciones. Revisá tu conexión e intentá de nuevo.',
+                    );
+                    break;
+            }
+        } finally {
+            setIsCheckingUpdate(false);
         }
     };
 
@@ -186,6 +231,58 @@ export default function SettingsScreen() {
                                 router.push('/pedal-config')
                             }
                         />
+                    </View>
+                </CardContainer>
+
+                {/* Aplicación */}
+                <CardContainer title='Aplicación'>
+                    <View style={styles.card}>
+                        <TouchableOpacity
+                            style={styles.settingRow}
+                            onPress={handleCheckUpdate}
+                            disabled={isCheckingUpdate}
+                            activeOpacity={0.7}
+                        >
+                            <View style={styles.iconContainer}>
+                                {isCheckingUpdate ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color={COLORS.accent}
+                                    />
+                                ) : (
+                                    <RefreshCw
+                                        size={21}
+                                        color={COLORS.accent}
+                                    />
+                                )}
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.rowTitle}>
+                                    {isCheckingUpdate
+                                        ? 'Buscando...'
+                                        : 'Buscar actualizaciones'}
+                                </Text>
+
+                                <Text style={styles.rowSubtitle}>
+                                    {'Update: ' + (Updates.updateId?.slice(0, 8) ?? 'embebido') +
+                                        '  ·  v' + (Application.nativeApplicationVersion ?? '-')}
+                                </Text>
+
+                                <Text style={[styles.rowSubtitle, { marginTop: 1 }]}>
+                                    {'Canal: ' + (Updates.channel ?? '-') +
+                                        '  ·  ' + (Updates.createdAt?.toLocaleString() ?? '-')}
+                                </Text>
+                            </View>
+
+                            {!isCheckingUpdate && (
+                                <ChevronRight
+                                    size={20}
+                                    color={COLORS.mutedForeground}
+                                    opacity={0.6}
+                                />
+                            )}
+                        </TouchableOpacity>
                     </View>
                 </CardContainer>
 

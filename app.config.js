@@ -5,7 +5,7 @@ module.exports = {
     name: IS_DEV ? 'Cancionero (Dev)' : 'Cancionero Mobile',
     slug: 'App-cancionero-mobile',
     scheme: 'cancionero-app',
-    version: '1.1.0',
+    version: '1.2.0',
     orientation: 'portrait',
     icon: './assets/app-icon-v3.png',
     userInterfaceStyle: 'dark',
