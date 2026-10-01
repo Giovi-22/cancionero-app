@@ -158,7 +158,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
 
       introContent =
         introContent.replace(
-          /[A-G][#b]?(m|maj|min|dim|aug|sus)?\d*7?(\/[A-G][#b]?)?/g,
+          /[A-G][#b]?(maj|min|aug|dim|sus[24]?|m(?!aj))?(add\d+)?\d*(\/[A-G][#b]?)?/g,
           "[$&]"
         );
 
@@ -528,7 +528,7 @@ export function isChordLine(line: string): boolean {
   }
 
   const chordRegex =
-    /^[A-G][#b]?(m|maj|min|dim|aug|sus)?\d*7?(\/[A-G][#b]?)?$/;
+    /^[A-G][#b]?(maj|min|aug|dim|sus[24]?|m(?!aj))?(add\d+)?\d*(\/[A-G][#b]?)?$/;
 
   const tokens =
     trimmed.split(/\s+/);
@@ -658,7 +658,7 @@ export function formatStandaloneChordLine(
 ): string {
 
   const chordRegex =
-    /[A-G][#b]?(m|maj|min|dim|aug|sus)?\d*7?(\/[A-G][#b]?)?/g;
+    /[A-G][#b]?(maj|min|aug|dim|sus[24]?|m(?!aj))?(add\d+)?\d*(\/[A-G][#b]?)?/g;
 
   return line.replace(
     chordRegex,
