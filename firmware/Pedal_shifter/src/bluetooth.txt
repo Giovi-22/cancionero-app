@@ -43,8 +43,8 @@ enum ButtonState {
 struct PedalButton {
   const char *name;
   int pin;
-  char scrollKey; // Tecla mantenida durante el scroll
-  char doubleKey; // Tecla enviada con doble toque
+  char scrollKey;  // Tecla mantenida durante el scroll
+  char doubleKey;  // Tecla enviada con doble toque
 
   ButtonState state;
   unsigned long pressStart;
@@ -56,10 +56,10 @@ struct PedalButton {
   unsigned long lastDebounceTime;
 };
 
-PedalButton upButton = {"UP", PIN_SCROLL_UP, '1',  'h', BUTTON_IDLE, 0,
-                        0,    HIGH,          HIGH, 0};
-PedalButton downButton = {
-    "DOWN", PIN_SCROLL_DOWN, '2', 'e', BUTTON_IDLE, 0, 0, HIGH, HIGH, 0};
+PedalButton upButton = {"UP",   PIN_SCROLL_UP,   '1', 'h', BUTTON_IDLE, 0, 0,
+                        HIGH,   HIGH,            0};
+PedalButton downButton = {"DOWN", PIN_SCROLL_DOWN, '2', 'e', BUTTON_IDLE, 0, 0,
+                          HIGH,   HIGH,            0};
 
 // ============================================================
 // LED
