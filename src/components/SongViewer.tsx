@@ -49,6 +49,7 @@ import { SetlistNavSubHeader } from './songViewer/SetlistNavSubHeader';
 import { SettingsModal } from './SettingsModal';
 import { SongContent } from './songViewer/SongContent';
 import { COLORS } from '../constants/theme';
+import { features } from '../config/features';
 
 
 interface SongViewerProps {
@@ -665,20 +666,38 @@ export const SongViewer: React.FC<
             setTranspose
           }
           capo={capo}
+          onCapoChange={setCapo}
+          soundingKeySemitone={
+            soundingKeySemitone
+          }
+          soundingKeyName={
+            soundingKeyName
+          }
           isScrolling={
             isScrolling
+          }
+          onToggleScroll={() =>
+            setIsScrolling(!isScrolling)
           }
           scrollSpeed={
             scrollSpeed
           }
+          setScrollSpeed={setScrollSpeed}
+          pedalSpeed={pedalSpeed}
+          setPedalSpeed={setPedalSpeed}
           isMetronomeActive={
             isMetronomeActive
           }
           setIsMetronomeActive={
             setIsMetronomeActive
           }
-          beat={beat}
           bpm={bpm}
+          setBpm={setBpm}
+          timeSignature={timeSignature}
+          setTimeSignature={setTimeSignature}
+          metronomeMuted={metronomeMuted}
+          setMetronomeMuted={setMetronomeMuted}
+          beat={beat}
         />
 
         {isEditToolActive && (
@@ -850,6 +869,7 @@ export const SongViewer: React.FC<
                   isStageMode
                 }
                 isDebugMode={
+                  features.debugTools &&
                   isDebugMode
                 }
                 isEditToolActive={
@@ -874,6 +894,34 @@ export const SongViewer: React.FC<
                   }
                 }}
               />
+
+              {Object.entries(musicianNotes || {}).map(
+                ([noteId, noteData]: [string, any]) => {
+                  if (
+                    !noteData ||
+                    typeof noteData === 'string' ||
+                    !noteData.text
+                  ) {
+                    return null;
+                  }
+                  return (
+                    <DraggableNote
+                      key={noteId}
+                      id={noteId}
+                      initialText={noteData.text}
+                      initialX={noteData.x}
+                      initialY={noteData.y}
+                      isStageMode={isStageMode}
+                      onRequestEdit={(id, text) =>
+                        setEditingNote({ id, text })
+                      }
+                      onUpdate={handleUpdateNote}
+                      onDelete={handleDeleteNote}
+                      setScrollEnabled={setIsScrollEnabled}
+                    />
+                  );
+                }
+              )}
             </ScrollView>
           )}
         </View>
@@ -926,53 +974,9 @@ export const SongViewer: React.FC<
               false
             )
           }
-          capo={capo}
-          setCapo={setCapo}
-          soundingKeySemitone={
-            soundingKeySemitone
-          }
-          soundingKeyName={
-            soundingKeyName
-          }
-          isMetronomeActive={
-            isMetronomeActive
-          }
-          setIsMetronomeActive={
-            setIsMetronomeActive
-          }
-          bpm={bpm}
-          setBpm={setBpm}
-          timeSignature={
-            timeSignature
-          }
-          setTimeSignature={
-            setTimeSignature
-          }
-          metronomeMuted={
-            metronomeMuted
-          }
-          setMetronomeMuted={
-            setMetronomeMuted
-          }
-          fontSize={
-            fontSize
-          }
-          setFontSize={
-            setFontSize
-          }
-          scrollSpeed={
-            scrollSpeed
-          }
-          setScrollSpeed={
-            setScrollSpeed
-          }
-          pedalSpeed={
-            pedalSpeed
-          }
-          setPedalSpeed={
-            setPedalSpeed
-          }
           theme={theme}
+          fontSize={fontSize}
+          setFontSize={setFontSize}
           onOpenColorPicker={() =>
             setColorPickerOpen(
               true
@@ -1042,20 +1046,22 @@ export const SongViewer: React.FC<
           }
         />
 
-        {/* ChordPro */}
-        <ChordProModal
-          visible={
-            showChordPro
-          }
-          onClose={() =>
-            setShowChordPro(
-              false
-            )
-          }
-          content={
-            transposedContent
-          }
-        />
+        {/* ChordPro (solo desarrollo) */}
+        {features.debugTools && (
+          <ChordProModal
+            visible={
+              showChordPro
+            }
+            onClose={() =>
+              setShowChordPro(
+                false
+              )
+            }
+            content={
+              transposedContent
+            }
+          />
+        )}
 
         {/* Editor de línea */}
         <LineEditModal
@@ -1105,6 +1111,7 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     paddingBottom: 200,
+    position: 'relative',
   },
 
   unavailableContainer: {

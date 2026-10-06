@@ -59,7 +59,13 @@ export const DraggableNote: React.FC<DraggableNoteProps> = ({
 
   return (
     <Animated.View
-      style={{ position: 'absolute', transform: pan.getTranslateTransform(), zIndex: 100 }}
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        transform: pan.getTranslateTransform(),
+        zIndex: 100,
+      }}
       {...(isStageMode ? {} : panResponder.panHandlers)}
     >
       <View style={[styles.noteBadge, !isStageMode && { borderColor: '#dc2626', borderWidth: 1 }]}>

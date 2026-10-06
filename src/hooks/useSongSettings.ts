@@ -30,11 +30,11 @@ export const useSongSettings = ({
     const [isScrolling, setIsScrolling] = useState(false);
 
     const [scrollSpeed, setScrollSpeed] = useState<number>(
-        initialSettings?.scrollSpeed || 0.2
+        initialSettings?.scrollSpeed || 0.6
     );
 
     const [pedalSpeed, setPedalSpeed] = useState<number>(
-        initialSettings?.pedalSpeed || 0.2
+        initialSettings?.pedalSpeed || 0.4
     );
 
     const [isStageMode, setIsStageMode] = useState(true);

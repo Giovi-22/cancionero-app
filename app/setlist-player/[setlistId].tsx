@@ -386,7 +386,12 @@ export default function SetlistPlayerScreen() {
     songs,
     activeLibrary?.id,
     setSetlistSongs,
-    isDirector,
+    // NOTA: isDirector se omite intencionalmente.
+    // Su cambio false→true (cuando Firebase resuelve
+    // la sesión) no debe reconstruir las páginas —
+    // solo se usaba en un console.log diagnóstico.
+    // Si se incluye, el efecto resetea pages a
+    // loaded:false y provoca el spinner al volver.
   ]);
 
   /**

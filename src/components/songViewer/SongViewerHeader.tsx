@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, ActivityIndicator, StyleSheet } from 'react-native';
-import { ChevronLeft, Edit2, Share2, Code, Maximize2 } from 'lucide-react-native';
+import { ChevronLeft, Edit2, Share2, Code, StickyNote } from 'lucide-react-native';
+import { features } from '../../config/features';
 
 const COLORS = {
   background: '#0a0a0a', surface: '#1a1a1a', foreground: '#ffffff',
@@ -62,11 +63,19 @@ export const SongViewerHeader: React.FC<SongViewerHeaderProps> = ({
             <Share2 size={22} color={headerFg} />
           )}
         </TouchableOpacity>
-        <TouchableOpacity onPress={onOpenChordPro} style={[styles.headerBtn, { marginRight: 8 }]}>
-          <Code size={24} color={headerFg} />
-        </TouchableOpacity>
-        <TouchableOpacity onPress={onToggleStageMode} style={styles.headerBtn}>
-          <Maximize2 size={24} color={isStageMode ? COLORS.accent : headerFg} />
+        {features.debugTools && (
+          <TouchableOpacity onPress={onOpenChordPro} style={[styles.headerBtn, { marginRight: 8 }]}>
+            <Code size={24} color={headerFg} />
+          </TouchableOpacity>
+        )}
+        <TouchableOpacity
+          onPress={onToggleStageMode}
+          style={[
+            styles.headerBtn,
+            !isStageMode && { backgroundColor: 'rgba(59, 130, 246, 0.15)' },
+          ]}
+        >
+          <StickyNote size={22} color={!isStageMode ? COLORS.accent : headerFg} />
         </TouchableOpacity>
       </View>
     </View>
