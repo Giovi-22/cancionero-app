@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vista Previa PDF - Cuán Grande Es Dios</title>
+  <!-- Fuentes Google Fonts utilizadas por PdfService -->
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap"
+    rel="stylesheet">
+
+  <style>
+    /* ==========================================================================
+       ESTILOS EXACTOS DE PdfService.ts
+       Puedes modificar las reglas de aquí abajo para probar tus cambios.
+       ========================================================================== */
+
+    @page {
+      size: A4;
+      margin: 60px 50px 30px 50px;
+      /* Márgenes estándar de impresión */
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      color: #1a1a1a;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 0;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    /* Header del documento */
+    .doc-header {
+      text-align: center;
+      margin-bottom: 25px;
+      page-break-inside: avoid;
+    }
+
+    h1.doc-title {
+      font-family: 'Inter', sans-serif;
+      font-size: 26px;
+      font-weight: 700;
+      color: #111827;
+      margin: 0 0 12px 0;
+      letter-spacing: -0.5px;
+    }
+
+    /* Cuadrícula de metadatos (Tono, Capo, BPM) */
+    .metadata-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      max-width: 480px;
+      margin: 0 auto 20px auto;
+      background-color: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 15px;
+    }
+
+    .meta-item {
+      text-align: center;
+    }
+
+    .meta-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      font-weight: 700;
+      color: #6b7280;
+      letter-spacing: 0.5px;
+      margin-bottom: 2px;
+    }
+
+    .meta-value {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+    }
+
+    .header-line {
+      border: 0;
+      height: 1px;
+      background-color: #e5e7eb;
+      margin: 0 0 25px 0;
+    }
+
+    /* Líneas de la canción */
+    .line-wrapper {
+      margin-bottom: 6px;
+      page-break-inside: avoid;
+    }
+
+    /* Bloque contenedor de cada sección (Intro, Estrofa, Coro) */
+    .section-block {
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid #f3f4f6;
+      page-break-inside: auto;
+    }
+
+    /* Encabezados de secciones ([CORO], [ESTROFA], etc.) */
+    .section-header {
+      margin-top: 0;
+      margin-bottom: 8px;
+      border-bottom: 1px solid #f3f4f6;
+      padding-bottom: 4px;
+    }
+
+    .section-header h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: #b45309;
+      /* Naranja/Ámbar cálido para secciones */
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0;
+    }
+
+    .blocks-container {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+    }
+
+    .block {
+      display: flex;
+      flex-direction: column;
+      min-width: 4px;
+    }
+
+    /* Tipografía y color de los acordes */
+    .chord {
+      font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+      font-size: 12px;
+      font-weight: 700;
+      color: #1d4ed8;
+      /* Azul zafiro */
+      line-height: 14px;
+      margin-bottom: 1px;
+      white-space: pre;
+    }
+
+    /* Tipografía de la letra */
+    .lyric {
+      font-family: 'Inter', sans-serif;
+      font-size: 14.5px;
+      color: #2b2b2b;
+      line-height: 22px;
+      white-space: pre-wrap;
+    }
+
+    /* Estilo de líneas de metadatos (ej: intro sólo acordes) */
+    .metadata-line .chord {
+      color: #1e40af;
+    }
+
+    .metadata-line .lyric {
+      font-weight: 600;
+      color: #4b5563;
+    }
+
+    /* Contenido de la canción */
+    .doc-content {
+      padding-bottom: 25px;
+      /* Evita que el contenido tape el footer */
+    }
+
+    /* Pie de página */
+    .doc-footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 20px;
+      border-top: 1px solid #f3f4f6;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 9px;
+      color: #9ca3af;
+      font-family: 'Inter', sans-serif;
+      font-weight: 500;
+    }
+
+    .footer-right {
+      text-align: right;
+    }
+
+    /* ==========================================================================
+       SIMULADOR VISUAL EN PANTALLA (Solo afecta cuando lo abres en el navegador)
+       Al imprimir o generar PDF (Ctrl + P), esto se desactiva automáticamente.
+       ========================================================================== */
+    @media screen {
+      body {
+        background-color: #18181b;
+        /* Fondo oscuro exterior del navegador */
+        padding: 40px 20px 80px 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+
+      /* Barra de herramientas superior para pruebas */
+      .browser-test-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 48px;
+        background-color: #27272a;
+        color: #f4f4f5;
+        border-bottom: 1px solid #3f3f46;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0 20px;
+        font-size: 13px;
+        z-index: 9999;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+      }
+
+      .browser-test-btn {
+        background-color: #3b82f6;
+        color: white;
+        border: none;
+        padding: 6px 14px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 12px;
+        cursor: pointer;
+      }
+
+      .browser-test-btn:hover {
+        background-color: #2563eb;
+      }
+
+      /* Hoja tamaño A4 realista */
+      .page-sheet {
+        width: 794px;
+        /* Ancho estándar A4 a 96 DPI */
+        min-height: 1123px;
+        /* Alto estándar A4 a 96 DPI */
+        background-color: #ffffff;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        padding: 60px 50px 35px 50px;
+        box-sizing: border-box;
+        margin-top: 30px;
+        border-radius: 4px;
+        position: relative;
+      }
+
+      .doc-footer {
+        position: absolute;
+        bottom: 20px;
+        left: 50px;
+        right: 50px;
+      }
+    }
+
+    @media print {
+      .browser-test-bar {
+        display: none !important;
+      }
+
+      .page-sheet {
+        padding: 0;
+        box-shadow: none;
+        width: auto;
+        min-height: auto;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Barra informativa solo en navegador -->
+  <div class="browser-test-bar">
+    <div>
+      📄 <strong>Plantilla de Prueba de PdfService</strong> — Edita este archivo y refresca el navegador para ver los
+      cambios.
+    </div>
+    <button class="browser-test-btn" onclick="window.print()">
+      🖨️ Probar Impresión (Ctrl + P)
+    </button>
+  </div>
+
+  <!-- Contenedor que simula la hoja A4 -->
+  <div class="page-sheet">
+
+    <!-- Header -->
+    <div class="doc-header">
+      <h1 class="doc-title">Cuán Grande Es Dios</h1>
+
+      <!-- Metadatos de la canción -->
+      <div class="metadata-grid">
+        <div class="meta-item">
+          <div class="meta-label">Tono</div>
+          <div class="meta-value">G</div>
+        </div>
+        <div class="meta-item">
+          <div class="meta-label">Capo</div>
+          <div class="meta-value">Traste 2</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Song Content -->
+    <div class="doc-content">
+
+      <!-- INTRO -->
+      <div class="section-block">
+        <div class="line-wrapper section-header">
+          <h3>INTRO</h3>
+        </div>
+
+        <div class="line-wrapper type-chords metadata-line">
+          <div class="blocks-container">
+            <div class="block" style="padding-right: 10px;">
+              <span class="chord">G</span>
+              <span class="lyric"> </span>
+            </div>
+            <div class="block" style="padding-right: 10px;">
+              <span class="chord">Em7</span>
+              <span class="lyric"> </span>
+            </div>
+            <div class="block" style="padding-right: 10px;">
+              <span class="chord">C2</span>
+              <span class="lyric"> </span>
+            </div>
+            <div class="block">
+              <span class="chord">D</span>
+              <span class="lyric"> </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ESTROFA 1 -->
+      <div class="section-block">
+        <div class="line-wrapper section-header">
+          <h3>ESTROFA 1</h3>
+        </div>
+
+        <div class="line-wrapper type-lyrics">
+          <div class="blocks-container">
+            <div class="block">
+              <span class="lyric">El </span>
+            </div>
+            <div class="block">
+              <span class="chord">G</span>
+              <span class="lyric">esplendor </span>
+            </div>
+            <div class="block">
+              <span class="lyric">de </span>
+            </div>
+            <div class="block">
+              <span class="lyric">un </span>
+            </div>
+            <div class="block">
+              <span class="chord">Em7</span>
+              <span class="lyric">Rey, </span>
+            </div>
+            <div class="block">
+              <span class="lyric">vestido </span>
+            </div>
+            <div class="block">
+              <span class="lyric">en </span>
+            </div>
+            <div class="block">
+              <span class="lyric">majestad</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="line-wrapper type-lyrics">
+          <div class="blocks-container">
+            <div class="block">
+              <span class="lyric">La </span>
+            </div>
+            <div class="block">
+              <span class="chord">C2</span>
+              <span class="lyric">Tierra </span>
+            </div>
+            <div class="block">
+              <span class="lyric">alegre </span>
+            </div>
+            <div class="block">
+              <span class="lyric">está, </span>
+            </div>
+            <div class="block">
+              <span class="lyric">la </span>
+            </div>
+            <div class="block">
+              <span class="lyric">Tierra </span>
+            </div>
+            <div class="block">
+              <span class="lyric">alegre </span>
+            </div>
+            <div class="block">
+              <span class="lyric">está</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="line-wrapper type-lyrics">
+          <div class="blocks-container">
+            <div class="block">
+              <span class="chord">G</span>
+              <span class="lyric">Cubierto </span>
+            </div>
+            <div class="block">
+              <span class="lyric">está </span>
+            </div>
+            <div class="block">
+              <span class="lyric">de </span>
+            </div>
+            <div class="block">
+              <span class="lyric">luz, </span>
+            </div>
+            <div class="block">
+              <span class="chord">Em7</span>
+              <span class="lyric">venció </span>
+            </div>
+            <div class="block">
+              <span class="lyric">la </span>
+            </div>
+            <div class="block">
+              <span class="lyric">oscuridad</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="line-wrapper type-lyrics">
+          <div class="blocks-container">
+            <div class="block">
+              <span class="lyric">Y </span>
+            </div>
+            <div class="block">
+              <span class="chord">C2</span>
+              <span class="lyric">tiembla </span>
+            </div>
+            <div class="block">
+              <span class="lyric">a </span>
+            </div>
+            <div class="block">
+              <span class="lyric">su </span>
+            </div>
+            <div class="block">
+              <span class="lyric">voz, </span>
+            </div>
+            <div class="block">
+              <span class="lyric">y </span>
+            </div>
+            <div class="block">
+              <span class="lyric">tiembla </span>
+            </div>
+            <div class="block">
+              <span class="lyric">a </span>
+            </div>
+            <div class="block">
+              <span class="lyric">su </span>
+            </div>
+            <div class="block">
+              <span class="lyric">voz</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- CORO -->
+        <div class="section-block">
+          <div class="line-wrapper section-header">
+            <h3>CORO</h3>
+          </div>
+
+          <div class="line-wrapper type-lyrics">
+            <div class="blocks-container">
+              <div class="block">
+                <span class="lyric">Cuán </span>
+              </div>
+              <div class="block">
+                <span class="chord">G</span>
+                <span class="lyric">grande </span>
+              </div>
+              <div class="block">
+                <span class="lyric">es </span>
+              </div>
+              <div class="block">
+                <span class="lyric">Dios, </span>
+              </div>
+              <div class="block">
+                <span class="chord">D/F#</span>
+                <span class="lyric">cántale</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="line-wrapper type-lyrics">
+            <div class="blocks-container">
+              <div class="block">
+                <span class="lyric">Cuán </span>
+              </div>
+              <div class="block">
+                <span class="chord">Em7</span>
+                <span class="lyric">grande </span>
+              </div>
+              <div class="block">
+                <span class="lyric">es </span>
+              </div>
+              <div class="block">
+                <span class="lyric">Dios, </span>
+              </div>
+              <div class="block">
+                <span class="lyric">y </span>
+              </div>
+              <div class="block">
+                <span class="lyric">todos </span>
+              </div>
+              <div class="block">
+                <span class="lyric">lo </span>
+              </div>
+              <div class="block">
+                <span class="chord">C</span>
+                <span class="lyric">verán</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="line-wrapper type-lyrics">
+            <div class="blocks-container">
+              <div class="block">
+                <span class="lyric">Cuán </span>
+              </div>
+              <div class="block">
+                <span class="chord">D</span>
+                <span class="lyric">grande </span>
+              </div>
+              <div class="block">
+                <span class="lyric">es </span>
+              </div>
+              <div class="block">
+                <span class="chord">G</span>
+                <span class="lyric">Dios</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- PUENTE -->
+          <div class="line-wrapper section-header">
+            <h3>PUENTE</h3>
+          </div>
+
+          <div class="line-wrapper type-lyrics">
+            <div class="blocks-container">
+              <div class="block">
+                <span class="lyric">Tu </span>
+              </div>
+              <div class="block">
+                <span class="chord">G</span>
+                <span class="lyric">nombre </span>
+              </div>
+              <div class="block">
+                <span class="lyric">sobre </span>
+              </div>
+              <div class="block">
+                <span class="lyric">todo </span>
+              </div>
+              <div class="block">
+                <span class="lyric">es, </span>
+              </div>
+              <div class="block">
+                <span class="chord">Em7</span>
+                <span class="lyric">eres </span>
+              </div>
+              <div class="block">
+                <span class="lyric">digno </span>
+              </div>
+              <div class="block">
+                <span class="lyric">de </span>
+              </div>
+              <div class="block">
+                <span class="lyric">alabar</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="line-wrapper type-lyrics">
+            <div class="blocks-container">
+              <div class="block">
+                <span class="lyric">Y </span>
+              </div>
+              <div class="block">
+                <span class="lyric">mi </span>
+              </div>
+              <div class="block">
+                <span class="chord">C2</span>
+                <span class="lyric">ser </span>
+              </div>
+              <div class="block">
+                <span class="lyric">cantará, </span>
+              </div>
+              <div class="block">
+                <span class="lyric">cuán </span>
+              </div>
+              <div class="block">
+                <span class="chord">D</span>
+                <span class="lyric">grande </span>
+              </div>
+              <div class="block">
+                <span class="lyric">es </span>
+              </div>
+              <div class="block">
+                <span class="chord">G</span>
+                <span class="lyric">Dios</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+        <!-- Running Footer -->
+        <div class="doc-footer">
+          <div>CANCIONERO APP</div>
+          <div class="footer-right">Exportado desde la aplicación</div>
+        </div>
+
+      </div>
+
+</body>
+
+</html>
