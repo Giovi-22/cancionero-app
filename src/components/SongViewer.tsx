@@ -38,6 +38,7 @@ import { useSongEditor } from '../hooks/useSongEditor';
 // Sub-componentes
 import { DraggableNote } from './songViewer/DraggableNote';
 import { EditToolBanner } from './songViewer/EditToolBanner';
+import { NoteModeBanner } from './songViewer/NoteModeBanner';
 import { FloatingControlsBar } from './songViewer/FloatingControlsBar';
 import { NoteEditOverlay } from './songViewer/NoteEditOverlay';
 import { ColorPickerModal } from './songViewer/ColorPickerModal';
@@ -628,11 +629,12 @@ export const SongViewer: React.FC<
           isEditToolActive={
             isEditToolActive
           }
-          onToggleEditTool={() =>
-            setIsEditToolActive(
-              !isEditToolActive
-            )
-          }
+          onToggleEditTool={() => {
+            if (!isEditToolActive) {
+              setIsStageMode(true);
+            }
+            setIsEditToolActive(!isEditToolActive);
+          }}
           isGeneratingPdf={
             isGeneratingPdf
           }
@@ -645,11 +647,12 @@ export const SongViewer: React.FC<
           isStageMode={
             isStageMode
           }
-          onToggleStageMode={() =>
-            setIsStageMode(
-              !isStageMode
-            )
-          }
+          onToggleStageMode={() => {
+            if (isStageMode) {
+              setIsEditToolActive(false);
+            }
+            setIsStageMode(!isStageMode);
+          }}
         />
 
         <SongViewerInfoBar
@@ -705,6 +708,16 @@ export const SongViewer: React.FC<
             onClose={() =>
               setIsEditToolActive(
                 false
+              )
+            }
+          />
+        )}
+
+        {!isStageMode && (
+          <NoteModeBanner
+            onClose={() =>
+              setIsStageMode(
+                true
               )
             }
           />
