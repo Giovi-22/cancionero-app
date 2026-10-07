@@ -2,6 +2,7 @@ import { Stack, usePathname } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useEffect } from "react";
+import { useOtaUpdate } from "../src/hooks/useOtaUpdate";
 import { Platform, View } from "react-native";
 import * as NavigationBar from "expo-navigation-bar";
 import { StatusBar } from "expo-status-bar";
@@ -58,6 +59,8 @@ function GlobalDirectorBanner() {
 }
 */
 export default function RootLayout() {
+    useOtaUpdate();
+
     useEffect(() => {
         if (Platform.OS === 'android') {
             // Ocultar barra de navegación del sistema y hacerla inmersiva y oscura

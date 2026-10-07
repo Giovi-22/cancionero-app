@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Alert,
     StyleSheet,
     Text,
     TextInput,
@@ -12,15 +13,23 @@ import {
     Bluetooth,
     Bug,
     ChevronRight,
+    RefreshCw,
     Search,
     ShieldAlert,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
+import * as Updates from 'expo-updates';
+import * as Application from 'expo-application';
+
+import { checkAndFetchUpdate } from '../../../../src/hooks/useOtaUpdate';
 
 import { COLORS } from '../../../../src/constants/theme';
 import { useAppContext } from '../../../../src/context/AppContext';
 import { useUserContext } from '../../../../src/context/UserContext';
 import AppModal from '../../../../src/components/common/AppModal';
+import { PedalSettings } from '../../../../src/components/pedal/PedalSettings';
+import { ScrollView } from 'react-native-gesture-handler';
+import CardContainer from '@/src/components/common/CardContainer';
 
 export default function SettingsScreen() {
     const isDevelopment = __DEV__;
@@ -69,234 +78,309 @@ export default function SettingsScreen() {
         }
     };
 
+    const [isCheckingUpdate, setIsCheckingUpdate] = useState(false);
+
+    const handleCheckUpdate = async () => {
+        if (isCheckingUpdate) return;
+
+        setIsCheckingUpdate(true);
+
+        try {
+            const result = await checkAndFetchUpdate();
+
+            switch (result) {
+                case 'none':
+                    Alert.alert(
+                        'Sin novedades',
+                        'Ya estás en la última versión.',
+                    );
+                    break;
+                case 'available':
+                    // El hook global muestra el alert de reinicio;
+                    // no mostramos un segundo alert acá.
+                    break;
+                case 'disabled':
+                    Alert.alert(
+                        'No disponible',
+                        'Las actualizaciones no están disponibles en modo desarrollo.',
+                    );
+                    break;
+                case 'error':
+                    Alert.alert(
+                        'Error',
+                        'No se pudo buscar actualizaciones. Revisá tu conexión e intentá de nuevo.',
+                    );
+                    break;
+            }
+        } finally {
+            setIsCheckingUpdate(false);
+        }
+    };
+
     return (
-        <View style={styles.container}>
-            <View style={styles.header}>
-                <Text style={styles.title}>
-                    Configuración
-                </Text>
+        <ScrollView style={{ backgroundColor: COLORS.background }}>
+            <View style={styles.container}>
 
-                <Text style={styles.subtitle}>
-                    Ajustes de la aplicación
-                </Text>
-            </View>
 
-            {/* Repertorio */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    Repertorio
-                </Text>
-
-                <View style={styles.card}>
-                    <View style={styles.settingRow}>
-                        <View style={styles.iconContainer}>
-                            <BookOpen
-                                size={21}
-                                color={
-                                    activeLibrary?.color ||
-                                    COLORS.accent
-                                }
-                            />
-                        </View>
-
-                        <View style={styles.rowContent}>
-                            <Text style={styles.rowTitle}>
-                                Biblioteca Activa
-                            </Text>
-
-                            <Text style={styles.rowSubtitle}>
-                                {activeLibrary?.name ||
-                                    'Cargando...'}
-                            </Text>
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.actionButton}
-                            onPress={() =>
-                                setIsLibrariesOpen(true)
-                            }
-                            activeOpacity={0.7}
-                        >
-                            <Text style={styles.actionButtonText}>
-                                Administrar
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.divider} />
-
-                    <View style={styles.settingRow}>
-                        <View style={styles.iconContainer}>
-                            <Search
-                                size={21}
-                                color={COLORS.foreground}
-                            />
-                        </View>
-
-                        <View style={styles.rowContent}>
-                            <Text style={styles.rowTitle}>
-                                Carpeta de Canciones
-                            </Text>
-
-                            <TextInput
-                                style={styles.input}
-                                value={driveFolderId}
-                                onChangeText={handleSaveConfig}
-                                placeholder="ID de la carpeta Drive..."
-                                placeholderTextColor={
-                                    COLORS.mutedForeground
-                                }
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                            />
-                        </View>
-
-                        <TouchableOpacity
-                            style={styles.browseButton}
-                            onPress={() => openFolderPicker()}
-                            disabled={!user || isLoadingFolders}
-                            activeOpacity={0.7}
-                        >
-                            {isLoadingFolders ? (
-                                <ActivityIndicator
-                                    size="small"
-                                    color="#fff"
-                                />
-                            ) : (
-                                <Search
-                                    size={18}
-                                    color="#fff"
-                                />
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-
-            {/* Preferencias */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    Preferencias
-                </Text>
-
-                <View style={styles.card}>
-                    <SettingRow
-                        icon={
-                            <Bluetooth
-                                size={21}
-                                color={COLORS.accent}
-                            />
-                        }
-                        title="Pedal Bluetooth"
-                        subtitle="Configurar acciones de scroll y cambio"
-                        onPress={() =>
-                            router.push('/pedal-config')
-                        }
-                    />
-                </View>
-            </View>
-
-            {/* Avanzado */}
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>
-                    Avanzado
-                </Text>
-
-                <View
-                    style={[
-                        styles.card,
-                        styles.dangerCard,
-                    ]}
-                >
-                    <TouchableOpacity
-                        style={styles.settingRow}
-                        disabled={isSyncing}
-                        onPress={handleClearRepertoirePress}
-                        activeOpacity={0.7}
-                    >
-                        <View
-                            style={[
-                                styles.iconContainer,
-                                styles.dangerIconContainer,
-                            ]}
-                        >
-                            {isSyncing ? (
-                                <ActivityIndicator
-                                    size="small"
-                                    color="#ef4444"
-                                />
-                            ) : (
-                                <ShieldAlert
-                                    size={21}
-                                    color="#ef4444"
-                                />
-                            )}
-                        </View>
-
-                        <View style={styles.rowContent}>
-                            <Text style={styles.dangerTitle}>
-                                Limpiar Repertorio Local
-                            </Text>
-
-                            <Text style={styles.rowSubtitle}>
-                                {isSyncing
-                                    ? 'Borrando canciones...'
-                                    : 'Liberar espacio de almacenamiento local.'}
-                            </Text>
-                        </View>
-
-                        {!isSyncing && (
-                            <ChevronRight
-                                size={20}
-                                color="#ef4444"
-                                opacity={0.5}
-                            />
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            {/* Desarrollo */}
-            {isDevelopment && (
+                {/* Repertorio */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>
-                        Desarrollo
+                        Repertorio
                     </Text>
 
                     <View style={styles.card}>
+                        <View style={styles.settingRow}>
+                            <View style={styles.iconContainer}>
+                                <BookOpen
+                                    size={21}
+                                    color={
+                                        activeLibrary?.color ||
+                                        COLORS.accent
+                                    }
+                                />
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.rowTitle}>
+                                    Biblioteca Activa
+                                </Text>
+
+                                <Text style={styles.rowSubtitle}>
+                                    {activeLibrary?.name ||
+                                        'Cargando...'}
+                                </Text>
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.actionButton}
+                                onPress={() =>
+                                    setIsLibrariesOpen(true)
+                                }
+                                activeOpacity={0.7}
+                            >
+                                <Text style={styles.actionButtonText}>
+                                    Administrar
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.divider} />
+
+                        <View style={styles.settingRow}>
+                            <View style={styles.iconContainer}>
+                                <Search
+                                    size={21}
+                                    color={COLORS.foreground}
+                                />
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.rowTitle}>
+                                    Carpeta de Canciones
+                                </Text>
+
+                                <TextInput
+                                    style={styles.input}
+                                    value={driveFolderId}
+                                    onChangeText={handleSaveConfig}
+                                    placeholder="ID de la carpeta Drive..."
+                                    placeholderTextColor={
+                                        COLORS.mutedForeground
+                                    }
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                />
+                            </View>
+
+                            <TouchableOpacity
+                                style={styles.browseButton}
+                                onPress={() => openFolderPicker()}
+                                disabled={!user || isLoadingFolders}
+                                activeOpacity={0.7}
+                            >
+                                {isLoadingFolders ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#fff"
+                                    />
+                                ) : (
+                                    <Search
+                                        size={18}
+                                        color="#fff"
+                                    />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+
+                {/* Pedal */}
+                <CardContainer title='Pedal'>
+                    <PedalSettings />
+                    <View style={[styles.card, { marginTop: 10 }]}>
                         <SettingRow
                             icon={
-                                <Bug
+                                <Bluetooth
                                     size={21}
                                     color={COLORS.accent}
                                 />
                             }
-                            title="Debug"
-                            subtitle="Configuración y filtros de logs"
+                            title="Pedal Bluetooth"
+                            subtitle="Configurar acciones de scroll y cambio"
                             onPress={() =>
-                                router.push(
-                                    '/user/settings/debug',
-                                )
+                                router.push('/pedal-config')
                             }
                         />
                     </View>
-                </View>
-            )}
+                </CardContainer>
 
-            {/* Confirmación: limpiar repertorio */}
-            <AppModal
-                visible={isClearRepertoireModalVisible}
-                type="danger"
-                title="Limpiar Repertorio Local"
-                message="¿Estás seguro de que querés borrar todas las canciones locales de esta biblioteca? Esto limpiará la base de datos pero no afectará a Google Drive."
-                confirmText="Borrar todo"
-                cancelText="Cancelar"
-                onConfirm={handleConfirmClearRepertoire}
-                onCancel={handleCancelClearRepertoire}
-                loading={isSyncing}
-                dismissOnBackdrop={false}
-            />
-        </View>
+                {/* Aplicación */}
+                <CardContainer title='Aplicación'>
+                    <View style={styles.card}>
+                        <TouchableOpacity
+                            style={styles.settingRow}
+                            onPress={handleCheckUpdate}
+                            disabled={isCheckingUpdate}
+                            activeOpacity={0.7}
+                        >
+                            <View style={styles.iconContainer}>
+                                {isCheckingUpdate ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color={COLORS.accent}
+                                    />
+                                ) : (
+                                    <RefreshCw
+                                        size={21}
+                                        color={COLORS.accent}
+                                    />
+                                )}
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.rowTitle}>
+                                    {isCheckingUpdate
+                                        ? 'Buscando...'
+                                        : 'Buscar actualizaciones'}
+                                </Text>
+
+                                <Text style={styles.rowSubtitle}>
+                                    {'Update: ' + (Updates.updateId?.slice(0, 8) ?? 'embebido') +
+                                        '  ·  v' + (Application.nativeApplicationVersion ?? '-')}
+                                </Text>
+
+                                <Text style={[styles.rowSubtitle, { marginTop: 1 }]}>
+                                    {'Canal: ' + (Updates.channel ?? '-') +
+                                        '  ·  ' + (Updates.createdAt?.toLocaleString() ?? '-')}
+                                </Text>
+                            </View>
+
+                            {!isCheckingUpdate && (
+                                <ChevronRight
+                                    size={20}
+                                    color={COLORS.mutedForeground}
+                                    opacity={0.6}
+                                />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </CardContainer>
+
+                {/* Desarrollo */}
+                {isDevelopment && (
+                    <CardContainer title='Desarrollo'>
+                        <View style={styles.card}>
+                            <SettingRow
+                                icon={
+                                    <Bug
+                                        size={21}
+                                        color={COLORS.accent}
+                                    />
+                                }
+                                title="Debug"
+                                subtitle="Configuración y filtros de logs"
+                                onPress={() =>
+                                    router.push(
+                                        '/user/settings/debug',
+                                    )
+                                }
+                            />
+                        </View>
+                    </CardContainer>
+                )}
+
+                {/* Avanzado */}
+                <CardContainer title='Avanzado'>
+                    <View
+                        style={[
+                            styles.card,
+                            styles.dangerCard,
+                        ]}
+                    >
+                        <TouchableOpacity
+                            style={styles.settingRow}
+                            disabled={isSyncing}
+                            onPress={handleClearRepertoirePress}
+                            activeOpacity={0.7}
+                        >
+                            <View
+                                style={[
+                                    styles.iconContainer,
+                                    styles.dangerIconContainer,
+                                ]}
+                            >
+                                {isSyncing ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#ef4444"
+                                    />
+                                ) : (
+                                    <ShieldAlert
+                                        size={21}
+                                        color="#ef4444"
+                                    />
+                                )}
+                            </View>
+
+                            <View style={styles.rowContent}>
+                                <Text style={styles.dangerTitle}>
+                                    Limpiar Repertorio Local
+                                </Text>
+
+                                <Text style={styles.rowSubtitle}>
+                                    {isSyncing
+                                        ? 'Borrando canciones...'
+                                        : 'Liberar espacio de almacenamiento local.'}
+                                </Text>
+                            </View>
+
+                            {!isSyncing && (
+                                <ChevronRight
+                                    size={20}
+                                    color="#ef4444"
+                                    opacity={0.5}
+                                />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </CardContainer>
+
+
+                {/* Confirmación: limpiar repertorio */}
+                <AppModal
+                    visible={isClearRepertoireModalVisible}
+                    type="danger"
+                    title="Limpiar Repertorio Local"
+                    message="¿Estás seguro de que querés borrar todas las canciones locales de esta biblioteca? Esto limpiará la base de datos pero no afectará a Google Drive."
+                    confirmText="Borrar todo"
+                    cancelText="Cancelar"
+                    onConfirm={handleConfirmClearRepertoire}
+                    onCancel={handleCancelClearRepertoire}
+                    loading={isSyncing}
+                    dismissOnBackdrop={false}
+                />
+            </View>
+        </ScrollView>
     );
 }
 

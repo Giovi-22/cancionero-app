@@ -171,173 +171,210 @@ export default function SetlistPlayerScreen() {
    * y arma las páginas del reproductor.
    */
   useEffect(() => {
-    if (!setlistId) {
-      return;
-    }
+    let isCancelled = false;
 
-    if (
-      isBandMode &&
-      bandSetlistsLoading
-    ) {
-      return;
-    }
+    const setupPlayer = async () => {
+      if (!setlistId) {
+        return;
+      }
 
-    let setlist;
+      if (
+        isBandMode &&
+        bandSetlistsLoading
+      ) {
+        return;
+      }
 
-    if (isBandMode) {
-      setlist =
-        bandSetlists.find(
-          item =>
-            item.id ===
+      let setlist;
+
+      if (isBandMode) {
+        setlist =
+          bandSetlists.find(
+            item =>
+              item.id ===
+              setlistId
+          );
+
+        console.log(
+          '[SetlistPlayer] BandSetlists:',
+          {
+            setlistId,
+            resolvedBandId,
+            bandSetlistsLoading,
+            bandSetlistsCount:
+              bandSetlists.length,
+            bandSetlistIds:
+              bandSetlists.map(
+                item => item.id
+              ),
+          }
+        );
+
+        if (!setlist) {
+          console.warn(
+            '[SetlistPlayer] BandSetlist no encontrado:',
             setlistId
+          );
+
+          if (bandSetlistsError) {
+            console.error(
+              '[SetlistPlayer] Error cargando BandSetlists:',
+              bandSetlistsError
+            );
+          }
+
+          return;
+        }
+      } else {
+        setlist =
+          setlists.find(
+            item =>
+              item.id ===
+              setlistId
+          );
+
+        if (!setlist) {
+          const dbSetlist = await StorageService.getSetlist(setlistId);
+          if (dbSetlist) {
+            setlist = dbSetlist;
+          }
+        }
+
+        if (!setlist) {
+          console.warn(
+            '[SetlistPlayer] Setlist personal no encontrado:',
+            setlistId
+          );
+
+          return;
+        }
+      }
+
+      if (isCancelled) return;
+
+      /**
+       * Para modo personal, aseguramos que las canciones candidatas
+       * provengan de setlist.libraryId (no dependemos de que activeLibrary
+       * coincida en este momento).
+       */
+      let candidateSongs: SongMetadata[] = songs;
+      if (!isBandMode) {
+        const personalSetlist = setlist as import('../../src/types').Setlist;
+        if (personalSetlist.libraryId && personalSetlist.libraryId !== activeLibrary?.id) {
+          try {
+            candidateSongs = await StorageService.getAllSongs(personalSetlist.libraryId);
+          } catch (err) {
+            console.error('[SetlistPlayer] Error cargando canciones de la biblioteca:', err);
+          }
+          if (isCancelled) return;
+        }
+      }
+
+      /**
+       * setlist.songIds es la fuente de verdad
+       * del orden.
+       *
+       * Conservamos todas las posiciones aunque
+       * una canción todavía no esté descargada
+       * localmente.
+       */
+      const songsOfList: SongMetadata[] =
+        setlist.songIds.map(
+          id => {
+            const localSong =
+              candidateSongs.find(
+                song =>
+                  song.id === id
+              );
+
+            if (localSong) {
+              return localSong;
+            }
+
+            return {
+              id,
+              name:
+                'Canción no disponible',
+              mimeType:
+                'text/plain',
+            };
+          }
         );
 
       console.log(
-        '[SetlistPlayer] BandSetlists:',
+        '[SetlistPlayer][SETLIST]',
+        isDirector
+          ? 'DIRECTOR'
+          : 'FOLLOWER',
         {
           setlistId,
-          resolvedBandId,
-          bandSetlistsLoading,
-          bandSetlistsCount:
-            bandSetlists.length,
-          bandSetlistIds:
-            bandSetlists.map(
-              item => item.id
+          songIds:
+            setlist.songIds,
+          songsOfList:
+            songsOfList.map(
+              (
+                song,
+                index
+              ) => ({
+                index,
+                id: song.id,
+                name: song.name,
+              })
             ),
         }
       );
 
-      if (!setlist) {
+      if (
+        songsOfList.length === 0
+      ) {
         console.warn(
-          '[SetlistPlayer] BandSetlist no encontrado:',
+          '[SetlistPlayer] El setlist no contiene canciones:',
           setlistId
         );
 
-        if (bandSetlistsError) {
-          console.error(
-            '[SetlistPlayer] Error cargando BandSetlists:',
-            bandSetlistsError
-          );
-        }
-
+        router.back();
         return;
       }
-    } else {
-      setlist =
-        setlists.find(
-          item =>
-            item.id ===
-            setlistId
+
+      const initialPages:
+        SongPage[] =
+        songsOfList.map(
+          song => ({
+            song,
+            content: null,
+            settings: null,
+            loaded: false,
+            unavailable: false,
+          })
         );
 
-      if (!setlist) {
-        console.warn(
-          '[SetlistPlayer] Setlist personal no encontrado:',
-          setlistId
+      setPages(
+        initialPages
+      );
+
+      setCurrentIndex(0);
+
+      setReady(true);
+
+      /**
+       * setlistSongs pertenece al flujo de
+       * repertorios personales del AppContext.
+       *
+       * Un repertorio de banda permanece dentro
+       * de este player y no se copia al estado global.
+       */
+      if (!isBandMode) {
+        setSetlistSongs(
+          songsOfList
         );
-
-        return;
       }
-    }
+    };
 
-    /**
-     * setlist.songIds es la fuente de verdad
-     * del orden.
-     *
-     * Conservamos todas las posiciones aunque
-     * una canción todavía no esté descargada
-     * localmente.
-     */
-    const songsOfList: SongMetadata[] =
-      setlist.songIds.map(
-        id => {
-          const localSong =
-            songs.find(
-              song =>
-                song.id === id
-            );
+    setupPlayer();
 
-          if (localSong) {
-            return localSong;
-          }
-
-          return {
-            id,
-            name:
-              'Canción no disponible',
-            mimeType:
-              'text/plain',
-          };
-        }
-      );
-
-    console.log(
-      '[SetlistPlayer][SETLIST]',
-      isDirector
-        ? 'DIRECTOR'
-        : 'FOLLOWER',
-      {
-        setlistId,
-        songIds:
-          setlist.songIds,
-        songsOfList:
-          songsOfList.map(
-            (
-              song,
-              index
-            ) => ({
-              index,
-              id: song.id,
-              name: song.name,
-            })
-          ),
-      }
-    );
-
-    if (
-      songsOfList.length === 0
-    ) {
-      console.warn(
-        '[SetlistPlayer] El setlist no contiene canciones:',
-        setlistId
-      );
-
-      router.back();
-      return;
-    }
-
-    const initialPages:
-      SongPage[] =
-      songsOfList.map(
-        song => ({
-          song,
-          content: null,
-          settings: null,
-          loaded: false,
-          unavailable: false,
-        })
-      );
-
-    setPages(
-      initialPages
-    );
-
-    setCurrentIndex(0);
-
-    setReady(true);
-
-    /**
-     * setlistSongs pertenece al flujo de
-     * repertorios personales del AppContext.
-     *
-     * Un repertorio de banda permanece dentro
-     * de este player y no se copia al estado global.
-     */
-    if (!isBandMode) {
-      setSetlistSongs(
-        songsOfList
-      );
-    }
+    return () => {
+      isCancelled = true;
+    };
   }, [
     setlistId,
     isBandMode,
@@ -347,8 +384,14 @@ export default function SetlistPlayerScreen() {
     bandSetlistsError,
     setlists,
     songs,
+    activeLibrary?.id,
     setSetlistSongs,
-    isDirector,
+    // NOTA: isDirector se omite intencionalmente.
+    // Su cambio false→true (cuando Firebase resuelve
+    // la sesión) no debe reconstruir las páginas —
+    // solo se usaba en un console.log diagnóstico.
+    // Si se incluye, el efecto resetea pages a
+    // loaded:false y provoca el spinner al volver.
   ]);
 
   /**

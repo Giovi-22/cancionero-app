@@ -1,0 +1,263 @@
+#include <Arduino.h>
+#include <BleKeyboard.h>
+
+// ============================================================
+// PINES
+// ============================================================
+
+const int PIN_SCROLL_UP = 17;   // LOW = presionado
+const int PIN_SCROLL_DOWN = 18; // LOW = presionado
+const int PIN_STATUS_LED = 16;
+
+// ============================================================
+// CONFIGURACION DEL PEDAL (en milisegundos)
+// ============================================================
+
+// Tiempo máximo entre el primer y el segundo toque para
+// que cuente como doble toque.
+const unsigned long DOUBLE_PRESS_WINDOW_MS = 500;
+
+// Tiempo que hay que mantener presionado para empezar el scroll.
+const unsigned long HOLD_THRESHOLD_MS = 500;
+
+const unsigned long DEBOUNCE_DELAY = 50;
+
+// ============================================================
+// BLUETOOTH
+// ============================================================
+
+BleKeyboard bleKeyboard("Pedal Cancionero", "Giovi", 100);
+
+// ============================================================
+// ESTADO DE BOTONES
+// ============================================================
+
+enum ButtonState {
+  BUTTON_IDLE,
+  BUTTON_FIRST_PRESS,
+  BUTTON_WAITING_DOUBLE,
+  BUTTON_SECOND_PRESS,
+  BUTTON_SCROLLING
+};
+
+struct PedalButton {
+  const char *name;
+  int pin;
+  char scrollKey;  // Tecla mantenida durante el scroll
+  char doubleKey;  // Tecla enviada con doble toque
+
+  ButtonState state;
+  unsigned long pressStart;
+  unsigned long firstRelease;
+
+  // Debounce
+  bool lastRaw;
+  bool debounced;
+  unsigned long lastDebounceTime;
+};
+
+PedalButton upButton = {"UP",   PIN_SCROLL_UP,   '1', 'h', BUTTON_IDLE, 0, 0,
+                        HIGH,   HIGH,            0};
+PedalButton downButton = {"DOWN", PIN_SCROLL_DOWN, '2', 'e', BUTTON_IDLE, 0, 0,
+                          HIGH,   HIGH,            0};
+
+// ============================================================
+// LED
+// ============================================================
+
+unsigned long lastLedBlink = 0;
+bool ledState = LOW;
+
+// ============================================================
+// ENVIO DE TECLAS
+// ============================================================
+
+void sendKeyPress(char key) {
+  if (bleKeyboard.isConnected()) {
+    bleKeyboard.press(key);
+  }
+}
+
+void sendKeyRelease(char key) {
+  if (bleKeyboard.isConnected()) {
+    bleKeyboard.release(key);
+  }
+}
+
+void sendKeyTap(char key) {
+  if (bleKeyboard.isConnected()) {
+    bleKeyboard.write(key);
+  }
+}
+
+// ============================================================
+// LOGICA DE UN BOTON
+// ============================================================
+
+void updateButton(PedalButton &b, bool pressed, unsigned long now) {
+
+  switch (b.state) {
+
+  case BUTTON_IDLE: {
+    if (pressed) {
+      b.state = BUTTON_FIRST_PRESS;
+      b.pressStart = now;
+      Serial.printf("[BTN %s] Primer press\n", b.name);
+    }
+    break;
+  }
+
+  case BUTTON_FIRST_PRESS: {
+    if (!pressed) {
+      if (now - b.pressStart >= HOLD_THRESHOLD_MS) {
+        // Seguridad: normalmente ya estaría en SCROLLING.
+        sendKeyRelease(b.scrollKey);
+        b.state = BUTTON_IDLE;
+      } else {
+        b.firstRelease = now;
+        b.state = BUTTON_WAITING_DOUBLE;
+        Serial.printf("[BTN %s] Primer toque corto\n", b.name);
+      }
+      break;
+    }
+
+    if (now - b.pressStart >= HOLD_THRESHOLD_MS) {
+      Serial.printf("[BTN %s] HOLD -> SCROLL\n", b.name);
+      sendKeyPress(b.scrollKey);
+      b.state = BUTTON_SCROLLING;
+    }
+    break;
+  }
+
+  case BUTTON_WAITING_DOUBLE: {
+    if (pressed) {
+      if (now - b.firstRelease <= DOUBLE_PRESS_WINDOW_MS) {
+        b.pressStart = now;
+        b.state = BUTTON_SECOND_PRESS;
+        Serial.printf("[BTN %s] Segundo press\n", b.name);
+      }
+    } else if (now - b.firstRelease > DOUBLE_PRESS_WINDOW_MS) {
+      b.state = BUTTON_IDLE;
+      b.firstRelease = 0;
+      Serial.printf("[BTN %s] Ventana doble expirada\n", b.name);
+    }
+    break;
+  }
+
+  case BUTTON_SECOND_PRESS: {
+    if (!pressed) {
+      if (now - b.pressStart < HOLD_THRESHOLD_MS) {
+        Serial.printf("[BTN %s] DOBLE TOQUE -> tecla '%c'\n", b.name,
+                      b.doubleKey);
+        sendKeyTap(b.doubleKey);
+      }
+      b.state = BUTTON_IDLE;
+      b.pressStart = 0;
+      b.firstRelease = 0;
+      break;
+    }
+
+    if (now - b.pressStart >= HOLD_THRESHOLD_MS) {
+      Serial.printf("[BTN %s] Segundo press HOLD -> SCROLL\n", b.name);
+      sendKeyPress(b.scrollKey);
+      b.state = BUTTON_SCROLLING;
+    }
+    break;
+  }
+
+  case BUTTON_SCROLLING: {
+    if (!pressed) {
+      Serial.printf("[BTN %s] RELEASE\n", b.name);
+      sendKeyRelease(b.scrollKey);
+      b.state = BUTTON_IDLE;
+      b.pressStart = 0;
+      b.firstRelease = 0;
+    }
+    break;
+  }
+  }
+}
+
+// ============================================================
+// LECTURA + DEBOUNCE
+// ============================================================
+
+bool readDebounced(PedalButton &b, unsigned long now) {
+  bool raw = digitalRead(b.pin);
+
+  if (raw != b.lastRaw) {
+    b.lastDebounceTime = now;
+    b.lastRaw = raw;
+  }
+
+  if (now - b.lastDebounceTime >= DEBOUNCE_DELAY) {
+    b.debounced = raw;
+  }
+
+  return b.debounced == LOW; // true = presionado
+}
+
+void updateButtons() {
+  unsigned long now = millis();
+
+  bool upPressed = readDebounced(upButton, now);
+  bool downPressed = readDebounced(downButton, now);
+
+  updateButton(upButton, upPressed, now);
+  updateButton(downButton, downPressed, now);
+}
+
+// ============================================================
+// LED DE ESTADO
+// ============================================================
+
+// Fijo = conectado por Bluetooth / Parpadeo = esperando conexión
+void updateStatusLed() {
+  if (bleKeyboard.isConnected()) {
+    digitalWrite(PIN_STATUS_LED, HIGH);
+    return;
+  }
+
+  unsigned long now = millis();
+
+  if (now - lastLedBlink >= 500) {
+    lastLedBlink = now;
+    ledState = !ledState;
+    digitalWrite(PIN_STATUS_LED, ledState);
+  }
+}
+
+// ============================================================
+// SETUP
+// ============================================================
+
+void setup() {
+  Serial.begin(115200);
+  delay(500);
+
+  Serial.println();
+  Serial.println("================================");
+  Serial.println("   PEDAL CANCIONERO (BLE)");
+  Serial.println("================================");
+
+  pinMode(PIN_SCROLL_UP, INPUT_PULLUP);
+  pinMode(PIN_SCROLL_DOWN, INPUT_PULLUP);
+  pinMode(PIN_STATUS_LED, OUTPUT);
+  digitalWrite(PIN_STATUS_LED, LOW);
+
+  Serial.println("[Bluetooth] Iniciando BLE...");
+  bleKeyboard.begin();
+  Serial.println("[Bluetooth] Pedal Cancionero listo.");
+}
+
+// ============================================================
+// LOOP
+// ============================================================
+
+void loop() {
+  updateButtons();
+  updateStatusLed();
+
+  // BleKeyboard gestiona internamente su conexión.
+  // No requiere polling adicional.
+}

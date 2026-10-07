@@ -24,18 +24,10 @@ export default function UserLayout() {
             />
 
             <Stack.Screen
-                name="settings/index"
+                name="settings"
                 options={{
-                    headerShown: true,
+                    headerShown: false,
                     title: 'Configuración',
-                }}
-            />
-
-            <Stack.Screen
-                name="settings/debug"
-                options={{
-                    headerShown: true,
-                    title: 'Debug',
                 }}
             />
         </Stack>

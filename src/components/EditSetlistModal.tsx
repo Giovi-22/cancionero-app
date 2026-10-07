@@ -27,13 +27,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAppContext } from '../context/AppContext';
 import { COLORS } from '../constants/theme';
 import { DatePickerField } from './common/DatePickerField';
+import { StorageService } from '../services/StorageService';
+import { SongMetadata } from '../types';
 
 const EditSetlistModal = () => {
     const {
         isEditSetlistOpen,
         setIsEditSetlistOpen,
         activeSetlist,
-        songs,
+        libraries,
         handleSaveSetlistSongs,
     } = useAppContext();
 
@@ -48,8 +50,36 @@ const EditSetlistModal = () => {
     const [currentFolder, setCurrentFolder] =
         useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [librarySongs, setLibrarySongs] = useState<SongMetadata[]>([]);
+    const [isLoadingSongs, setIsLoadingSongs] = useState(false);
 
     const insets = useSafeAreaInsets();
+
+    const currentLibrary = useMemo(() => {
+        if (!activeSetlist?.libraryId) return null;
+        return libraries.find(lib => lib.id === activeSetlist.libraryId) || null;
+    }, [libraries, activeSetlist?.libraryId]);
+
+    // Cargar canciones estrictamente de la biblioteca a la que pertenece el setlist
+    useEffect(() => {
+        if (isEditSetlistOpen && activeSetlist?.libraryId) {
+            setIsLoadingSongs(true);
+            StorageService.getAllSongs(activeSetlist.libraryId)
+                .then(songsList => {
+                    setLibrarySongs(songsList);
+                    // Solo conservamos songIds que realmente pertenecen a esta biblioteca
+                    const validIds = new Set(songsList.map(s => s.id));
+                    setSelectedSongIds(activeSetlist.songIds.filter(id => validIds.has(id)));
+                })
+                .catch(err => {
+                    console.error('[EditSetlistModal] Error cargando canciones:', err);
+                    setLibrarySongs([]);
+                })
+                .finally(() => {
+                    setIsLoadingSongs(false);
+                });
+        }
+    }, [isEditSetlistOpen, activeSetlist?.libraryId, activeSetlist?.id]);
 
     useEffect(() => {
         if (isEditSetlistOpen && activeSetlist) {
@@ -65,11 +95,6 @@ const EditSetlistModal = () => {
             );
 
             setNotes(activeSetlist.notes || '');
-
-            setSelectedSongIds([
-                ...activeSetlist.songIds,
-            ]);
-
             setCurrentFolder(null);
             setSearchQuery('');
         }
@@ -78,7 +103,7 @@ const EditSetlistModal = () => {
     const folders = useMemo(() => {
         const names = new Set<string>();
 
-        songs.forEach(song => {
+        librarySongs.forEach(song => {
             if (song.folderName) {
                 names.add(song.folderName);
             }
@@ -87,7 +112,7 @@ const EditSetlistModal = () => {
         return Array.from(names)
             .map(name => ({
                 name,
-                songCount: songs.filter(
+                songCount: librarySongs.filter(
                     song => song.folderName === name
                 ).length,
             }))
@@ -98,10 +123,10 @@ const EditSetlistModal = () => {
                     { sensitivity: 'base' }
                 )
             );
-    }, [songs]);
+    }, [librarySongs]);
 
     const displaySongs = useMemo(() => {
-        let list = [...songs];
+        let list = [...librarySongs];
 
         if (searchQuery.trim().length > 0) {
             list = list.filter(song =>
@@ -130,7 +155,7 @@ const EditSetlistModal = () => {
                 { sensitivity: 'base' }
             )
         );
-    }, [songs, searchQuery, currentFolder]);
+    }, [librarySongs, searchQuery, currentFolder]);
 
     if (!isEditSetlistOpen || !activeSetlist) {
         return null;
@@ -190,9 +215,16 @@ const EditSetlistModal = () => {
                 ]}
             >
                 <View style={styles.header}>
-                    <Text style={styles.title}>
-                        Editar Lista
-                    </Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.title}>
+                            Editar Lista
+                        </Text>
+                        {currentLibrary && (
+                            <Text style={{ fontSize: 13, color: COLORS.accent, marginTop: 2 }}>
+                                Biblioteca: {currentLibrary.name}
+                            </Text>
+                        )}
+                    </View>
 
                     <TouchableOpacity
                         onPress={handleClose}

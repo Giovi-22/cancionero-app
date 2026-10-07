@@ -1,4 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+    useEffect,
+    useMemo,
+    useState,
+} from 'react';
 import {
     ActivityIndicator,
     FlatList,
@@ -8,7 +12,10 @@ import {
     TouchableOpacity,
     View,
 } from 'react-native';
-import { router, useLocalSearchParams } from 'expo-router';
+import {
+    router,
+    useLocalSearchParams,
+} from 'expo-router';
 import {
     Check,
     ChevronLeft,
@@ -17,9 +24,9 @@ import {
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { useAppContext } from '../../context/AppContext';
 import { useBandSetlists } from '../../hooks/useBandSetlists';
-import { SongMetadata } from '../../types';
+import { useBandSongs } from '../../hooks/useBandSongs';
+import { BandSong } from '../../types/band';
 import { COLORS } from '../../constants/theme';
 import AppModal from '../common/AppModal';
 import { useBandContext } from '../../context/BandContext';
@@ -44,13 +51,23 @@ export default function BandSongSelector() {
         id: setlistId,
     } = useLocalSearchParams<{ id: string }>();
 
+    const { selectedBand } =
+        useBandContext();
+
+    const activeBandId =
+        selectedBand?.id ?? null;
+
+    /**
+     * Canciones disponibles en la carpeta de Drive
+     * configurada para la banda.
+     *
+     * La fuente ya no es la biblioteca personal.
+     */
     const {
-        songs
-    } = useAppContext();
-
-    const { selectedBand } = useBandContext();
-
-    const activeBandId = selectedBand?.id ?? null;
+        songs: bandSongs,
+        loading: loadingBandSongs,
+        error: bandSongsError,
+    } = useBandSongs();
 
     const {
         setlists: bandSetlists,
@@ -59,12 +76,14 @@ export default function BandSongSelector() {
         updateSetlist: updateBandSetlist,
     } = useBandSetlists(activeBandId);
 
+    const [search, setSearch] =
+        useState('');
 
-    const [search, setSearch] = useState('');
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(
-        new Set()
-    );
-    const [isSaving, setIsSaving] = useState(false);
+    const [selectedIds, setSelectedIds] =
+        useState<Set<string>>(new Set());
+
+    const [isSaving, setIsSaving] =
+        useState(false);
 
     const [feedbackModal, setFeedbackModal] =
         useState<FeedbackModalState>({
@@ -107,42 +126,45 @@ export default function BandSongSelector() {
                 item => item.id === setlistId
             ) || null
         );
-    }, [bandSetlists, setlistId]);
+    }, [
+        bandSetlists,
+        setlistId,
+    ]);
 
     /**
      * IDs que ya forman parte del repertorio.
      */
     const existingSongIds = useMemo(() => {
-        return new Set(setlist?.songIds ?? []);
+        return new Set(
+            setlist?.songIds ?? []
+        );
     }, [setlist]);
 
     /**
      * Inicializa la selección con las canciones
      * que ya forman parte del repertorio.
-     *
-     * Esto permite entrar al selector y ver
-     * inmediatamente qué canciones están seleccionadas.
      */
     useEffect(() => {
         if (!setlist) {
             return;
         }
 
-        setSelectedIds(new Set(setlist.songIds));
+        setSelectedIds(
+            new Set(setlist.songIds)
+        );
     }, [setlist]);
 
     /**
-     * Canciones disponibles.
+     * Canciones disponibles para la banda.
      *
-     * Ahora mostramos TODAS las canciones de la biblioteca,
-     * incluyendo las que ya están en el repertorio.
+     * La fuente es la carpeta de Google Drive
+     * configurada para la banda.
      */
     const availableSongs = useMemo(() => {
-        const normalizedSearch = search
-            .trim()
-            .toLowerCase();
+        const normalizedSearch =
+            search.trim().toLowerCase();
 
-        return songs.filter(song => {
+        return bandSongs.filter(song => {
             if (!normalizedSearch) {
                 return true;
             }
@@ -150,17 +172,21 @@ export default function BandSongSelector() {
             const name =
                 song.name?.toLowerCase() || '';
 
-            return name.includes(normalizedSearch);
+            return name.includes(
+                normalizedSearch
+            );
         });
     }, [
-        songs,
+        bandSongs,
         search,
     ]);
 
     /**
      * Alterna la selección de una canción.
      */
-    const toggleSong = (songId: string) => {
+    const toggleSong = (
+        songId: string
+    ) => {
         setSelectedIds(current => {
             const next = new Set(current);
 
@@ -178,12 +204,13 @@ export default function BandSongSelector() {
      * Guarda el estado completo del repertorio.
      *
      * Las canciones existentes que siguen seleccionadas
-     * permanecen.
+     * permanecen en su posición actual.
      *
-     * Las existentes que fueron deseleccionadas se eliminan.
+     * Las existentes que fueron deseleccionadas
+     * se eliminan.
      *
      * Las nuevas seleccionadas se agregan al final,
-     * respetando el orden de la biblioteca.
+     * respetando el orden de las canciones de la banda.
      */
     const handleAddSongs = async () => {
         if (!setlist || isSaving) {
@@ -194,24 +221,35 @@ export default function BandSongSelector() {
             setIsSaving(true);
 
             /**
-             * Primero conservamos el orden actual del setlist,
-             * pero solamente para las canciones que continúan
-             * seleccionadas.
+             * Primero conservamos el orden actual
+             * del setlist, pero solamente para las
+             * canciones que continúan seleccionadas.
              */
-            const existingSelectedIds = setlist.songIds.filter(
-                songId => selectedIds.has(songId)
-            );
+            const existingSelectedIds =
+                setlist.songIds.filter(
+                    songId =>
+                        selectedIds.has(
+                            songId
+                        )
+                );
 
             /**
-             * Después agregamos las canciones nuevas seleccionadas,
-             * recorriendo `songs` para mantener el orden de la biblioteca.
+             * Después agregamos las canciones nuevas
+             * seleccionadas, recorriendo las canciones
+             * disponibles de la banda.
              */
-            const newSelectedIds = songs
-                .filter(song =>
-                    selectedIds.has(song.id) &&
-                    !existingSongIds.has(song.id)
-                )
-                .map(song => song.id);
+            const newSelectedIds =
+                bandSongs
+                    .filter(
+                        song =>
+                            selectedIds.has(
+                                song.id
+                            ) &&
+                            !existingSongIds.has(
+                                song.id
+                            )
+                    )
+                    .map(song => song.id);
 
             const newSongIds = [
                 ...existingSelectedIds,
@@ -224,17 +262,21 @@ export default function BandSongSelector() {
             });
 
             router.back();
-        } catch (err: any) {
+        } catch (err: unknown) {
             console.error(
                 '[BandSongSelector] Error actualizando canciones:',
                 err
             );
 
+            const message =
+                err instanceof Error
+                    ? err.message
+                    : 'No se pudieron actualizar las canciones.';
+
             showFeedbackModal(
                 'danger',
                 'Error',
-                err?.message ||
-                'No se pudieron actualizar las canciones.'
+                message
             );
         } finally {
             setIsSaving(false);
@@ -247,10 +289,13 @@ export default function BandSongSelector() {
     const renderSong = ({
         item,
     }: {
-        item: SongMetadata;
+        item: BandSong;
     }) => {
-        const isSelected = selectedIds.has(item.id);
-        const wasExisting = existingSongIds.has(item.id);
+        const isSelected =
+            selectedIds.has(item.id);
+
+        const wasExisting =
+            existingSongIds.has(item.id);
 
         return (
             <TouchableOpacity
@@ -269,7 +314,9 @@ export default function BandSongSelector() {
                     {isSelected ? (
                         <Check
                             size={20}
-                            color={COLORS.accent}
+                            color={
+                                COLORS.accent
+                            }
                         />
                     ) : (
                         <Music2
@@ -283,15 +330,32 @@ export default function BandSongSelector() {
 
                 <View style={styles.songInfo}>
                     <Text
-                        style={styles.songName}
+                        style={
+                            styles.songName
+                        }
                         numberOfLines={1}
                     >
                         {item.name}
                     </Text>
 
                     {wasExisting && (
-                        <Text style={styles.existingLabel}>
+                        <Text
+                            style={
+                                styles.existingLabel
+                            }
+                        >
                             En el repertorio
+                        </Text>
+                    )}
+
+                    {item.folderName && (
+                        <Text
+                            style={
+                                styles.folderLabel
+                            }
+                            numberOfLines={1}
+                        >
+                            {item.folderName}
                         </Text>
                     )}
                 </View>
@@ -332,10 +396,16 @@ export default function BandSongSelector() {
             >
                 <Header
                     title="Editar canciones"
-                    onBack={() => router.back()}
+                    onBack={() =>
+                        router.back()
+                    }
                 />
 
-                <View style={styles.centerContainer}>
+                <View
+                    style={
+                        styles.centerContainer
+                    }
+                >
                     <Music2
                         size={48}
                         color={
@@ -343,13 +413,23 @@ export default function BandSongSelector() {
                         }
                     />
 
-                    <Text style={styles.emptyTitle}>
-                        No hay una banda seleccionada
+                    <Text
+                        style={
+                            styles.emptyTitle
+                        }
+                    >
+                        No hay una banda
+                        seleccionada
                     </Text>
 
-                    <Text style={styles.emptyText}>
-                        No se pudo determinar la banda
-                        de este repertorio.
+                    <Text
+                        style={
+                            styles.emptyText
+                        }
+                    >
+                        No se pudo determinar
+                        la banda de este
+                        repertorio.
                     </Text>
                 </View>
             </View>
@@ -357,9 +437,12 @@ export default function BandSongSelector() {
     }
 
     /**
-     * Cargando repertorios.
+     * Cargando repertorio o canciones de Drive.
      */
-    if (loading && !setlist) {
+    if (
+        (loading && !setlist) ||
+        loadingBandSongs
+    ) {
         return (
             <View
                 style={[
@@ -372,17 +455,31 @@ export default function BandSongSelector() {
             >
                 <Header
                     title="Editar canciones"
-                    onBack={() => router.back()}
+                    onBack={() =>
+                        router.back()
+                    }
                 />
 
-                <View style={styles.centerContainer}>
+                <View
+                    style={
+                        styles.centerContainer
+                    }
+                >
                     <ActivityIndicator
                         size="large"
-                        color={COLORS.accent}
+                        color={
+                            COLORS.accent
+                        }
                     />
 
-                    <Text style={styles.loadingText}>
-                        Cargando repertorio...
+                    <Text
+                        style={
+                            styles.loadingText
+                        }
+                    >
+                        {loadingBandSongs
+                            ? 'Cargando canciones de la banda...'
+                            : 'Cargando repertorio...'}
                     </Text>
                 </View>
             </View>
@@ -390,7 +487,7 @@ export default function BandSongSelector() {
     }
 
     /**
-     * Error.
+     * Error del repertorio.
      */
     if (error && !setlist) {
         return (
@@ -405,10 +502,16 @@ export default function BandSongSelector() {
             >
                 <Header
                     title="Editar canciones"
-                    onBack={() => router.back()}
+                    onBack={() =>
+                        router.back()
+                    }
                 />
 
-                <View style={styles.centerContainer}>
+                <View
+                    style={
+                        styles.centerContainer
+                    }
+                >
                     <Music2
                         size={48}
                         color={
@@ -416,12 +519,75 @@ export default function BandSongSelector() {
                         }
                     />
 
-                    <Text style={styles.emptyTitle}>
-                        No se pudo cargar el repertorio
+                    <Text
+                        style={
+                            styles.emptyTitle
+                        }
+                    >
+                        No se pudo cargar el
+                        repertorio
                     </Text>
 
-                    <Text style={styles.emptyText}>
+                    <Text
+                        style={
+                            styles.emptyText
+                        }
+                    >
                         {error}
+                    </Text>
+                </View>
+            </View>
+        );
+    }
+
+    /**
+     * Error cargando las canciones de la banda.
+     */
+    if (bandSongsError) {
+        return (
+            <View
+                style={[
+                    styles.container,
+                    {
+                        paddingTop:
+                            insets.top,
+                    },
+                ]}
+            >
+                <Header
+                    title="Editar canciones"
+                    onBack={() =>
+                        router.back()
+                    }
+                />
+
+                <View
+                    style={
+                        styles.centerContainer
+                    }
+                >
+                    <Music2
+                        size={48}
+                        color={
+                            COLORS.mutedForeground
+                        }
+                    />
+
+                    <Text
+                        style={
+                            styles.emptyTitle
+                        }
+                    >
+                        No se pudieron cargar
+                        las canciones
+                    </Text>
+
+                    <Text
+                        style={
+                            styles.emptyText
+                        }
+                    >
+                        {bandSongsError}
                     </Text>
                 </View>
             </View>
@@ -444,10 +610,16 @@ export default function BandSongSelector() {
             >
                 <Header
                     title="Editar canciones"
-                    onBack={() => router.back()}
+                    onBack={() =>
+                        router.back()
+                    }
                 />
 
-                <View style={styles.centerContainer}>
+                <View
+                    style={
+                        styles.centerContainer
+                    }
+                >
                     <Music2
                         size={48}
                         color={
@@ -455,13 +627,23 @@ export default function BandSongSelector() {
                         }
                     />
 
-                    <Text style={styles.emptyTitle}>
-                        Repertorio no encontrado
+                    <Text
+                        style={
+                            styles.emptyTitle
+                        }
+                    >
+                        Repertorio no
+                        encontrado
                     </Text>
 
-                    <Text style={styles.emptyText}>
-                        El repertorio puede haber sido
-                        eliminado o ya no estar
+                    <Text
+                        style={
+                            styles.emptyText
+                        }
+                    >
+                        El repertorio puede
+                        haber sido eliminado
+                        o ya no estar
                         disponible.
                     </Text>
                 </View>
@@ -474,32 +656,61 @@ export default function BandSongSelector() {
             style={[
                 styles.container,
                 {
-                    paddingTop: insets.top,
+                    paddingTop:
+                        insets.top,
                 },
             ]}
         >
             <Header
                 title="Editar canciones"
-                onBack={() => router.back()}
+                onBack={() =>
+                    router.back()
+                }
             />
 
             {/* Información */}
-            <View style={styles.infoContainer}>
+            <View
+                style={
+                    styles.infoContainer
+                }
+            >
                 <Text
-                    style={styles.setlistName}
+                    style={
+                        styles.setlistName
+                    }
                     numberOfLines={1}
                 >
                     {setlist.name}
                 </Text>
 
-                <Text style={styles.infoText}>
-                    Seleccioná las canciones que querés
+                <Text
+                    style={
+                        styles.infoText
+                    }
+                >
+                    Seleccioná las canciones
+                    de la banda que querés
                     mantener en el repertorio.
+                </Text>
+
+                <Text
+                    style={
+                        styles.sourceText
+                    }
+                    numberOfLines={1}
+                >
+                    Fuente:{' '}
+                    {selectedBand?.driveFolderName ??
+                        'Carpeta de Google Drive'}
                 </Text>
             </View>
 
             {/* Buscador */}
-            <View style={styles.searchContainer}>
+            <View
+                style={
+                    styles.searchContainer
+                }
+            >
                 <Search
                     size={20}
                     color={
@@ -508,9 +719,13 @@ export default function BandSongSelector() {
                 />
 
                 <TextInput
-                    style={styles.searchInput}
+                    style={
+                        styles.searchInput
+                    }
                     value={search}
-                    onChangeText={setSearch}
+                    onChangeText={
+                        setSearch
+                    }
                     placeholder="Buscar canción..."
                     placeholderTextColor={
                         COLORS.mutedForeground
@@ -537,7 +752,11 @@ export default function BandSongSelector() {
             </View>
 
             {/* Contador */}
-            <View style={styles.selectionInfo}>
+            <View
+                style={
+                    styles.selectionInfo
+                }
+            >
                 <Text
                     style={
                         styles.selectionText
@@ -553,17 +772,26 @@ export default function BandSongSelector() {
             {/* Lista */}
             <FlatList
                 data={availableSongs}
-                keyExtractor={item => item.id}
+                keyExtractor={item =>
+                    item.id
+                }
                 renderItem={renderSong}
                 contentContainerStyle={[
                     styles.listContent,
-                    availableSongs.length === 0 &&
+                    availableSongs.length ===
+                    0 &&
                     styles.emptyListContent,
                 ]}
                 keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
+                showsVerticalScrollIndicator={
+                    false
+                }
                 ListEmptyComponent={
-                    <View style={styles.listEmpty}>
+                    <View
+                        style={
+                            styles.listEmpty
+                        }
+                    >
                         <Music2
                             size={40}
                             color={
@@ -578,7 +806,7 @@ export default function BandSongSelector() {
                         >
                             {search
                                 ? 'No se encontraron canciones'
-                                : 'No hay canciones en tu biblioteca'}
+                                : 'No hay canciones en la carpeta de la banda'}
                         </Text>
 
                         <Text
@@ -588,7 +816,7 @@ export default function BandSongSelector() {
                         >
                             {search
                                 ? 'Probá con otro nombre de canción.'
-                                : 'No hay canciones disponibles para este repertorio.'}
+                                : 'No hay canciones disponibles en la fuente de Google Drive configurada para esta banda.'}
                         </Text>
                     </View>
                 }
@@ -608,7 +836,9 @@ export default function BandSongSelector() {
                 ]}
             >
                 <TouchableOpacity
-                    style={styles.cancelButton}
+                    style={
+                        styles.cancelButton
+                    }
                     activeOpacity={0.8}
                     onPress={() =>
                         router.back()
@@ -629,7 +859,9 @@ export default function BandSongSelector() {
                         styles.confirmButton
                     }
                     activeOpacity={0.8}
-                    onPress={handleAddSongs}
+                    onPress={
+                        handleAddSongs
+                    }
                     disabled={isSaving}
                 >
                     {isSaving ? (
@@ -662,12 +894,22 @@ export default function BandSongSelector() {
 
             {/* Modal de feedback */}
             <AppModal
-                visible={feedbackModal.visible}
-                type={feedbackModal.type}
-                title={feedbackModal.title}
-                message={feedbackModal.message}
+                visible={
+                    feedbackModal.visible
+                }
+                type={
+                    feedbackModal.type
+                }
+                title={
+                    feedbackModal.title
+                }
+                message={
+                    feedbackModal.message
+                }
                 confirmText="Aceptar"
-                onConfirm={closeFeedbackModal}
+                onConfirm={
+                    closeFeedbackModal
+                }
             />
         </View>
     );
@@ -686,26 +928,38 @@ function Header({
     onBack,
 }: HeaderProps) {
     return (
-        <View style={styles.header}>
+        <View
+            style={styles.header}
+        >
             <TouchableOpacity
-                style={styles.backButton}
+                style={
+                    styles.backButton
+                }
                 activeOpacity={0.7}
                 onPress={onBack}
             >
                 <ChevronLeft
                     size={24}
-                    color={COLORS.foreground}
+                    color={
+                        COLORS.foreground
+                    }
                 />
             </TouchableOpacity>
 
             <Text
-                style={styles.headerTitle}
+                style={
+                    styles.headerTitle
+                }
                 numberOfLines={1}
             >
                 {title}
             </Text>
 
-            <View style={styles.headerSpacer} />
+            <View
+                style={
+                    styles.headerSpacer
+                }
+            />
         </View>
     );
 }
@@ -713,7 +967,8 @@ function Header({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor:
+            COLORS.background,
     },
 
     header: {
@@ -723,7 +978,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         borderBottomWidth: 1,
-        borderBottomColor: COLORS.border,
+        borderBottomColor:
+            COLORS.border,
         gap: 10,
     },
 
@@ -733,7 +989,8 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: COLORS.surface,
+        backgroundColor:
+            COLORS.surface,
     },
 
     headerTitle: {
@@ -761,9 +1018,17 @@ const styles = StyleSheet.create({
 
     infoText: {
         marginTop: 4,
-        color: COLORS.mutedForeground,
+        color:
+            COLORS.mutedForeground,
         fontSize: 13,
         lineHeight: 18,
+    },
+
+    sourceText: {
+        marginTop: 6,
+        color: COLORS.accent,
+        fontSize: 12,
+        fontWeight: '500',
     },
 
     searchContainer: {
@@ -774,9 +1039,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 13,
         borderRadius: 12,
-        backgroundColor: COLORS.surface,
+        backgroundColor:
+            COLORS.surface,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor:
+            COLORS.border,
         gap: 9,
     },
 
@@ -788,7 +1055,8 @@ const styles = StyleSheet.create({
     },
 
     clearSearch: {
-        color: COLORS.mutedForeground,
+        color:
+            COLORS.mutedForeground,
         fontSize: 25,
         lineHeight: 25,
         paddingHorizontal: 3,
@@ -821,13 +1089,16 @@ const styles = StyleSheet.create({
         paddingHorizontal: 10,
         marginBottom: 6,
         borderRadius: 12,
-        backgroundColor: COLORS.surface,
+        backgroundColor:
+            COLORS.surface,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor:
+            COLORS.border,
     },
 
     songItemSelected: {
-        borderColor: COLORS.accent,
+        borderColor:
+            COLORS.accent,
     },
 
     songIcon: {
@@ -836,7 +1107,8 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: COLORS.background,
+        backgroundColor:
+            COLORS.background,
     },
 
     songInfo: {
@@ -858,20 +1130,30 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
+    folderLabel: {
+        marginTop: 2,
+        color:
+            COLORS.mutedForeground,
+        fontSize: 10,
+    },
+
     checkbox: {
         width: 24,
         height: 24,
         marginLeft: 10,
         borderRadius: 7,
         borderWidth: 2,
-        borderColor: COLORS.border,
+        borderColor:
+            COLORS.border,
         alignItems: 'center',
         justifyContent: 'center',
     },
 
     checkboxSelected: {
-        backgroundColor: COLORS.accent,
-        borderColor: COLORS.accent,
+        backgroundColor:
+            COLORS.accent,
+        borderColor:
+            COLORS.accent,
     },
 
     bottomBar: {
@@ -880,9 +1162,11 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingTop: 10,
         gap: 10,
-        backgroundColor: COLORS.background,
+        backgroundColor:
+            COLORS.background,
         borderTopWidth: 1,
-        borderTopColor: COLORS.border,
+        borderTopColor:
+            COLORS.border,
     },
 
     cancelButton: {
@@ -891,9 +1175,11 @@ const styles = StyleSheet.create({
         borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: COLORS.surface,
+        backgroundColor:
+            COLORS.surface,
         borderWidth: 1,
-        borderColor: COLORS.border,
+        borderColor:
+            COLORS.border,
     },
 
     cancelButtonText: {
@@ -910,7 +1196,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         gap: 7,
         borderRadius: 12,
-        backgroundColor: COLORS.accent,
+        backgroundColor:
+            COLORS.accent,
     },
 
     confirmButtonText: {
@@ -936,7 +1223,8 @@ const styles = StyleSheet.create({
 
     emptyText: {
         marginTop: 8,
-        color: COLORS.mutedForeground,
+        color:
+            COLORS.mutedForeground,
         fontSize: 14,
         lineHeight: 20,
         textAlign: 'center',
@@ -944,7 +1232,8 @@ const styles = StyleSheet.create({
 
     loadingText: {
         marginTop: 12,
-        color: COLORS.mutedForeground,
+        color:
+            COLORS.mutedForeground,
         fontSize: 14,
     },
 
@@ -966,7 +1255,8 @@ const styles = StyleSheet.create({
 
     listEmptyText: {
         marginTop: 7,
-        color: COLORS.mutedForeground,
+        color:
+            COLORS.mutedForeground,
         fontSize: 13,
         lineHeight: 19,
         textAlign: 'center',

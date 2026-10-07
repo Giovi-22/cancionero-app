@@ -1,0 +1,131 @@
+#include <Arduino.h>
+#include <SPI.h>
+
+// ============================================================
+// MCP4131-103
+// ============================================================
+
+#define MCP_CS 2
+#define MCP_SCK 4
+#define MCP_MOSI 16
+
+// ============================================================
+// Valores de prueba
+// MCP4131 = 7 bits -> 0 ... 127
+// ============================================================
+
+const uint8_t TEST_VALUES[] = {0, 32, 64, 96, 127};
+
+const int NUM_TEST_VALUES = sizeof(TEST_VALUES) / sizeof(TEST_VALUES[0]);
+
+// ============================================================
+// SPI
+// ============================================================
+
+SPIClass *spi = &SPI;
+
+// ============================================================
+// Escribir Wiper 0
+// ============================================================
+
+void mcp4131Write(uint8_t value) {
+  if (value > 127) {
+    value = 127;
+  }
+
+  // CS activo
+  digitalWrite(MCP_CS, LOW);
+
+  // Comando:
+  // 0000 0000
+  //
+  // Dirección = Wiper 0
+  // Operación = Write
+  spi->transfer(0x00);
+
+  // Valor del wiper
+  spi->transfer(value);
+
+  // CS inactivo
+  digitalWrite(MCP_CS, HIGH);
+}
+
+// ============================================================
+// SETUP
+// ============================================================
+
+void setup() {
+  Serial.begin(115200);
+  delay(1000);
+
+  Serial.println();
+  Serial.println("==========================================");
+  Serial.println("     MCP4131-103 TEST");
+  Serial.println("==========================================");
+  Serial.println();
+
+  // --------------------------------------------------------
+  // CS
+  // --------------------------------------------------------
+
+  pinMode(MCP_CS, OUTPUT);
+  digitalWrite(MCP_CS, HIGH);
+
+  // --------------------------------------------------------
+  // SPI
+  //
+  // SCK  = GPIO4
+  // MOSI = GPIO16
+  // MISO = no utilizado
+  // CS   = GPIO2
+  // --------------------------------------------------------
+
+  spi->begin(MCP_SCK, -1, MCP_MOSI, MCP_CS);
+
+  // --------------------------------------------------------
+  // MCP4131:
+  //
+  // Clock: 1 MHz
+  // MSB first
+  // SPI Mode 0
+  // --------------------------------------------------------
+
+  spi->beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+
+  Serial.println("SPI inicializado.");
+  Serial.println();
+
+  Serial.println("Comenzando barrido del Wiper...");
+  Serial.println();
+}
+
+// ============================================================
+// LOOP
+// ============================================================
+
+void loop() {
+  for (int i = 0; i < NUM_TEST_VALUES; i++) {
+    uint8_t value = TEST_VALUES[i];
+
+    float percentage = (value / 127.0f) * 100.0f;
+
+    Serial.print("Wiper = ");
+    Serial.print(value);
+
+    Serial.print("  ->  ");
+    Serial.print(percentage, 1);
+    Serial.println(" %");
+
+    // Escribir posición
+    mcp4131Write(value);
+
+    // Mantener posición durante 3 segundos
+    delay(3000);
+  }
+
+  Serial.println();
+  Serial.println("Reiniciando barrido...");
+  Serial.println();
+
+  delay(1000);
+}

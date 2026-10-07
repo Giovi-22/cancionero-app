@@ -122,18 +122,54 @@ service cloud.firestore {
       allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid;
 
-      // Edición: el OWNER para metadatos generales, o Director/Owner para
-      // actualizar activeSessionId.
-      // ownerId debe permanecer inmutable.
-      allow update: if isBandOwner(bandId)
-        && request.resource.data.ownerId == resource.data.ownerId
-        && request.resource.data.get('activeSessionId', null) == resource.data.get('activeSessionId', null)
-        || (
+      // -----------------------------------------------------------------------
+      // EDICIÓN DE LA BANDA
+      // -----------------------------------------------------------------------
+      //
+      // OWNER:
+      // Puede modificar únicamente los metadatos editables:
+      // - name
+      // - description
+      // - driveFolderId
+      // - driveFolderName
+      // - updatedAt
+      //
+      // ownerId, createdAt y activeSessionId permanecen inmutables.
+      //
+      // DIRECTOR / OWNER:
+      // Puede modificar activeSessionId únicamente mediante las condiciones
+      // específicas de inicio/finalización de sesión.
+      allow update: if
+        (
+          // -------------------------------------------------------------------
+          // OWNER: edición de metadatos de la banda
+          // -------------------------------------------------------------------
+          isBandOwner(bandId)
+          && request.resource.data.ownerId == resource.data.ownerId
+          && request.resource.data.get('createdAt', null) == resource.data.get('createdAt', null)
+          && request.resource.data.get('activeSessionId', null) == resource.data.get('activeSessionId', null)
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'name',
+              'description',
+              'driveFolderId',
+              'driveFolderName',
+              'updatedAt'
+            ])
+        )
+        ||
+        (
+          // -------------------------------------------------------------------
+          // DIRECTOR / OWNER: iniciar o finalizar sesión
+          // -------------------------------------------------------------------
           isBandDirectorOrOwner(bandId)
           && request.resource.data.ownerId == resource.data.ownerId
           && request.resource.data.get('activeSessionId', null) != resource.data.get('activeSessionId', null)
           && (
-            // Iniciar sesión: activeSessionId pasa a ser sessionId
+            // -----------------------------------------------------------------
+            // Iniciar sesión
+            // -----------------------------------------------------------------
             (
               request.resource.data.get('activeSessionId', null) != null
               && existsAfter(
@@ -147,7 +183,9 @@ service cloud.firestore {
               ).data.directorId == request.auth.uid
             )
             ||
-            // Finalizar sesión: activeSessionId pasa a null
+            // -----------------------------------------------------------------
+            // Finalizar sesión
+            // -----------------------------------------------------------------
             (
               request.resource.data.get('activeSessionId', null) == null
               && resource.data.get('activeSessionId', null) != null
@@ -167,7 +205,11 @@ service cloud.firestore {
           )
         );
 
-      // Eliminación: solamente el OWNER.
+      // -----------------------------------------------------------------------
+      // ELIMINACIÓN
+      // -----------------------------------------------------------------------
+      //
+      // Solamente el OWNER.
       //
       // IMPORTANTE:
       // isBandOwner() utiliza el estado actual de la base de datos, por lo que

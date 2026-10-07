@@ -23,7 +23,9 @@ import {
 } from '../types/band';
 
 import { PdfService } from '../services/PdfService';
-import { PedalHandler } from './PedalHandler';
+import { BluetoothInputBridge } from './BluetoothInputBridge';
+import { usePedal } from '../hooks/usePedal';
+import { PedalEvent } from '../types/pedal';
 
 // Hooks
 import { useSongScroll } from '../hooks/useSongScroll';
@@ -36,6 +38,7 @@ import { useSongEditor } from '../hooks/useSongEditor';
 // Sub-componentes
 import { DraggableNote } from './songViewer/DraggableNote';
 import { EditToolBanner } from './songViewer/EditToolBanner';
+import { NoteModeBanner } from './songViewer/NoteModeBanner';
 import { FloatingControlsBar } from './songViewer/FloatingControlsBar';
 import { NoteEditOverlay } from './songViewer/NoteEditOverlay';
 import { ColorPickerModal } from './songViewer/ColorPickerModal';
@@ -47,6 +50,7 @@ import { SetlistNavSubHeader } from './songViewer/SetlistNavSubHeader';
 import { SettingsModal } from './SettingsModal';
 import { SongContent } from './songViewer/SongContent';
 import { COLORS } from '../constants/theme';
+import { features } from '../config/features';
 
 
 interface SongViewerProps {
@@ -332,6 +336,9 @@ export const SongViewer: React.FC<
 
       stopPedalScroll,
 
+      goToSongStart,
+      goToSongEnd,
+
       scrollAreaPageY,
       scrollAreaPageX,
 
@@ -406,22 +413,55 @@ export const SongViewer: React.FC<
     });
 
     // ─────────────────────────────────────────────
-    // Pedal
+    // Pedal — suscripción a PedalEvent vía usePedal
     // ─────────────────────────────────────────────
+    const { onEvent: onPedalEvent } = usePedal();
 
-    const handlePedalScrollUp =
-      useCallback(() => {
-        startLocalPedalScrollUp();
-      }, [
-        startLocalPedalScrollUp,
-      ]);
+    /**
+     * Indica si el pedal está activo en este momento.
+     * Mismo criterio que antes usaba PedalHandler.
+     */
+    const pedalEnabled = isStageMode && !isSettingsOpen && isActive;
+    const pedalEnabledRef = useRef(pedalEnabled);
+    useEffect(() => {
+      pedalEnabledRef.current = pedalEnabled;
+    }, [pedalEnabled]);
 
-    const handlePedalScrollDown =
-      useCallback(() => {
-        startLocalPedalScrollDown();
-      }, [
-        startLocalPedalScrollDown,
-      ]);
+    /**
+     * Despachador unificado de PedalEvent.
+     * Recibe eventos normalizados de ambos adapters (BT y WiFi) a través de PedalService.
+     */
+    const handlePedalEvent = useCallback(
+      (event: PedalEvent) => {
+        if (!pedalEnabledRef.current) return;
+
+        switch (event.type) {
+          case 'UP_PRESS':
+            startLocalPedalScrollUp();
+            break;
+          case 'DOWN_PRESS':
+            startLocalPedalScrollDown();
+            break;
+          case 'UP_RELEASE':
+          case 'DOWN_RELEASE':
+            stopPedalScroll();
+            break;
+          case 'HOME':
+            goToSongStart();
+            break;
+          case 'END':
+            goToSongEnd();
+            break;
+        }
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd]
+    );
+
+    // Suscribir a eventos normalizados del pedal unificado
+    useEffect(() => {
+      return onPedalEvent(handlePedalEvent);
+    }, [onPedalEvent, handlePedalEvent]);
 
     // ─────────────────────────────────────────────
     // Helpers
@@ -589,11 +629,12 @@ export const SongViewer: React.FC<
           isEditToolActive={
             isEditToolActive
           }
-          onToggleEditTool={() =>
-            setIsEditToolActive(
-              !isEditToolActive
-            )
-          }
+          onToggleEditTool={() => {
+            if (!isEditToolActive) {
+              setIsStageMode(true);
+            }
+            setIsEditToolActive(!isEditToolActive);
+          }}
           isGeneratingPdf={
             isGeneratingPdf
           }
@@ -606,11 +647,12 @@ export const SongViewer: React.FC<
           isStageMode={
             isStageMode
           }
-          onToggleStageMode={() =>
-            setIsStageMode(
-              !isStageMode
-            )
-          }
+          onToggleStageMode={() => {
+            if (isStageMode) {
+              setIsEditToolActive(false);
+            }
+            setIsStageMode(!isStageMode);
+          }}
         />
 
         <SongViewerInfoBar
@@ -627,20 +669,38 @@ export const SongViewer: React.FC<
             setTranspose
           }
           capo={capo}
+          onCapoChange={setCapo}
+          soundingKeySemitone={
+            soundingKeySemitone
+          }
+          soundingKeyName={
+            soundingKeyName
+          }
           isScrolling={
             isScrolling
+          }
+          onToggleScroll={() =>
+            setIsScrolling(!isScrolling)
           }
           scrollSpeed={
             scrollSpeed
           }
+          setScrollSpeed={setScrollSpeed}
+          pedalSpeed={pedalSpeed}
+          setPedalSpeed={setPedalSpeed}
           isMetronomeActive={
             isMetronomeActive
           }
           setIsMetronomeActive={
             setIsMetronomeActive
           }
-          beat={beat}
           bpm={bpm}
+          setBpm={setBpm}
+          timeSignature={timeSignature}
+          setTimeSignature={setTimeSignature}
+          metronomeMuted={metronomeMuted}
+          setMetronomeMuted={setMetronomeMuted}
+          beat={beat}
         />
 
         {isEditToolActive && (
@@ -648,6 +708,16 @@ export const SongViewer: React.FC<
             onClose={() =>
               setIsEditToolActive(
                 false
+              )
+            }
+          />
+        )}
+
+        {!isStageMode && (
+          <NoteModeBanner
+            onClose={() =>
+              setIsStageMode(
+                true
               )
             }
           />
@@ -812,6 +882,7 @@ export const SongViewer: React.FC<
                   isStageMode
                 }
                 isDebugMode={
+                  features.debugTools &&
                   isDebugMode
                 }
                 isEditToolActive={
@@ -836,6 +907,34 @@ export const SongViewer: React.FC<
                   }
                 }}
               />
+
+              {Object.entries(musicianNotes || {}).map(
+                ([noteId, noteData]: [string, any]) => {
+                  if (
+                    !noteData ||
+                    typeof noteData === 'string' ||
+                    !noteData.text
+                  ) {
+                    return null;
+                  }
+                  return (
+                    <DraggableNote
+                      key={noteId}
+                      id={noteId}
+                      initialText={noteData.text}
+                      initialX={noteData.x}
+                      initialY={noteData.y}
+                      isStageMode={isStageMode}
+                      onRequestEdit={(id, text) =>
+                        setEditingNote({ id, text })
+                      }
+                      onUpdate={handleUpdateNote}
+                      onDelete={handleDeleteNote}
+                      setScrollEnabled={setIsScrollEnabled}
+                    />
+                  );
+                }
+              )}
             </ScrollView>
           )}
         </View>
@@ -888,53 +987,9 @@ export const SongViewer: React.FC<
               false
             )
           }
-          capo={capo}
-          setCapo={setCapo}
-          soundingKeySemitone={
-            soundingKeySemitone
-          }
-          soundingKeyName={
-            soundingKeyName
-          }
-          isMetronomeActive={
-            isMetronomeActive
-          }
-          setIsMetronomeActive={
-            setIsMetronomeActive
-          }
-          bpm={bpm}
-          setBpm={setBpm}
-          timeSignature={
-            timeSignature
-          }
-          setTimeSignature={
-            setTimeSignature
-          }
-          metronomeMuted={
-            metronomeMuted
-          }
-          setMetronomeMuted={
-            setMetronomeMuted
-          }
-          fontSize={
-            fontSize
-          }
-          setFontSize={
-            setFontSize
-          }
-          scrollSpeed={
-            scrollSpeed
-          }
-          setScrollSpeed={
-            setScrollSpeed
-          }
-          pedalSpeed={
-            pedalSpeed
-          }
-          setPedalSpeed={
-            setPedalSpeed
-          }
           theme={theme}
+          fontSize={fontSize}
+          setFontSize={setFontSize}
           onOpenColorPicker={() =>
             setColorPickerOpen(
               true
@@ -960,17 +1015,8 @@ export const SongViewer: React.FC<
           }
         />
 
-        {/* Pedal Bluetooth */}
-        <PedalHandler
-          onScrollUp={
-            handlePedalScrollUp
-          }
-          onScrollDown={
-            handlePedalScrollDown
-          }
-          onScrollStop={
-            stopPedalScroll
-          }
+        {/* Pedal — captura HID Bluetooth */}
+        <BluetoothInputBridge
           enabled={
             isStageMode &&
             !isSettingsOpen &&
@@ -1013,20 +1059,22 @@ export const SongViewer: React.FC<
           }
         />
 
-        {/* ChordPro */}
-        <ChordProModal
-          visible={
-            showChordPro
-          }
-          onClose={() =>
-            setShowChordPro(
-              false
-            )
-          }
-          content={
-            transposedContent
-          }
-        />
+        {/* ChordPro (solo desarrollo) */}
+        {features.debugTools && (
+          <ChordProModal
+            visible={
+              showChordPro
+            }
+            onClose={() =>
+              setShowChordPro(
+                false
+              )
+            }
+            content={
+              transposedContent
+            }
+          />
+        )}
 
         {/* Editor de línea */}
         <LineEditModal
@@ -1076,6 +1124,7 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     paddingBottom: 200,
+    position: 'relative',
   },
 
   unavailableContainer: {

@@ -1,6 +1,7 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
 import { parseChordPro } from '../utils/chordpro';
+import type { SongLineParsed, SongBlock } from '../utils/chordUtils';
 
 export interface PdfOptions {
   transpose?: number;
@@ -9,11 +10,46 @@ export interface PdfOptions {
   viewMode?: 'all' | 'lyrics';
   bpm?: number;
   theme?: any;
+  /** Nombre del tono en el que suena la canción (ej. "G"). Opcional. */
+  keyName?: string;
 }
+
+/** Fragmento de una palabra; si lleva acorde, se dibuja encima. */
+interface Piece {
+  chord?: string;
+  text: string;
+}
+
+/**
+ * Una línea se reduce a palabras y espacios. Así el HTML puede evitar
+ * cortes de línea en medio de una palabra (aunque tenga un acorde a la mitad)
+ * y no hace falta ningún "padding" para simular espacios.
+ */
+type Token =
+  | { kind: 'space'; text: string }
+  | { kind: 'word'; parts: Piece[] };
+
+interface Group {
+  title?: string;
+  lines: string[];
+}
+
+// A4 en puntos (expo-print usa Letter por defecto).
+const PAGE_WIDTH = 595;
+const PAGE_HEIGHT = 842;
+
+// Líneas de metadatos que nunca se imprimen: "BPM: 72", "Tempo: 72", "Compás: 4/4".
+const HIDDEN_LABELS = /^\s*(bpm|tempo|comp[aá]s)\s*:/i;
+
+// Líneas de metadatos que se omiten solo si el encabezado ya muestra ese dato.
+const COVERED_LABELS = /^\s*(tono|key|capo)\s*:/i;
+
+// Texto que quedó pegado al final de canciones antiguas; se oculta.
+const LEGACY_FOOTER = 'ministerio de alabanza icbs';
 
 export class PdfService {
   /**
-   * Generates a beautifully formatted PDF for a song content string and opens native sharing dialog.
+   * Genera un PDF con el formato de la canción y abre el diálogo nativo de compartir.
    */
   static async generateAndShareSongPdf(
     title: string,
@@ -21,412 +57,439 @@ export class PdfService {
     options: PdfOptions = {}
   ): Promise<void> {
     const parsedLines = parseChordPro(content);
-    const viewMode = options.viewMode || 'all';
-    const transpose = options.transpose ?? 0;
-    const capo = options.capo ?? 0;
-    const bpm = options.bpm;
 
-    return this.generateAndShare(title, parsedLines, viewMode, transpose, capo, bpm);
+    return this.generateAndShare(
+      title,
+      parsedLines,
+      options.viewMode || 'all',
+      options.transpose ?? 0,
+      options.capo ?? 0,
+      options.bpm,
+      options.keyName
+    );
   }
 
   /**
-   * Generates a beautifully formatted PDF for a song and opens the native sharing dialog.
+   * `_bpm` se mantiene por compatibilidad con quien ya llama a esta función,
+   * pero el PDF no muestra BPM ni compás.
    */
   static async generateAndShare(
     title: string,
-    parsedLines: any[],
+    parsedLines: SongLineParsed[],
     viewMode: 'all' | 'lyrics',
     transpose: number,
     capo: number,
-    bpm?: number
+    _bpm?: number,
+    keyName?: string
   ): Promise<void> {
     try {
-      // 1. Generate the custom Google Docs HTML
-      const htmlContent = this.generateHtml(title, parsedLines, viewMode, transpose, capo, bpm);
+      const html = this.generateHtml(
+        title,
+        parsedLines,
+        viewMode,
+        transpose,
+        capo,
+        keyName
+      );
 
-      // 2. Print HTML to a temporary PDF file
       const { uri } = await Print.printToFileAsync({
-        html: htmlContent,
-        base64: false,
+        html,
+        width: PAGE_WIDTH,
+        height: PAGE_HEIGHT,
       });
 
-      // 3. Share the PDF natively
       await Sharing.shareAsync(uri, {
         mimeType: 'application/pdf',
         dialogTitle: `Compartir canción: ${title}`,
-        UTI: 'com.adobe.pdf', // iOS standard document type identifier
+        UTI: 'com.adobe.pdf', // iOS
       });
     } catch (error) {
       console.error('Error generating/sharing PDF:', error);
-      throw new Error('No se pudo generar o compartir el PDF. Intenta nuevamente.');
+      throw new Error(
+        'No se pudo generar o compartir el PDF. Intenta nuevamente.'
+      );
     }
   }
 
-  /**
-   * Generates the beautiful, Google Docs-like HTML template with custom styles and fonts.
-   */
+  // ───────────────────────────────────────────────────────────────
+  // HTML
+  // ───────────────────────────────────────────────────────────────
+
   private static generateHtml(
     title: string,
-    parsedLines: any[],
+    parsedLines: SongLineParsed[],
     viewMode: 'all' | 'lyrics',
     transpose: number,
     capo: number,
-    bpm?: number
+    keyName?: string
   ): string {
     const showChords = viewMode === 'all';
-    
-    // Construct the metadata rows
-    const keyStr = transpose > 0 ? `+${transpose}` : transpose.toString();
-    const capoText = capo > 0 ? `Traste ${capo}` : 'Sin Capo';
-    const bpmText = bpm ? `${bpm} BPM` : 'N/D';
 
-    const LEGACY_FOOTER_TEXT = 'Ministerio de Alabanza ICBS';
-    const footerNormalized = LEGACY_FOOTER_TEXT.toLowerCase().replace(/\s+/g, ' ').trim();
+    // Datos que el encabezado ya muestra (a partir de lo que el usuario tiene
+    // en la app). Las líneas equivalentes del texto de la canción se omiten
+    // para no repetirlas ni contradecirlas.
+    const covered = new Set<string>();
+    if (keyName) covered.add('tono');
+    if (capo > 0) covered.add('capo');
 
-    // Parse the lines into HTML blocks
-    const linesHtml = parsedLines
-      .map((line) => {
-        // Limpiar el texto del footer si fue fusionado con acordes
-        const lineText = line.blocks
-          .map((b: any) => b.text || '')
-          .join('')
-          .toLowerCase()
-          .replace(/\s+/g, ' ')
-          .trim();
-          
-        if (lineText.includes(footerNormalized)) {
-          return {
-            ...line,
-            blocks: line.blocks.map((b: any) => ({ ...b, text: ' ' }))
-          };
-        }
-        return line;
-      })
-      .map((line, lIndex) => {
-        const isTitle = line.type === 'section' && line.blocks[0]?.text.toUpperCase().includes('TITULO');
-        
-        if (isTitle) {
-          // Title was already printed in the header, skip it here
-          return '';
-        }
+    const groups = this.buildGroups(parsedLines, showChords, covered);
 
-        if (line.type === 'section') {
-          // Render section headers (e.g. [CORO], [ESTROFA])
-          const sectionText = line.blocks[0]?.text.replace(/[\[\]]/g, '').trim();
-          return `
-            <div class="line-wrapper section-header">
-              <h3>${sectionText}</h3>
-            </div>
-          `;
-        }
+    const meta = this.buildMeta(transpose, capo, keyName);
+    const metaHtml = meta.length
+      ? `<p class="meta">${meta.map(m => this.escapeHtml(m)).join(' · ')}</p>`
+      : '';
 
-        // Render standard lines
-        const renderedBlocks: { chord?: string; text: string }[] = [];
-        for (let i = 0; i < line.blocks.length; i++) {
-          const block = line.blocks[i];
-          const rawText = block.text || '';
-          
-          if (!rawText.trim()) {
-            if (block.chord) {
-              renderedBlocks.push({ chord: block.chord, text: '' });
-            }
-            if (rawText) {
-              renderedBlocks.push({ text: rawText });
-            }
-            continue;
-          }
-
-          const match = rawText.match(/^(\s*)(.*?)(\s*)$/);
-          const leading = match ? match[1] : '';
-          const body = match ? match[2] : '';
-          const trailing = match ? match[3] : '';
-
-          if (leading) {
-            renderedBlocks.push({ text: leading });
-          }
-
-          if (body) {
-            const words = body.match(/\S+\s*/g) || [];
-            if (block.chord) {
-              renderedBlocks.push({
-                chord: block.chord,
-                text: words[0] || ''
-              });
-              for (let w = 1; w < words.length; w++) {
-                renderedBlocks.push({
-                  text: words[w]
-                });
-              }
-            } else {
-              for (let w = 0; w < words.length; w++) {
-                renderedBlocks.push({
-                  text: words[w]
-                });
-              }
-            }
-          }
-
-          if (trailing) {
-            renderedBlocks.push({ text: trailing });
-          }
-        }
-
-        return `
-          <div class="line-wrapper type-${line.type} ${line.isMetadata ? 'metadata-line' : ''}">
-            <div class="blocks-container">
-              ${renderedBlocks
-                .map((block: { chord?: string; text: string }) => {
-                  const hasChord = block.chord && showChords;
-                  const isSpaceOnly = !block.text || /^\s+$/.test(block.text);
-                  const spaceCount = isSpaceOnly 
-                    ? (block.text ? block.text.length : 0) 
-                    : (block.text?.match(/\s+$/)?.[0].length || 0);
-
-                  const spaceWidth = 8;
-                  let rightPadding = 0;
-                  if (hasChord) {
-                    if (isSpaceOnly) {
-                      rightPadding = Math.max(4, spaceCount * spaceWidth);
-                    } else if (spaceCount > 0) {
-                      rightPadding = spaceCount * spaceWidth;
-                    }
-                  }
-
-                  const chordHtml = hasChord 
-                    ? `<span class="chord">${this.escapeHtml(block.chord!)}</span>` 
-                    : '';
-                  const textHtml = `<span class="lyric">${this.escapeHtml(block.text || ' ')}</span>`;
-                  
-                  return `
-                    <div class="block"${rightPadding > 0 ? ` style="padding-right: ${rightPadding}px;"` : ''}>
-                      ${chordHtml}
-                      ${textHtml}
-                    </div>
-                  `;
-                })
-                .join('')}
-            </div>
-          </div>
-        `;
-      })
+    const bodyHtml = groups
+      .filter(g => g.title !== undefined || g.lines.length > 0)
+      .map(g =>
+        g.title !== undefined
+          ? `<section class="sec"><h3>${this.escapeHtml(g.title)}</h3>${g.lines.join('')}</section>`
+          : `<section class="pre">${g.lines.join('')}</section>`
+      )
       .join('');
 
-    return `
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>${this.escapeHtml(title)}</title>
-        <!-- Load elegant Google Fonts -->
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@500;700&display=swap" rel="stylesheet">
-        
-        <style>
-          /* CSS Reset & Google Docs Page Layout */
-          @page {
-            size: A4;
-            margin: 1.2in 1in 1.2in 1in; /* Standard premium margins */
-          }
-          
-          body {
-            font-family: 'Inter', sans-serif;
-            color: #1a1a1a; /* Elegant soft black */
-            background-color: #ffffff;
-            margin: 0;
-            padding: 0;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
+    return (
+      `<!DOCTYPE html><html lang="es"><head><meta charset="utf-8">` +
+      `<meta name="viewport" content="width=device-width, initial-scale=1">` +
+      `<title>${this.escapeHtml(title)}</title>` +
+      `<style>${STYLES}</style></head><body>` +
+      `<header class="hd"><h1>${this.escapeHtml(title)}</h1>${metaHtml}</header>` +
+      `<main>${bodyHtml}</main>` +
+      `<footer class="ft">Cancionero App</footer>` +
+      `</body></html>`
+    );
+  }
 
-          /* Clean Google Docs Title Styling */
-          .doc-header {
-            text-align: center;
-            margin-bottom: 25px;
-            page-break-inside: avoid;
-          }
+  /** Datos del encabezado: solo lo que realmente aporta información. */
+  private static buildMeta(
+    transpose: number,
+    capo: number,
+    keyName?: string
+  ): string[] {
+    const items: string[] = [];
 
-          h1.doc-title {
-            font-family: 'Inter', sans-serif;
-            font-size: 26px;
-            font-weight: 700;
-            color: #111827;
-            margin: 0 0 12px 0;
-            letter-spacing: -0.5px;
-          }
+    if (keyName) {
+      items.push(`Tono ${keyName}`);
+    } else if (transpose !== 0) {
+      items.push(`Transpuesta ${transpose > 0 ? '+' : ''}${transpose}`);
+    }
 
-          /* Modern Metadata Grid (Google Docs Table-like) */
-          .metadata-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 10px;
-            max-width: 480px;
-            margin: 0 auto 20px auto;
-            background-color: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 8px;
-            padding: 10px 15px;
-          }
+    if (capo > 0) items.push(`Capo traste ${capo}`);
 
-          .meta-item {
-            text-align: center;
-          }
-
-          .meta-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            font-weight: 700;
-            color: #6b7280;
-            letter-spacing: 0.5px;
-            margin-bottom: 2px;
-          }
-
-          .meta-value {
-            font-size: 13px;
-            font-weight: 600;
-            color: #374151;
-          }
-
-          .header-line {
-            border: 0;
-            height: 1px;
-            background-color: #e5e7eb;
-            margin: 0 0 25px 0;
-          }
-
-          /* Song lines layout */
-          .line-wrapper {
-            margin-bottom: 6px;
-            page-break-inside: avoid;
-          }
-
-          /* Section titles styled elegantly */
-          .section-header {
-            margin-top: 18px;
-            margin-bottom: 8px;
-            border-bottom: 1px solid #f3f4f6;
-            padding-bottom: 4px;
-          }
-
-          .section-header h3 {
-            font-size: 12px;
-            font-weight: 700;
-            color: #b45309; /* Elegant warm orange/amber for sections */
-            text-transform: uppercase;
-            letter-spacing: 1px;
-            margin: 0;
-          }
-
-          .blocks-container {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: flex-end;
-          }
-
-          .block {
-            display: flex;
-            flex-direction: column;
-            min-width: 4px;
-          }
-
-          /* Chords typography and color */
-          .chord {
-            font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
-            font-size: 12px;
-            font-weight: 700;
-            color: #1d4ed8; /* Premium deep sapphire blue */
-            line-height: 14px;
-            margin-bottom: 1px;
-            white-space: pre;
-          }
-
-          /* Lyrics typography */
-          .lyric {
-            font-family: 'Inter', sans-serif;
-            font-size: 14.5px;
-            color: #2b2b2b;
-            line-height: 22px;
-            white-space: pre-wrap;
-          }
-
-          /* Metadata line style (like Intro/Puente when they are single rows) */
-          .metadata-line .chord {
-            color: #1e40af;
-          }
-          
-          .metadata-line .lyric {
-            font-weight: 600;
-            color: #4b5563;
-          }
-
-          /* Google Docs Running Footer Style */
-          .doc-footer {
-            position: fixed;
-            bottom: -0.6in;
-            left: 0;
-            right: 0;
-            height: 25px;
-            border-top: 1px solid #f3f4f6;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 9px;
-            color: #9ca3af;
-            font-family: 'Inter', sans-serif;
-            font-weight: 500;
-          }
-
-          .footer-right {
-            text-align: right;
-          }
-        </style>
-      </head>
-      <body>
-        <!-- Header -->
-        <div class="doc-header">
-          <h1 class="doc-title">${this.escapeHtml(title)}</h1>
-          
-          <!-- Metadatos de la canción -->
-          <div class="metadata-grid">
-            <div class="meta-item">
-              <div class="meta-label">Tono</div>
-              <div class="meta-value">${keyStr}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">Capo</div>
-              <div class="meta-value">${capoText}</div>
-            </div>
-            <div class="meta-item">
-              <div class="meta-label">BPM</div>
-              <div class="meta-value">${bpmText}</div>
-            </div>
-          </div>
-          <hr class="header-line">
-        </div>
-
-        <!-- Song Content -->
-        <div class="doc-content">
-          ${linesHtml}
-        </div>
-
-        <!-- Google Docs Running Footer -->
-        <div class="doc-footer">
-          <div>CANCIONERO APP</div>
-          <div class="footer-right">Exportado desde la aplicación</div>
-        </div>
-      </body>
-      </html>
-    `;
+    return items;
   }
 
   /**
-   * Helper to escape HTML characters safely.
+   * Agrupa las líneas por sección ([VERSO], [CORO]...) para que cada sección
+   * viaje junta en una misma página, y colapsa las líneas en blanco repetidas.
    */
+  private static buildGroups(
+    parsedLines: SongLineParsed[],
+    showChords: boolean,
+    covered: Set<string>
+  ): Group[] {
+    const groups: Group[] = [{ lines: [] }];
+    let pendingGap = false;
+
+    for (const rawLine of parsedLines) {
+      const line = this.stripLegacyFooter(rawLine);
+      const first = line.blocks[0]?.text ?? '';
+
+      if (line.type === 'section') {
+        // El título ya se imprime en el encabezado.
+        if (first.trim().toUpperCase().startsWith('[TITULO]')) continue;
+
+        groups.push({ title: first.replace(/[[\]]/g, '').trim(), lines: [] });
+        pendingGap = false;
+        continue;
+      }
+
+      const hasChords = line.blocks.some(b => !!b.chord);
+
+      if (line.isMetadata) {
+        // BPM / tempo / compás no se muestran en el PDF.
+        if (HIDDEN_LABELS.test(first)) continue;
+
+        // "Tono:" y "Capo:" ya están en el encabezado.
+        const label = first.match(COVERED_LABELS)?.[1].toLowerCase();
+        if (label && covered.has(label === 'key' ? 'tono' : label)) continue;
+
+        // En modo "solo letra", "Intro: [G] [D]" no aporta nada.
+        if (!showChords && hasChords) continue;
+      }
+
+      const visibleText = line.blocks.map(b => b.text || '').join('').trim();
+
+      // Línea en blanco → a lo sumo un espacio entre líneas de la misma sección.
+      // En modo "solo letra", las líneas que solo tenían acordes también cuentan así.
+      if (!visibleText && (!hasChords || !showChords)) {
+        pendingGap = true;
+        continue;
+      }
+
+      const current = groups[groups.length - 1];
+      if (pendingGap && current.lines.length > 0) {
+        current.lines.push('<div class="gap"></div>');
+      }
+      pendingGap = false;
+
+      const tokens = this.tokenize(line.blocks, showChords);
+
+      // Línea que solo tiene acordes (intro, interludio): sin fila de letra vacía.
+      const chordsOnly =
+        !line.isMetadata &&
+        tokens.some(t => t.kind === 'word') &&
+        tokens.every(
+          t =>
+            t.kind === 'space' ||
+            t.parts.every(p => !!p.chord && !/\S/.test(p.text))
+        );
+
+      const cls = line.isMetadata
+        ? 'line meta-line'
+        : chordsOnly
+          ? 'line co'
+          : 'line';
+
+      current.lines.push(
+        `<div class="${cls}">${this.renderTokens(
+          tokens,
+          !!line.isMetadata
+        )}</div>`
+      );
+    }
+
+    return groups;
+  }
+
+  /** Deja en blanco el texto de la línea si es el pie legacy (conserva sus acordes). */
+  private static stripLegacyFooter(line: SongLineParsed): SongLineParsed {
+    const text = line.blocks
+      .map(b => b.text || '')
+      .join('')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!text.includes(LEGACY_FOOTER)) return line;
+
+    return { ...line, blocks: line.blocks.map(b => ({ ...b, text: ' ' })) };
+  }
+
+  /**
+   * Convierte los bloques { acorde, texto } en palabras y espacios.
+   * El acorde queda sobre la primera palabra del bloque (o sobre los espacios,
+   * si el bloque no tiene texto, como en una línea de solo acordes).
+   */
+  private static tokenize(
+    blocks: SongBlock[],
+    showChords: boolean
+  ): Token[] {
+    const tokens: Token[] = [];
+    let word: Piece[] = [];
+
+    const closeWord = () => {
+      if (word.length > 0) {
+        tokens.push({ kind: 'word', parts: word });
+        word = [];
+      }
+    };
+
+    for (const block of blocks) {
+      const text = block.text || '';
+      const chord = showChords ? block.chord : undefined;
+
+      // "  Hola mundo " → ["  ", "Hola", " ", "mundo", " "]
+      const pieces = text.split(/(\s+)/).filter(Boolean);
+      const hasWords = pieces.some(p => /\S/.test(p));
+
+      // Acorde sin texto, o sobre espacios: unidad propia.
+      if (chord && !hasWords) {
+        closeWord();
+        tokens.push({ kind: 'word', parts: [{ chord, text }] });
+        continue;
+      }
+
+      let pendingChord = chord;
+
+      for (const piece of pieces) {
+        if (/^\s+$/.test(piece)) {
+          closeWord();
+          tokens.push({ kind: 'space', text: piece });
+        } else {
+          // Si la palabra ya venía abierta (acorde a mitad de palabra),
+          // este fragmento se suma a ella.
+          word.push({ chord: pendingChord, text: piece });
+          pendingChord = undefined;
+        }
+      }
+    }
+
+    closeWord();
+    return tokens;
+  }
+
+  /**
+   * @param inlineChords true en líneas de metadatos ("Tono: [G]", "Intro: [G] [D]"):
+   *   los acordes van en la misma fila que el texto, no encima.
+   */
+  private static renderTokens(
+    tokens: Token[],
+    inlineChords = false
+  ): string {
+    return tokens
+      .map(token => {
+        if (token.kind === 'space') return this.escapeHtml(token.text);
+
+        const hasChord = token.parts.some(p => !!p.chord);
+
+        if (!hasChord) {
+          return this.escapeHtml(token.parts.map(p => p.text).join(''));
+        }
+
+        if (inlineChords) {
+          return token.parts
+            .map(p =>
+              (p.chord
+                ? `<span class="ci">${this.escapeHtml(p.chord)}</span>`
+                : '') + this.escapeHtml(p.text)
+            )
+            .join('');
+        }
+
+        const inner = token.parts
+          .map(p => {
+            if (!p.chord) return this.escapeHtml(p.text);
+
+            // Acorde sobre espacios (línea de solo acordes): el espacio se
+            // mide con la tipografía del acorde para respetar la separación.
+            const onSpaces = p.text !== '' && !/\S/.test(p.text);
+
+            return (
+              `<span class="s"><span class="c">${this.escapeHtml(p.chord)}</span>` +
+              `<span class="l${onSpaces ? ' sp' : ''}">${this.escapeHtml(p.text)}</span></span>`
+            );
+          })
+          .join('');
+
+        return `<span class="w">${inner}</span>`;
+      })
+      .join('');
+  }
+
   private static escapeHtml(unsafe: string): string {
-    return unsafe
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;")
-      .replace(/'/g, "&#039;");
+    return String(unsafe ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 }
+
+// ───────────────────────────────────────────────────────────────
+// Estilos
+//
+// - Sin fuentes remotas: tipografías del sistema (no depende de internet).
+// - Márgenes de página (60px 50px 30px 50px) definidos solo con @page;
+//   el body no agrega padding propio.
+// - Cada acorde es un inline-block (acorde arriba, sílaba abajo) alineado
+//   por la base con el texto normal que lo rodea.
+// ───────────────────────────────────────────────────────────────
+
+const STYLES = `
+@page{size:A4;margin:60px 50px 30px 50px}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  font-family:-apple-system,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif;
+  font-size:14px;
+  color:#1f2937;
+  -webkit-print-color-adjust:exact;
+  print-color-adjust:exact;
+}
+
+.hd{
+  text-align:center;
+  margin:0 0 18px;
+  padding-bottom:12px;
+  border-bottom:1px solid #e5e7eb;
+}
+h1{
+  margin:0;
+  font-size:24px;
+  line-height:1.2;
+  letter-spacing:-.3px;
+  color:#111827;
+}
+.meta{
+  margin:8px 0 0;
+  font-size:12px;
+  font-weight:600;
+  color:#4b5563;
+}
+
+.sec,.pre{
+  margin-top:16px;
+  break-inside:avoid;
+  page-break-inside:avoid;
+}
+.pre{margin-top:0}
+h3{
+  margin:0 0 6px;
+  padding-bottom:3px;
+  border-bottom:1px solid #f3f4f6;
+  font-size:11px;
+  letter-spacing:1px;
+  text-transform:uppercase;
+  color:#b45309;
+  break-after:avoid;
+  page-break-after:avoid;
+}
+
+.line{
+  margin:0 0 2px;
+  line-height:22px;
+  white-space:pre-wrap;
+}
+.meta-line{font-weight:600;color:#4b5563}
+.gap{height:10px}
+
+.w{white-space:nowrap}
+.s{display:inline-block;vertical-align:bottom}
+.c{
+  display:block;
+  padding-right:6px;
+  font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Courier New',monospace;
+  font-size:12px;
+  font-weight:700;
+  line-height:14px;
+  white-space:pre;
+  color:#1d4ed8;
+}
+.l{
+  display:block;
+  min-height:22px;
+  line-height:22px;
+  white-space:pre;
+}
+/* Línea de solo acordes: la fila de letra se colapsa (conserva el ancho de los espacios) */
+.co .l{min-height:0;height:0;line-height:0;overflow:hidden}
+.co .c{margin-bottom:4px}
+.sp{font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Courier New',monospace;font-size:12px}
+.ci{
+  font-family:ui-monospace,'SF Mono',Menlo,Consolas,'Courier New',monospace;
+  font-size:13px;
+  font-weight:700;
+  color:#1d4ed8;
+}
+
+.ft{
+  margin-top:28px;
+  padding-top:8px;
+  border-top:1px solid #f3f4f6;
+  text-align:center;
+  font-size:10px;
+  color:#9ca3af;
+}
+`;

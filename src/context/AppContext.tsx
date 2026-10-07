@@ -23,8 +23,10 @@ export interface AppContextType {
   topSongs: SongMetadata[];
   setlists: Setlist[];
   isSyncing: boolean;
+  // driveFolderId ya NO es un estado propio: se deriva siempre de
+  // activeLibrary.driveFolderId para que nunca pueda desincronizarse
+  // de la biblioteca activa (ver AppContextProvider).
   driveFolderId: string;
-  setDriveFolderId: (id: string) => void;
   loadingSongId: string | null;
   loadingActions: Record<string, boolean>;
 
@@ -43,17 +45,17 @@ export interface AppContextType {
   // Folder Explorer state
   folders: any[];
   isLoadingFolders: boolean;
-  setFolderPickerCallback: (cb: ((id: string) => void) | null) => void;
+  setFolderPickerCallback: (cb: ((id: string, name: string) => void) | null) => void;
   navigationStack: any[];
   showShared: boolean;
   openFolderPicker: (
     parentId?: string,
     folderName?: string,
     shared?: boolean,
-    onSelect?: (id: string) => void
+    onSelect?: (id: string, name: string) => void
   ) => Promise<void>;
   navigateBack: () => void;
-  selectFolder: (id: string) => void;
+  selectFolder: (id: string, name: string) => void;
 
   // Selected Viewer state
   selectedSong: SongMetadata | null;
@@ -131,7 +133,6 @@ export const AppContextProvider = ({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isLibrariesOpen, setIsLibrariesOpen] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [driveFolderId, setDriveFolderId] = useState('');
   const [loadingSongId, setLoadingSongId] = useState<string | null>(null);
   const [loadingActions, setLoadingActions] = useState<Record<string, boolean>>(
     {}
@@ -149,6 +150,15 @@ export const AppContextProvider = ({
   const [libraries, setLibraries] = useState<Library[]>([]);
   const [activeLibrary, setActiveLibraryState] =
     useState<Library | null>(null);
+
+  // driveFolderId se DERIVA de activeLibrary en cada render, en vez de
+  // vivir en su propio useState. Antes existían dos fuentes de verdad
+  // (activeLibrary.driveFolderId y un driveFolderId suelto) que se
+  // desincronizaban cada vez que se agregaba un nuevo lugar que
+  // actualizaba una sin actualizar la otra (ej: handleUpdateLibrary,
+  // usado al editar una biblioteca desde "Administrar Bibliotecas").
+  // Derivarlo elimina esa clase de bug por completo.
+  const driveFolderId = activeLibrary?.driveFolderId || '';
 
   // Datos
   const [songs, setSongs] = useState<SongMetadata[]>([]);
@@ -181,7 +191,7 @@ export const AppContextProvider = ({
   // Estado para el explorador de carpetas
   const [isFolderPickerOpen, setIsFolderPickerOpen] = useState(false);
   const [folderPickerCallback, setFolderPickerCallback] = useState<
-    ((id: string) => void) | null
+    ((id: string, name: string) => void) | null
   >(null);
   const [folders, setFolders] = useState<any[]>([]);
   const [isLoadingFolders, setIsLoadingFolders] = useState(false);
@@ -238,7 +248,6 @@ export const AppContextProvider = ({
       setActiveLibraryState(activeLib);
 
       if (activeLib) {
-        setDriveFolderId(activeLib.driveFolderId || '');
         await refreshLocalDataForLibrary(activeLib.id);
       }
 
@@ -277,7 +286,6 @@ export const AppContextProvider = ({
 
     try {
       setActiveLibraryState(library);
-      setDriveFolderId(library.driveFolderId || '');
 
       await StorageService.saveSetting(
         'active_library_id',
@@ -332,7 +340,7 @@ export const AppContextProvider = ({
 
     try {
       await SyncService.syncFullRepertoire(
-        driveFolderId,
+        activeLibrary.driveFolderId || '',
         false,
         activeLibrary.id
       );
@@ -492,8 +500,6 @@ export const AppContextProvider = ({
   const handleSaveConfig = async (
     newFolderId: string
   ) => {
-    setDriveFolderId(newFolderId);
-
     if (activeLibrary) {
       const updated = {
         ...activeLibrary,
@@ -562,11 +568,20 @@ export const AppContextProvider = ({
     date?: Date,
     notes?: string
   ) => {
-    if (!activeLibrary) return;
+    if (!activeLibrary) {
+      Alert.alert(
+        'Biblioteca no seleccionada',
+        'Debes seleccionar una biblioteca antes de crear una lista.'
+      );
+      return;
+    }
 
     const trimmed = name.trim();
 
-    if (!trimmed) return;
+    if (!trimmed) {
+      Alert.alert('Error', 'El nombre de la lista no puede estar vacío.');
+      return;
+    }
 
     const dateStr = date
       ? formatDate(date.toISOString())
@@ -586,12 +601,10 @@ export const AppContextProvider = ({
       isPublic: false,
       notes: notes?.trim() || undefined,
       libraryId: activeLibrary.id,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      newSetlist,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(newSetlist);
 
     await refreshLocalData();
 
@@ -602,10 +615,7 @@ export const AppContextProvider = ({
   const handleRemoveSongFromSetlist = async (
     songId: string
   ) => {
-    if (
-      !activeSetlist ||
-      !activeLibrary
-    ) {
+    if (!activeSetlist) {
       return;
     }
 
@@ -614,15 +624,14 @@ export const AppContextProvider = ({
         id => id !== songId
       );
 
-    const updated = {
+    const updated: Setlist = {
       ...activeSetlist,
       songIds: newSongIds,
+      libraryId: activeSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     setActiveSetlist(updated);
 
@@ -633,10 +642,7 @@ export const AppContextProvider = ({
     fromIndex: number,
     toIndex: number
   ) => {
-    if (
-      !activeSetlist ||
-      !activeLibrary
-    ) {
+    if (!activeSetlist) {
       return;
     }
 
@@ -656,15 +662,14 @@ export const AppContextProvider = ({
       movedId
     );
 
-    const updated = {
+    const updated: Setlist = {
       ...activeSetlist,
       songIds: newSongIds,
+      libraryId: activeSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     setActiveSetlist(updated);
 
@@ -677,10 +682,20 @@ export const AppContextProvider = ({
     songIds: string[],
     notes?: string
   ) => {
-    if (
-      !activeSetlist ||
-      !activeLibrary
-    ) {
+    if (!activeSetlist) {
+      return;
+    }
+
+    // Validar que todas las canciones pertenezcan a la biblioteca del setlist
+    const librarySongs = await StorageService.getAllSongs(activeSetlist.libraryId);
+    const validSongIds = new Set(librarySongs.map(s => s.id));
+
+    const hasForeignSong = songIds.some(id => !validSongIds.has(id));
+    if (hasForeignSong) {
+      Alert.alert(
+        'Canción inválida',
+        'Una o más canciones seleccionadas no pertenecen a la biblioteca de esta lista.'
+      );
       return;
     }
 
@@ -695,23 +710,22 @@ export const AppContextProvider = ({
       ? `${cleanName} - ${dateStr}`
       : cleanName;
 
-    const updated = {
+    const updated: Setlist = {
       ...activeSetlist,
       name: finalName,
       date: date
         ? date.toISOString()
         : undefined,
       songIds,
+      libraryId: activeSetlist.libraryId,
       notes:
         notes !== undefined
           ? notes
           : activeSetlist.notes,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     setActiveSetlist(updated);
 
@@ -740,22 +754,18 @@ export const AppContextProvider = ({
         ? activeSetlist
         : null);
 
-    if (
-      !targetSetlist ||
-      !activeLibrary
-    ) {
+    if (!targetSetlist) {
       return;
     }
 
     const updated: Setlist = {
       ...targetSetlist,
       notes,
+      libraryId: targetSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     if (
       activeSetlist?.id === setlistId
@@ -785,10 +795,7 @@ export const AppContextProvider = ({
         ? activeSetlist
         : null);
 
-    if (
-      !targetSetlist ||
-      !activeLibrary
-    ) {
+    if (!targetSetlist) {
       return;
     }
 
@@ -808,12 +815,11 @@ export const AppContextProvider = ({
     const updated: Setlist = {
       ...targetSetlist,
       songNotes: currentNotes,
+      libraryId: targetSetlist.libraryId,
+      lastUpdated: new Date().toISOString(),
     };
 
-    await StorageService.saveSetlist(
-      updated,
-      activeLibrary.id
-    );
+    await StorageService.saveSetlist(updated);
 
     if (
       activeSetlist?.id === setlistId
@@ -1066,7 +1072,7 @@ export const AppContextProvider = ({
     parentId: string = 'root',
     folderName: string = 'Mi unidad',
     shared: boolean = false,
-    onSelect?: (id: string) => void
+    onSelect?: (id: string, name: string) => void
   ) => {
     if (onSelect) {
       setFolderPickerCallback(
@@ -1148,11 +1154,9 @@ export const AppContextProvider = ({
     );
   };
 
-  const selectFolder = (
-    id: string
-  ) => {
+  const selectFolder = (id: string, name: string) => {
     if (folderPickerCallback) {
-      folderPickerCallback(id);
+      folderPickerCallback(id, name);
     } else {
       handleSaveConfig(id);
     }
@@ -1161,7 +1165,6 @@ export const AppContextProvider = ({
     setFolderPickerCallback(null);
     Keyboard.dismiss();
   };
-
   return (
     <AppContext.Provider
       value={{
@@ -1173,7 +1176,6 @@ export const AppContextProvider = ({
         setlists,
         isSyncing,
         driveFolderId,
-        setDriveFolderId,
         isSettingsOpen,
         setIsSettingsOpen,
         isLibrariesOpen,

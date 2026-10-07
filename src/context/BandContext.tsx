@@ -44,8 +44,18 @@ interface BandContextType {
 
     createBand: (
         name: string,
-        description?: string
+        description: string,
+        driveFolderId: string,
+        driveFolderName: string
     ) => Promise<Band>;
+
+    updateBand: (
+        bandId: string,
+        name: string,
+        description: string,
+        driveFolderId: string,
+        driveFolderName: string
+    ) => Promise<void>;
 
     refreshBands: () => Promise<void>;
 
@@ -361,7 +371,9 @@ export const BandContextProvider = ({
     const createBand = useCallback(
         async (
             name: string,
-            description: string = ''
+            description: string,
+            driveFolderId: string,
+            driveFolderName: string
         ) => {
             if (!user) {
                 throw new Error(
@@ -395,11 +407,43 @@ export const BandContextProvider = ({
                     await BandService.createBand(
                         name,
                         description,
+                        driveFolderId,
+                        driveFolderName,
                         userProfile
                     );
 
-                // La suscripción reactiva detectará
-                // automáticamente la nueva membresía.
+                // ====================================================
+                // Actualizar inmediatamente el estado local.
+                //
+                // No dependemos exclusivamente del listener de
+                // Firestore para que la nueva banda aparezca en
+                // "Mis Bandas".
+                //
+                // El listener también recibirá la nueva membresía,
+                // por eso evitamos duplicados por ID.
+                // ====================================================
+                setUserBandsInfo(currentBands => {
+                    const alreadyExists =
+                        currentBands.some(
+                            bandInfo =>
+                                bandInfo.band.id ===
+                                newBand.id
+                        );
+
+                    if (alreadyExists) {
+                        return currentBands;
+                    }
+
+                    return [
+                        ...currentBands,
+                        {
+                            band: newBand,
+                            role: 'owner',
+                        },
+                    ];
+                });
+
+                // La banda recién creada queda seleccionada.
                 setSelectedBand(newBand);
                 setUserRole('owner');
 
@@ -416,6 +460,62 @@ export const BandContextProvider = ({
             }
         },
         [user]
+    );
+
+    // ============================================================
+    // Actualizar banda
+    // ============================================================
+
+    const updateBand = useCallback(
+        async (
+            bandId: string,
+            name: string,
+            description: string,
+            driveFolderId: string,
+            driveFolderName: string
+        ) => {
+            if (!user) {
+                throw new Error(
+                    'Usuario no autenticado'
+                );
+            }
+
+            const bandInfo = userBandsInfo.find(
+                info => info.band.id === bandId
+            );
+
+            if (!bandInfo) {
+                throw new Error(
+                    'La banda no pertenece al usuario actual.'
+                );
+            }
+
+            if (bandInfo.role !== 'owner') {
+                throw new Error(
+                    'Solo el propietario puede editar la banda.'
+                );
+            }
+
+            try {
+                await BandService.updateBand(
+                    bandId,
+                    {
+                        name,
+                        description,
+                        driveFolderId,
+                        driveFolderName,
+                    }
+                );
+            } catch (e: any) {
+                console.error(
+                    '[BandContext] Error al actualizar banda:',
+                    e
+                );
+
+                throw e;
+            }
+        },
+        [user, userBandsInfo]
     );
 
     // ============================================================
@@ -568,6 +668,7 @@ export const BandContextProvider = ({
             error,
             selectBand,
             createBand,
+            updateBand,
             deleteBand,
             refreshBands: loadBands,
         }),
@@ -581,6 +682,7 @@ export const BandContextProvider = ({
             error,
             selectBand,
             createBand,
+            updateBand,
             deleteBand,
             loadBands,
         ]

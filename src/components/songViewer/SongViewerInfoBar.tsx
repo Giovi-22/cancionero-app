@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
+  ScrollView,
 } from 'react-native';
 import {
   Music,
@@ -16,7 +17,10 @@ import {
   RotateCcw,
   Plus,
   Minus,
+  AlertTriangle,
 } from 'lucide-react-native';
+import { MetronomeModal } from './MetronomeModal';
+import { ScrollPedalModal } from './ScrollPedalModal';
 
 const COLORS = {
   background: '#0a0a0a',
@@ -43,6 +47,33 @@ const CHROMATIC_SCALE = [
   { name: 'Bb' },
   { name: 'B' },
 ];
+
+// Notas para la calculadora de capo. El índice del array es el semitono (C = 0 ... B = 11).
+const CAPO_NOTES = [
+  'C',
+  'C#',
+  'D',
+  'D#',
+  'E',
+  'F',
+  'F#',
+  'G',
+  'G#',
+  'A',
+  'A#',
+  'B',
+];
+
+const CAPO_NOTE_LABELS: Record<string, string> = {
+  'C#': 'C#/D♭',
+  'D#': 'D#/E♭',
+  'F#': 'F#/G♭',
+  'G#': 'G#/A♭',
+  'A#': 'A#/B♭',
+};
+
+// Trastes que se ofrecen en la selección manual (0 = sin capo)
+const CAPO_FRETS = [0, 1, 2, 3, 4, 5];
 
 function getBaseNoteIndex(noteStr: string | null): number {
   if (!noteStr) return -1;
@@ -96,11 +127,35 @@ interface SongViewerInfoBarProps {
   transpose: number;
   onTransposeChange?: (newTranspose: number) => void;
   capo: number;
+  onCapoChange?: (newCapo: number) => void;
+
+  /**
+   * Semitono (0-11) de la tonalidad en la que suena la canción
+   * (tono original + transposición). null si la canción no tiene "Tono:".
+   * Lo usa la calculadora de capo.
+   */
+  soundingKeySemitone: number | null;
+  soundingKeyName: string | null;
+
   isScrolling: boolean;
+  onToggleScroll?: () => void;
   scrollSpeed: number;
+  setScrollSpeed: React.Dispatch<React.SetStateAction<number>>;
+
+  pedalSpeed: number;
+  setPedalSpeed: React.Dispatch<React.SetStateAction<number>>;
 
   isMetronomeActive: boolean;
   setIsMetronomeActive: (active: boolean) => void;
+
+  bpm: number;
+  setBpm: React.Dispatch<React.SetStateAction<number>>;
+
+  timeSignature: number;
+  setTimeSignature: (ts: number) => void;
+
+  metronomeMuted: boolean;
+  setMetronomeMuted: React.Dispatch<React.SetStateAction<boolean>>;
 
   /**
    * Beat actual del metrónomo.
@@ -111,8 +166,6 @@ interface SongViewerInfoBarProps {
    * 3 = cuarto tiempo
    */
   beat: number;
-
-  bpm: number;
 }
 
 export const SongViewerInfoBar: React.FC<
@@ -123,15 +176,41 @@ export const SongViewerInfoBar: React.FC<
   transpose,
   onTransposeChange,
   capo,
+  onCapoChange,
+  soundingKeySemitone,
+  soundingKeyName,
   isScrolling,
+  onToggleScroll,
   scrollSpeed,
+  setScrollSpeed,
+  pedalSpeed,
+  setPedalSpeed,
   isMetronomeActive,
   setIsMetronomeActive,
-  beat,
   bpm,
+  setBpm,
+  timeSignature,
+  setTimeSignature,
+  metronomeMuted,
+  setMetronomeMuted,
+  beat,
 }) => {
     const [isPickerOpen, setIsPickerOpen] =
       useState(false);
+
+    const [isCapoPickerOpen, setIsCapoPickerOpen] =
+      useState(false);
+
+    const [isMetronomeModalOpen, setIsMetronomeModalOpen] =
+      useState(false);
+
+    const [isScrollModalOpen, setIsScrollModalOpen] =
+      useState(false);
+
+    const selectCapo = (fret: number) => {
+      onCapoChange?.(fret);
+      setIsCapoPickerOpen(false);
+    };
 
     const isDownbeat =
       isMetronomeActive && beat === 0;
@@ -210,7 +289,13 @@ export const SongViewerInfoBar: React.FC<
           </TouchableOpacity>
 
           {/* Capo */}
-          <View
+          <TouchableOpacity
+            activeOpacity={0.7}
+            disabled={!onCapoChange}
+            onPress={() =>
+              onCapoChange &&
+              setIsCapoPickerOpen(true)
+            }
             style={[
               styles.infoBadge,
               capo === 0 &&
@@ -237,10 +322,26 @@ export const SongViewerInfoBar: React.FC<
                 ? `Capo ${capo}`
                 : 'Capo'}
             </Text>
-          </View>
 
-          {/* Scroll */}
-          <View
+            {onCapoChange && (
+              <ChevronDown
+                size={10}
+                color={
+                  capo > 0
+                    ? COLORS.foreground
+                    : COLORS.mutedForeground
+                }
+                style={{ marginLeft: 1 }}
+              />
+            )}
+          </TouchableOpacity>
+
+          {/* Scroll — tap corto: abrir modal de velocidad | tap largo: toggle auto-scroll */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            onPress={() => setIsScrollModalOpen(true)}
+            onLongPress={onToggleScroll}
+            delayLongPress={400}
             style={[
               styles.infoBadge,
               !isScrolling &&
@@ -264,19 +365,31 @@ export const SongViewerInfoBar: React.FC<
               ]}
             >
               {isScrolling
-                ? `${scrollSpeed}x`
+                ? `${scrollSpeed.toFixed(1)}x`
                 : 'Scroll'}
             </Text>
-          </View>
 
-          {/* Metrónomo */}
+            <ChevronDown
+              size={10}
+              color={
+                isScrolling
+                  ? COLORS.foreground
+                  : COLORS.mutedForeground
+              }
+              style={{ marginLeft: 1 }}
+            />
+          </TouchableOpacity>
+
+          {/* Metrónomo — tap corto: abrir modal | tap largo: toggle on/off */}
           <TouchableOpacity
             activeOpacity={0.7}
             onPress={() =>
-              setIsMetronomeActive(
-                !isMetronomeActive
-              )
+              setIsMetronomeModalOpen(true)
             }
+            onLongPress={() =>
+              setIsMetronomeActive(!isMetronomeActive)
+            }
+            delayLongPress={400}
             style={[
               styles.infoBadge,
               !isMetronomeActive &&
@@ -311,6 +424,18 @@ export const SongViewerInfoBar: React.FC<
                 ? `${bpm} BPM`
                 : 'BPM'}
             </Text>
+
+            <ChevronDown
+              size={10}
+              color={
+                !isMetronomeActive
+                  ? COLORS.mutedForeground
+                  : isDownbeat
+                    ? '#f59e0b'
+                    : COLORS.accent
+              }
+              style={{ marginLeft: 1 }}
+            />
           </TouchableOpacity>
         </View>
 
@@ -593,6 +718,274 @@ export const SongViewerInfoBar: React.FC<
             </TouchableOpacity>
           </Modal>
         )}
+
+        {/* Modal de Capodastro + Calculadora */}
+        {onCapoChange && (
+          <Modal
+            visible={isCapoPickerOpen}
+            transparent
+            animationType="fade"
+            onRequestClose={() =>
+              setIsCapoPickerOpen(false)
+            }
+          >
+            <TouchableOpacity
+              style={styles.modalOverlay}
+              activeOpacity={1}
+              onPress={() =>
+                setIsCapoPickerOpen(false)
+              }
+            >
+              <TouchableOpacity
+                activeOpacity={1}
+                style={[
+                  styles.modalContent,
+                  styles.capoModalContent,
+                ]}
+              >
+                <View style={styles.modalHeader}>
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 6,
+                    }}
+                  >
+                    <Hash
+                      size={16}
+                      color={COLORS.accent}
+                    />
+
+                    <Text style={styles.modalTitle}>
+                      Capodastro
+                    </Text>
+                  </View>
+
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: 10,
+                    }}
+                  >
+                    {capo !== 0 && (
+                      <TouchableOpacity
+                        onPress={() => selectCapo(0)}
+                        style={styles.resetButton}
+                      >
+                        <RotateCcw
+                          size={12}
+                          color={COLORS.accent}
+                        />
+
+                        <Text style={styles.resetText}>
+                          Quitar
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+
+                    <TouchableOpacity
+                      onPress={() =>
+                        setIsCapoPickerOpen(false)
+                      }
+                      style={styles.closeButton}
+                    >
+                      <X
+                        size={16}
+                        color={COLORS.mutedForeground}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Text style={styles.modalSubtitle}>
+                    Elegí el traste donde va el capo:
+                  </Text>
+
+                  <View style={styles.capoGrid}>
+                    {CAPO_FRETS.map(val => (
+                      <TouchableOpacity
+                        key={val}
+                        style={[
+                          styles.capoBtn,
+                          capo === val &&
+                          styles.capoBtnActive,
+                        ]}
+                        onPress={() => selectCapo(val)}
+                      >
+                        <Text
+                          style={[
+                            styles.capoText,
+                            capo === val &&
+                            styles.capoTextActive,
+                          ]}
+                        >
+                          {val === 0 ? 'Off' : val}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  {/* Calculadora de Capo */}
+                  {soundingKeySemitone !== null ? (
+                    <>
+                      <View style={styles.capoCalcHeader}>
+                        <Text style={styles.capoCalcTitle}>
+                          Calculadora de capo
+                        </Text>
+
+                        <View style={styles.capoCalcKeyBadge}>
+                          <Text
+                            style={
+                              styles.capoCalcKeyBadgeText
+                            }
+                          >
+                            Suena en {soundingKeyName}
+                          </Text>
+                        </View>
+                      </View>
+
+                      <Text style={styles.capoCalcSubtitle}>
+                        Tocá en la tonalidad que quieras —
+                        el capo se ajusta solo.
+                      </Text>
+
+                      <View style={styles.capoCalcGrid}>
+                        {CAPO_NOTES.map(
+                          (note, targetSemitone) => {
+                            const fret =
+                              (soundingKeySemitone -
+                                targetSemitone +
+                                12) %
+                              12;
+
+                            const isPractical =
+                              fret >= 1 && fret <= 7;
+
+                            const isCurrent =
+                              fret === 0;
+
+                            const isActive =
+                              capo === fret &&
+                              !isCurrent;
+
+                            return (
+                              <TouchableOpacity
+                                key={note}
+                                style={[
+                                  styles.capoCalcBtn,
+                                  isCurrent &&
+                                  styles.capoCalcBtnCurrent,
+                                  isActive &&
+                                  styles.capoCalcBtnActive,
+                                  !isPractical &&
+                                  !isCurrent &&
+                                  styles.capoCalcBtnDim,
+                                ]}
+                                onPress={() =>
+                                  selectCapo(fret)
+                                }
+                              >
+                                <Text
+                                  style={[
+                                    styles.capoCalcNote,
+                                    isCurrent && {
+                                      color: COLORS.accent,
+                                    },
+                                    isActive && {
+                                      color: '#fff',
+                                    },
+                                    !isPractical &&
+                                    !isCurrent && {
+                                      color:
+                                        COLORS.mutedForeground,
+                                    },
+                                  ]}
+                                >
+                                  {CAPO_NOTE_LABELS[note] ||
+                                    note}
+                                </Text>
+
+                                <Text
+                                  style={[
+                                    styles.capoCalcFret,
+                                    isPractical &&
+                                    !isCurrent && {
+                                      color: '#4ade80',
+                                    },
+                                    isCurrent && {
+                                      color: COLORS.accent,
+                                    },
+                                    isActive && {
+                                      color: '#fff',
+                                    },
+                                    !isPractical &&
+                                    !isCurrent && {
+                                      color:
+                                        COLORS.mutedForeground,
+                                    },
+                                  ]}
+                                >
+                                  {isCurrent
+                                    ? 'sin capo'
+                                    : `traste ${fret}`}
+                                </Text>
+                              </TouchableOpacity>
+                            );
+                          }
+                        )}
+                      </View>
+                    </>
+                  ) : (
+                    <View style={styles.capoCalcWarning}>
+                      <AlertTriangle
+                        size={16}
+                        color="#fbbf24"
+                        style={{ marginRight: 8 }}
+                      />
+
+                      <Text
+                        style={styles.capoCalcWarningText}
+                      >
+                        La calculadora de capo no está
+                        disponible porque esta canción no
+                        tiene especificado su tono original
+                        (Tono:).
+                      </Text>
+                    </View>
+                  )}
+                </ScrollView>
+              </TouchableOpacity>
+            </TouchableOpacity>
+          </Modal>
+        )}
+
+        {/* Modal metrónomo */}
+        <MetronomeModal
+          visible={isMetronomeModalOpen}
+          onClose={() => setIsMetronomeModalOpen(false)}
+          isMetronomeActive={isMetronomeActive}
+          setIsMetronomeActive={setIsMetronomeActive}
+          bpm={bpm}
+          setBpm={setBpm}
+          timeSignature={timeSignature}
+          setTimeSignature={setTimeSignature}
+          metronomeMuted={metronomeMuted}
+          setMetronomeMuted={setMetronomeMuted}
+        />
+
+        {/* Modal scroll + pedal */}
+        <ScrollPedalModal
+          visible={isScrollModalOpen}
+          onClose={() => setIsScrollModalOpen(false)}
+          scrollSpeed={scrollSpeed}
+          setScrollSpeed={setScrollSpeed}
+          pedalSpeed={pedalSpeed}
+          setPedalSpeed={setPedalSpeed}
+        />
       </>
     );
   };
@@ -784,5 +1177,136 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     minWidth: 45,
     textAlign: 'center',
+  },
+
+  capoModalContent: {
+    maxHeight: '90%',
+  },
+
+  capoGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  capoBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#27272a',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+  },
+
+  capoBtnActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+
+  capoText: {
+    color: COLORS.foreground,
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+
+  capoTextActive: {
+    color: '#fff',
+  },
+
+  capoCalcHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 18,
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: COLORS.cardBorder,
+  },
+
+  capoCalcTitle: {
+    color: COLORS.foreground,
+    fontSize: 13,
+    fontWeight: 'bold',
+  },
+
+  capoCalcKeyBadge: {
+    backgroundColor: 'rgba(59, 130, 246, 0.2)',
+    borderColor: COLORS.accent,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+
+  capoCalcKeyBadgeText: {
+    color: COLORS.accent,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+
+  capoCalcSubtitle: {
+    color: COLORS.mutedForeground,
+    fontSize: 12,
+    marginTop: 6,
+    marginBottom: 10,
+  },
+
+  capoCalcGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+
+  capoCalcBtn: {
+    width: '23%',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    borderRadius: 8,
+    backgroundColor: '#27272a',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#3f3f46',
+  },
+
+  capoCalcBtnCurrent: {
+    borderColor: COLORS.accent,
+    backgroundColor: 'rgba(59, 130, 246, 0.15)',
+  },
+
+  capoCalcBtnActive: {
+    backgroundColor: COLORS.accent,
+    borderColor: COLORS.accent,
+  },
+
+  capoCalcBtnDim: {
+    opacity: 0.4,
+  },
+
+  capoCalcNote: {
+    color: COLORS.foreground,
+    fontWeight: 'bold',
+    fontSize: 13,
+  },
+
+  capoCalcFret: {
+    fontSize: 10,
+    marginTop: 2,
+  },
+
+  capoCalcWarning: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.1)',
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderWidth: 1,
+    borderRadius: 8,
+    padding: 10,
+    marginTop: 16,
+  },
+
+  capoCalcWarningText: {
+    color: '#fbbf24',
+    fontSize: 12,
+    flex: 1,
   },
 });

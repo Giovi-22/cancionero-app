@@ -17,6 +17,7 @@ import {
     ChevronRight,
     Sparkles,
     Trash2,
+    Pencil,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import { useBandInvitations } from '../../../src/hooks/useBandInvitations';
@@ -31,6 +32,7 @@ import { BandMemberList } from '../../../src/components/band/BandMemberList';
 import { useAppContext } from '../../../src/context/AppContext';
 import { SentInvitationsList } from '../../../src/components/band/SentInvitationsList';
 import AppModal from '../../../src/components/common/AppModal';
+import { EditBandModal } from '../../../src/components/band/EditBandModal';
 import { useUserContext } from '../../../src/context/UserContext';
 import { useBandContext } from '../../../src/context/BandContext';
 
@@ -74,6 +76,7 @@ export default function BandScreen() {
         loading,
         selectBand,
         createBand,
+        updateBand,
         deleteBand,
     } = useBandContext();
 
@@ -125,6 +128,13 @@ export default function BandScreen() {
     const [
         isDeletingBand,
         setIsDeletingBand,
+    ] = useState(false);
+
+    //--------------------------
+    //Actualizar banda
+    const [
+        isEditBandModalOpen,
+        setIsEditBandModalOpen,
     ] = useState(false);
 
     // ============================================================
@@ -242,12 +252,54 @@ export default function BandScreen() {
     // ============================================================
     const handleCreateBand = async (
         name: string,
-        description: string
+        description: string,
+        driveFolderId: string,
+        driveFolderName: string
     ) => {
-        await createBand(
+        const result = await createBand(
             name,
-            description
+            description,
+            driveFolderId,
+            driveFolderName
         );
+
+        console.log('resultado de la creación:', result);
+    };
+
+    const handleUpdateBand = async (
+        name: string,
+        description: string,
+        driveFolderId: string,
+        driveFolderName: string
+    ) => {
+        if (!selectedBand) {
+            return;
+        }
+
+        await updateBand(
+            selectedBand.id,
+            name,
+            description,
+            driveFolderId,
+            driveFolderName
+        );
+    };
+
+    const handleEditBand = () => {
+        if (!selectedBand) {
+            return;
+        }
+
+        if (userRole !== 'owner') {
+            showFeedbackModal(
+                'warning',
+                'Acceso restringido',
+                'Solo el propietario puede editar la banda.'
+            );
+            return;
+        }
+
+        setIsEditBandModalOpen(true);
     };
 
     // ============================================================
@@ -658,13 +710,26 @@ export default function BandScreen() {
                                         </Text>
                                     </View>
 
-                                    <Text
-                                        style={
-                                            styles.bandName
-                                        }
-                                    >
-                                        {selectedBand.name}
-                                    </Text>
+                                    <View style={styles.bandNameRow}>
+                                        <Text
+                                            style={styles.bandName}
+                                            numberOfLines={1}
+                                        >
+                                            {selectedBand.name}
+                                        </Text>
+
+                                        {userRole === 'owner' && (
+                                            <TouchableOpacity
+                                                style={styles.editBandButton}
+                                                onPress={handleEditBand}
+                                            >
+                                                <Pencil
+                                                    size={17}
+                                                    color={COLORS.mutedForeground}
+                                                />
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
 
                                     {selectedBand.description ? (
                                         <Text
@@ -1081,6 +1146,15 @@ export default function BandScreen() {
                 onCreate={handleCreateBand}
             />
 
+            <EditBandModal
+                visible={isEditBandModalOpen}
+                band={selectedBand}
+                onClose={() =>
+                    setIsEditBandModalOpen(false)
+                }
+                onSave={handleUpdateBand}
+            />
+
             {/* Modal para Invitar Miembros */}
             <InviteMemberModal
                 visible={isInviteModalOpen}
@@ -1464,5 +1538,24 @@ const styles = StyleSheet.create({
 
     deleteBandButton: {
         width: '100%',
+    },
+
+    bandNameRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 2,
+    },
+
+    editBandButton: {
+        marginLeft: 10,
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor:
+            'rgba(255,255,255,0.05)',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

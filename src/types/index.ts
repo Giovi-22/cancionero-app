@@ -42,7 +42,7 @@ export interface Setlist {
   notes?: string;
   songNotes?: Record<string, string>;
   lastUpdated?: string;
-  libraryId?: string;
+  libraryId: string;
 }
 
 export * from './band';

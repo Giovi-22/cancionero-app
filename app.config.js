@@ -5,7 +5,7 @@ module.exports = {
     name: IS_DEV ? 'Cancionero (Dev)' : 'Cancionero Mobile',
     slug: 'App-cancionero-mobile',
     scheme: 'cancionero-app',
-    version: '1.1.0',
+    version: '1.2.0',
     orientation: 'portrait',
     icon: './assets/app-icon-v3.png',
     userInterfaceStyle: 'dark',
@@ -55,7 +55,14 @@ module.exports = {
       'expo-updates',
       '@react-native-firebase/app',
       '@react-native-firebase/auth',
-      '@react-native-google-signin/google-signin'
+      '@react-native-google-signin/google-signin',
+      [
+        '@isvend/expo-udp',
+        {
+          localNetworkUsageDescription:
+            'Esta aplicación utiliza la red local para comunicarse con dispositivos como el pedal Cancionero.'
+        }
+      ]
     ],
     extra: {
       router: {},
