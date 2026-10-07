@@ -156,6 +156,13 @@ class PedalServiceClass {
         return found;
     }
 
+    /**
+     * Detiene la escucha activa de discovery UDP si está en curso.
+     */
+    stopDiscover(): void {
+        wifiPedalAdapter.stopDiscover();
+    }
+
     // ──────────────────────────────────────────────────────────
     // WiFi — Conexión TCP
     // ──────────────────────────────────────────────────────────

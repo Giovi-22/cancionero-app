@@ -20,6 +20,10 @@ export default function SettingsLayout() {
                 headerShown: true,
                 title: "Configuración"
             }} />
+            <Stack.Screen name="pedal-wifi" options={{
+                headerShown: true,
+                title: "Pedal WiFi"
+            }} />
             <Stack.Screen name="debug" />
         </Stack>
     );

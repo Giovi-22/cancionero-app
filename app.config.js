@@ -7,17 +7,17 @@ module.exports = {
     scheme: 'cancionero-app',
     version: '1.2.0',
     orientation: 'portrait',
-    icon: './assets/app-icon-v3.png',
+    icon: './assets/app-icon.png',
     userInterfaceStyle: 'dark',
     newArchEnabled: true,
     splash: {
-      image: './assets/splash-icon.png',
+      image: './assets/selah-splash.png',
       resizeMode: 'contain',
-      backgroundColor: '#ffffff'
+      backgroundColor: '#171B1E'
     },
     ios: {
       supportsTablet: true,
-      icon: './assets/app-icon-v3.png',
+      icon: './assets/app-icon.png',
       bundleIdentifier: IS_DEV ? 'com.giovi.cancionero.dev' : 'com.giovi.cancionero'
     },
     androidNavigationBar: {
@@ -30,8 +30,8 @@ module.exports = {
       versionCode: 2,
       googleServicesFile: './google-services.json',
       adaptiveIcon: {
-        foregroundImage: './assets/app-icon-v3.png',
-        backgroundColor: '#ffffff'
+        foregroundImage: './assets/app-icon.png',
+        backgroundColor: '#171B1E'
       },
       edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false

@@ -51,6 +51,8 @@ export class WifiPedalAdapter implements IPedalAdapter {
         return this.lastDiscoveredDevice;
     }
 
+    private stopDiscoveryFn: (() => void) | null = null;
+
     /**
      * Escucha pasivamente en el puerto UDP 4444 los anuncios broadcast del ESP32.
      * NUNCA inicia conexión TCP automáticamente.
@@ -88,6 +90,7 @@ export class WifiPedalAdapter implements IPedalAdapter {
                     if (finished) return;
                     finished = true;
                     this.discovering = false;
+                    this.stopDiscoveryFn = null;
                     resolve(device);
                 };
 
@@ -121,16 +124,27 @@ export class WifiPedalAdapter implements IPedalAdapter {
                     }
                 );
 
-                setTimeout(() => {
+                const timer = setTimeout(() => {
                     subscription.remove();
                     finish(null);
                 }, timeoutMs);
+
+                this.stopDiscoveryFn = () => {
+                    clearTimeout(timer);
+                    try {
+                        subscription.remove();
+                    } catch {
+                        // Ignorar
+                    }
+                    finish(null);
+                };
             });
         } catch (error) {
             console.error('[WifiPedalAdapter] Error en discovery UDP:', error);
             this.discovering = false;
             return null;
         } finally {
+            this.stopDiscoveryFn = null;
             if (socket) {
                 try {
                     await socket.close();
@@ -138,6 +152,18 @@ export class WifiPedalAdapter implements IPedalAdapter {
                     // Ignorar error al cerrar socket UDP
                 }
             }
+        }
+    }
+
+    /**
+     * Detiene la búsqueda/escucha activa UDP inmediatamente.
+     */
+    stopDiscover(): void {
+        if (this.stopDiscoveryFn) {
+            console.log('[WifiPedalAdapter] Deteniendo discovery UDP manual...');
+            this.stopDiscoveryFn();
+        } else {
+            this.discovering = false;
         }
     }
 

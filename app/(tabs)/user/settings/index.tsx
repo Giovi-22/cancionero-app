@@ -4,18 +4,16 @@ import {
     Alert,
     StyleSheet,
     Text,
-    TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
 import {
-    BookOpen,
     Bluetooth,
     Bug,
     ChevronRight,
     RefreshCw,
-    Search,
     ShieldAlert,
+    Wifi,
 } from 'lucide-react-native';
 import { router } from 'expo-router';
 import * as Updates from 'expo-updates';
@@ -25,9 +23,8 @@ import { checkAndFetchUpdate } from '../../../../src/hooks/useOtaUpdate';
 
 import { COLORS } from '../../../../src/constants/theme';
 import { useAppContext } from '../../../../src/context/AppContext';
-import { useUserContext } from '../../../../src/context/UserContext';
 import AppModal from '../../../../src/components/common/AppModal';
-import { PedalSettings } from '../../../../src/components/pedal/PedalSettings';
+import { usePedal } from '../../../../src/hooks/usePedal';
 import { ScrollView } from 'react-native-gesture-handler';
 import CardContainer from '@/src/components/common/CardContainer';
 
@@ -36,16 +33,16 @@ export default function SettingsScreen() {
 
     const {
         isSyncing,
-        setIsLibrariesOpen,
-        activeLibrary,
-        driveFolderId,
-        handleSaveConfig,
-        openFolderPicker,
         handleClearRepertoire,
-        isLoadingFolders,
     } = useAppContext();
 
-    const { user } = useUserContext();
+    const { connected: pedalConnected, device: pedalDevice } = usePedal();
+
+    const wifiSubtitle = pedalConnected
+        ? 'Conectado'
+        : pedalDevice
+            ? 'Pedal encontrado en la red'
+            : 'Buscar y conectar pedal por WiFi';
 
     const [isClearRepertoireModalVisible, setIsClearRepertoireModalVisible] =
         useState(false);
@@ -122,102 +119,29 @@ export default function SettingsScreen() {
             <View style={styles.container}>
 
 
-                {/* Repertorio */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>
-                        Repertorio
-                    </Text>
-
+                {/* Pedal */}
+                <CardContainer title='Pedal'>
                     <View style={styles.card}>
-                        <View style={styles.settingRow}>
-                            <View style={styles.iconContainer}>
-                                <BookOpen
+                        <SettingRow
+                            icon={
+                                <Wifi
                                     size={21}
                                     color={
-                                        activeLibrary?.color ||
-                                        COLORS.accent
+                                        pedalConnected
+                                            ? '#22c55e'
+                                            : COLORS.accent
                                     }
                                 />
-                            </View>
-
-                            <View style={styles.rowContent}>
-                                <Text style={styles.rowTitle}>
-                                    Biblioteca Activa
-                                </Text>
-
-                                <Text style={styles.rowSubtitle}>
-                                    {activeLibrary?.name ||
-                                        'Cargando...'}
-                                </Text>
-                            </View>
-
-                            <TouchableOpacity
-                                style={styles.actionButton}
-                                onPress={() =>
-                                    setIsLibrariesOpen(true)
-                                }
-                                activeOpacity={0.7}
-                            >
-                                <Text style={styles.actionButtonText}>
-                                    Administrar
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
+                            }
+                            title="Pedal WiFi"
+                            subtitle={wifiSubtitle}
+                            onPress={() =>
+                                router.push('/user/settings/pedal-wifi')
+                            }
+                        />
 
                         <View style={styles.divider} />
 
-                        <View style={styles.settingRow}>
-                            <View style={styles.iconContainer}>
-                                <Search
-                                    size={21}
-                                    color={COLORS.foreground}
-                                />
-                            </View>
-
-                            <View style={styles.rowContent}>
-                                <Text style={styles.rowTitle}>
-                                    Carpeta de Canciones
-                                </Text>
-
-                                <TextInput
-                                    style={styles.input}
-                                    value={driveFolderId}
-                                    onChangeText={handleSaveConfig}
-                                    placeholder="ID de la carpeta Drive..."
-                                    placeholderTextColor={
-                                        COLORS.mutedForeground
-                                    }
-                                    autoCapitalize="none"
-                                    autoCorrect={false}
-                                />
-                            </View>
-
-                            <TouchableOpacity
-                                style={styles.browseButton}
-                                onPress={() => openFolderPicker()}
-                                disabled={!user || isLoadingFolders}
-                                activeOpacity={0.7}
-                            >
-                                {isLoadingFolders ? (
-                                    <ActivityIndicator
-                                        size="small"
-                                        color="#fff"
-                                    />
-                                ) : (
-                                    <Search
-                                        size={18}
-                                        color="#fff"
-                                    />
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                </View>
-
-                {/* Pedal */}
-                <CardContainer title='Pedal'>
-                    <PedalSettings />
-                    <View style={[styles.card, { marginTop: 10 }]}>
                         <SettingRow
                             icon={
                                 <Bluetooth
@@ -527,37 +451,7 @@ const styles = StyleSheet.create({
         marginVertical: 4,
     },
 
-    actionButton: {
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        paddingVertical: 7,
-        paddingHorizontal: 12,
-        borderRadius: 20,
-    },
 
-    actionButtonText: {
-        color: COLORS.foreground,
-        fontSize: 12,
-        fontWeight: '600',
-    },
 
-    input: {
-        backgroundColor: 'rgba(0,0,0,0.2)',
-        color: COLORS.foreground,
-        paddingHorizontal: 10,
-        paddingVertical: 7,
-        borderRadius: 7,
-        borderWidth: 1,
-        borderColor: COLORS.border,
-        fontSize: 12,
-        marginTop: 6,
-    },
 
-    browseButton: {
-        backgroundColor: COLORS.accent,
-        width: 40,
-        height: 40,
-        borderRadius: 10,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
 });

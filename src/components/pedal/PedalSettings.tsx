@@ -18,6 +18,7 @@ export const PedalSettings: React.FC = () => {
         discovering,
         device,
         discover,
+        stopDiscover,
         connect,
         disconnect,
     } = usePedal();
@@ -42,7 +43,10 @@ export const PedalSettings: React.FC = () => {
     };
 
     const handleDiscover = async () => {
-        if (discovering) return;
+        if (discovering) {
+            stopDiscover();
+            return;
+        }
         setConnectError(null);
         try {
             await discover();
@@ -139,17 +143,16 @@ export const PedalSettings: React.FC = () => {
                     <TouchableOpacity
                         style={[
                             styles.discoverButton,
-                            discovering && styles.buttonDisabled,
+                            discovering && styles.stopButtonDiscover,
                         ]}
                         onPress={handleDiscover}
-                        disabled={discovering}
                         activeOpacity={0.8}
                     >
                         {discovering ? (
                             <>
-                                <ActivityIndicator size="small" color={COLORS.accent} />
-                                <Text style={styles.discoverButtonText}>
-                                    Buscando pedal...
+                                <ActivityIndicator size="small" color="#ef4444" />
+                                <Text style={[styles.discoverButtonText, { color: '#ef4444' }]}>
+                                    Detener
                                 </Text>
                             </>
                         ) : (
@@ -272,6 +275,10 @@ const styles = StyleSheet.create({
         color: COLORS.accent,
         fontSize: 13,
         fontWeight: '600',
+    },
+    stopButtonDiscover: {
+        backgroundColor: 'rgba(239, 68, 68, 0.12)',
+        borderColor: 'rgba(239, 68, 68, 0.3)',
     },
     buttonDisabled: {
         opacity: 0.6,

@@ -1,4 +1,4 @@
-import { Stack, usePathname } from "expo-router";
+import { Stack } from "expo-router";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useEffect } from "react";
@@ -6,21 +6,25 @@ import { useOtaUpdate } from "../src/hooks/useOtaUpdate";
 import { Platform, View } from "react-native";
 import * as NavigationBar from "expo-navigation-bar";
 import { StatusBar } from "expo-status-bar";
+import * as SplashScreen from "expo-splash-screen";
 
 import { AppContextProvider } from "../src/context/AppContext";
 import { COLORS } from "../src/constants/theme";
 
 import { FolderPickerModal } from "../src/components/FolderPickerModal";
 import { LibrarySelectorModal } from "../src/components/LibrarySelectorModal";
-//import { DirectorSessionBanner } from "../src/components/DirectorSessionBanner";
 
-//App Contexts
+// App Contexts
 import { useAppContext } from "../src/context/AppContext";
-import { UserContextProvider } from "../src/context/UserContext";
+import { UserContextProvider, useUserContext } from "../src/context/UserContext";
 import { DebugContextProvider } from "../src/context/DebugContext";
 import { BandContextProvider } from "../src/context/BandContext";
 import CreateSetlistModal from "../src/components/CreateSetlistModal";
 import EditSetlistModal from "../src/components/EditSetlistModal";
+import SelahSplashScreen from "../src/screens/SelashSplashScreen";
+
+// Mantener la splash nativa visible hasta que nuestra app esté lista
+SplashScreen.preventAutoHideAsync();
 
 function GlobalModals() {
     const { isLibrariesOpen, setIsLibrariesOpen } = useAppContext();
@@ -32,6 +36,27 @@ function GlobalModals() {
             <FolderPickerModal />
         </>
     );
+}
+
+/**
+ * Pantalla de transición React: se muestra mientras Firebase resuelve
+ * el estado inicial de autenticación. Cuando termina, oculta la splash
+ * nativa y cede el paso a la navegación normal.
+ */
+function AppWithSplash({ children }: { children: React.ReactNode }) {
+    const { isLoading } = useUserContext();
+
+    useEffect(() => {
+        if (!isLoading) {
+            SplashScreen.hideAsync();
+        }
+    }, [isLoading]);
+
+    if (isLoading) {
+        return <SelahSplashScreen />;
+    }
+
+    return <>{children}</>;
 }
 
 /**
@@ -85,24 +110,26 @@ export default function RootLayout() {
                     <BandContextProvider>
                         <DebugContextProvider>
                             <AppContextProvider>
-                                <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-                                    {/*<GlobalDirectorBanner />*/}
-                                    <View style={{ flex: 1 }}>
-                                        <Stack
-                                            screenOptions={{
-                                                headerShown: false,
-                                            }}
-                                        >
-                                            <Stack.Screen name="(tabs)" />
-                                            <Stack.Screen name="song/[id]" />
-                                            <Stack.Screen name="pedal-config" />
-                                            <Stack.Screen
-                                                name="setlist-player/[setlistId]"
-                                                options={{ animation: 'slide_from_bottom' }}
-                                            />
-                                        </Stack>
+                                <AppWithSplash>
+                                    <View style={{ flex: 1, backgroundColor: COLORS.background }}>
+                                        {/*<GlobalDirectorBanner />*/}
+                                        <View style={{ flex: 1 }}>
+                                            <Stack
+                                                screenOptions={{
+                                                    headerShown: false,
+                                                }}
+                                            >
+                                                <Stack.Screen name="(tabs)" />
+                                                <Stack.Screen name="song/[id]" />
+                                                <Stack.Screen name="pedal-config" />
+                                                <Stack.Screen
+                                                    name="setlist-player/[setlistId]"
+                                                    options={{ animation: 'slide_from_bottom' }}
+                                                />
+                                            </Stack>
+                                        </View>
                                     </View>
-                                </View>
+                                </AppWithSplash>
                                 <GlobalModals />
                             </AppContextProvider>
                         </DebugContextProvider>
