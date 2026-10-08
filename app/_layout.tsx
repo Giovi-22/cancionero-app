@@ -3,7 +3,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { useEffect } from "react";
 import { useOtaUpdate } from "../src/hooks/useOtaUpdate";
-import { Platform, View } from "react-native";
+import { Platform, View, StyleSheet, Animated } from "react-native";
 import * as NavigationBar from "expo-navigation-bar";
 import { StatusBar } from "expo-status-bar";
 import * as SplashScreen from "expo-splash-screen";
@@ -21,7 +21,7 @@ import { DebugContextProvider } from "../src/context/DebugContext";
 import { BandContextProvider } from "../src/context/BandContext";
 import CreateSetlistModal from "../src/components/CreateSetlistModal";
 import EditSetlistModal from "../src/components/EditSetlistModal";
-import SelahSplashScreen from "../src/screens/SelashSplashScreen";
+import AppWithSplash from "@/src/screens/SplashScreen";
 
 // Mantener la splash nativa visible hasta que nuestra app esté lista
 SplashScreen.preventAutoHideAsync();
@@ -38,51 +38,8 @@ function GlobalModals() {
     );
 }
 
-/**
- * Pantalla de transición React: se muestra mientras Firebase resuelve
- * el estado inicial de autenticación. Cuando termina, oculta la splash
- * nativa y cede el paso a la navegación normal.
- */
-function AppWithSplash({ children }: { children: React.ReactNode }) {
-    const { isLoading } = useUserContext();
 
-    useEffect(() => {
-        if (!isLoading) {
-            SplashScreen.hideAsync();
-        }
-    }, [isLoading]);
 
-    if (isLoading) {
-        return <SelahSplashScreen />;
-    }
-
-    return <>{children}</>;
-}
-
-/**
- * Banner global de Director Mode.
- *
- * Se renderiza como un elemento real en el flujo de flex layout arriba del Stack,
- * ocupando su propio espacio vertical (NO usa position absolute ni tapa la UI).
- *
- * Aplica insets.top para situarse debajo de la barra de estado del sistema.
- * Si el usuario se encuentra dentro de /setlist-player o /song/[id], no se renderiza
- * para evitar duplicar controles ya presentes en el SongViewer.
- */
-/*
-function GlobalDirectorBanner() {
-    const pathname = usePathname();
-
-    // No mostrar el banner si ya estamos en el reproductor de setlists o en el visor de canción
-    if (pathname?.includes('/setlist-player') || pathname?.includes('/song/')) {
-        return null;
-    }
-
-    return (
-        <DirectorSessionBanner />
-    );
-}
-*/
 export default function RootLayout() {
     useOtaUpdate();
 
@@ -102,7 +59,7 @@ export default function RootLayout() {
             <SafeAreaProvider
                 style={{
                     flex: 1,
-                    backgroundColor: COLORS.background,
+                    backgroundColor: COLORS.background, // Asegúrate de que apunte a '#121316'
                 }}
             >
                 <UserContextProvider>
@@ -112,7 +69,6 @@ export default function RootLayout() {
                             <AppContextProvider>
                                 <AppWithSplash>
                                     <View style={{ flex: 1, backgroundColor: COLORS.background }}>
-                                        {/*<GlobalDirectorBanner />*/}
                                         <View style={{ flex: 1 }}>
                                             <Stack
                                                 screenOptions={{

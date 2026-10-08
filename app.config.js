@@ -2,7 +2,7 @@ const IS_DEV = process.env.APP_VARIANT === 'development';
 
 module.exports = {
   expo: {
-    name: IS_DEV ? 'Cancionero (Dev)' : 'Cancionero Mobile',
+    name: IS_DEV ? 'SELAH (Dev)' : 'SELAH',
     slug: 'App-cancionero-mobile',
     scheme: 'cancionero-app',
     version: '1.2.0',
@@ -11,7 +11,7 @@ module.exports = {
     userInterfaceStyle: 'dark',
     newArchEnabled: true,
     splash: {
-      image: './assets/selah-splash.png',
+      image: './assets/app-icon.png',
       resizeMode: 'contain',
       backgroundColor: '#171B1E'
     },

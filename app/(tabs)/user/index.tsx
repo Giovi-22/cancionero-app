@@ -7,6 +7,7 @@ import {
     ScrollView,
     ActivityIndicator,
     TextInput,
+    Image
 } from 'react-native';
 import { router } from 'expo-router';
 import {
@@ -28,6 +29,7 @@ import { authService } from '../../../src/services/AuthService';
 
 import packageJson from '../../../package.json';
 import AppModal from '../../../src/components/common/AppModal';
+import CardContainer from '@/src/components/common/CardContainer';
 
 const APP_VERSION =
     Constants.expoConfig?.version ||
@@ -330,14 +332,17 @@ export default function UserTab() {
                 </View>
 
                 {/* Información de la aplicación */}
-                <View style={styles.footerContainer}>
-                    <Text style={styles.footerAppName}>
-                        Cancionero Mobile
-                    </Text>
+                <View >
+                    <View style={styles.footerContainer}>
+                        <Image
+                            source={require('@/assets/app-icon-selah.png')}
+                            style={styles.footerAppIcon}
+                        />
 
-                    <Text style={styles.footerVersion}>
-                        Versión {APP_VERSION}
-                    </Text>
+                        <Text style={styles.footerVersion}>
+                            Versión {APP_VERSION}
+                        </Text>
+                    </View>
                 </View>
             </ScrollView>
 
@@ -586,6 +591,13 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: COLORS.mutedForeground,
         marginBottom: 2,
+    },
+    footerAppIcon: {
+        width: 86,
+        height: 86,
+        borderRadius: 12, // Bordes redondeados modernos estilo app
+        marginBottom: 8,
+        resizeMode: 'contain',
     },
 
     footerVersion: {

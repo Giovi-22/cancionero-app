@@ -121,172 +121,165 @@ export default function SettingsScreen() {
 
                 {/* Pedal */}
                 <CardContainer title='Pedal'>
-                    <View style={styles.card}>
-                        <SettingRow
-                            icon={
-                                <Wifi
-                                    size={21}
-                                    color={
-                                        pedalConnected
-                                            ? '#22c55e'
-                                            : COLORS.accent
-                                    }
-                                />
-                            }
-                            title="Pedal WiFi"
-                            subtitle={wifiSubtitle}
-                            onPress={() =>
-                                router.push('/user/settings/pedal-wifi')
-                            }
-                        />
 
-                        <View style={styles.divider} />
+                    <SettingRow
+                        icon={
+                            <Wifi
+                                size={21}
+                                color={
+                                    pedalConnected
+                                        ? '#22c55e'
+                                        : COLORS.accent
+                                }
+                            />
+                        }
+                        title="Pedal WiFi"
+                        subtitle={wifiSubtitle}
+                        onPress={() =>
+                            router.push('/user/settings/pedal-wifi')
+                        }
+                    />
 
-                        <SettingRow
-                            icon={
-                                <Bluetooth
-                                    size={21}
-                                    color={COLORS.accent}
-                                />
-                            }
-                            title="Pedal Bluetooth"
-                            subtitle="Configurar acciones de scroll y cambio"
-                            onPress={() =>
-                                router.push('/pedal-config')
-                            }
-                        />
-                    </View>
+                    <View style={styles.divider} />
+
+                    <SettingRow
+                        icon={
+                            <Bluetooth
+                                size={21}
+                                color={COLORS.accent}
+                            />
+                        }
+                        title="Pedal Bluetooth"
+                        subtitle="Configurar acciones de scroll y cambio"
+                        onPress={() =>
+                            router.push('/pedal-config')
+                        }
+                    />
+
                 </CardContainer>
 
                 {/* Aplicación */}
                 <CardContainer title='Aplicación'>
-                    <View style={styles.card}>
-                        <TouchableOpacity
-                            style={styles.settingRow}
-                            onPress={handleCheckUpdate}
-                            disabled={isCheckingUpdate}
-                            activeOpacity={0.7}
-                        >
-                            <View style={styles.iconContainer}>
-                                {isCheckingUpdate ? (
-                                    <ActivityIndicator
-                                        size="small"
-                                        color={COLORS.accent}
-                                    />
-                                ) : (
-                                    <RefreshCw
-                                        size={21}
-                                        color={COLORS.accent}
-                                    />
-                                )}
-                            </View>
 
-                            <View style={styles.rowContent}>
-                                <Text style={styles.rowTitle}>
-                                    {isCheckingUpdate
-                                        ? 'Buscando...'
-                                        : 'Buscar actualizaciones'}
-                                </Text>
-
-                                <Text style={styles.rowSubtitle}>
-                                    {'Update: ' + (Updates.updateId?.slice(0, 8) ?? 'embebido') +
-                                        '  ·  v' + (Application.nativeApplicationVersion ?? '-')}
-                                </Text>
-
-                                <Text style={[styles.rowSubtitle, { marginTop: 1 }]}>
-                                    {'Canal: ' + (Updates.channel ?? '-') +
-                                        '  ·  ' + (Updates.createdAt?.toLocaleString() ?? '-')}
-                                </Text>
-                            </View>
-
-                            {!isCheckingUpdate && (
-                                <ChevronRight
-                                    size={20}
-                                    color={COLORS.mutedForeground}
-                                    opacity={0.6}
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={handleCheckUpdate}
+                        disabled={isCheckingUpdate}
+                        activeOpacity={0.7}
+                    >
+                        <View style={styles.iconContainer}>
+                            {isCheckingUpdate ? (
+                                <ActivityIndicator
+                                    size="small"
+                                    color={COLORS.accent}
+                                />
+                            ) : (
+                                <RefreshCw
+                                    size={21}
+                                    color={COLORS.accent}
                                 />
                             )}
-                        </TouchableOpacity>
-                    </View>
+                        </View>
+
+                        <View style={styles.rowContent}>
+                            <Text style={styles.rowTitle}>
+                                {isCheckingUpdate
+                                    ? 'Buscando...'
+                                    : 'Buscar actualizaciones'}
+                            </Text>
+
+                            <Text style={styles.rowSubtitle}>
+                                {'Update: ' + (Updates.updateId?.slice(0, 8) ?? 'embebido') +
+                                    '  ·  v' + (Application.nativeApplicationVersion ?? '-')}
+                            </Text>
+
+                            <Text style={[styles.rowSubtitle, { marginTop: 1 }]}>
+                                {'Canal: ' + (Updates.channel ?? '-') +
+                                    '  ·  ' + (Updates.createdAt?.toLocaleString() ?? '-')}
+                            </Text>
+                        </View>
+
+                        {!isCheckingUpdate && (
+                            <ChevronRight
+                                size={20}
+                                color={COLORS.mutedForeground}
+                                opacity={0.6}
+                            />
+                        )}
+                    </TouchableOpacity>
+
                 </CardContainer>
 
                 {/* Desarrollo */}
                 {isDevelopment && (
                     <CardContainer title='Desarrollo'>
-                        <View style={styles.card}>
-                            <SettingRow
-                                icon={
-                                    <Bug
-                                        size={21}
-                                        color={COLORS.accent}
-                                    />
-                                }
-                                title="Debug"
-                                subtitle="Configuración y filtros de logs"
-                                onPress={() =>
-                                    router.push(
-                                        '/user/settings/debug',
-                                    )
-                                }
-                            />
-                        </View>
+                        <SettingRow
+                            icon={
+                                <Bug
+                                    size={21}
+                                    color={COLORS.accent}
+                                />
+                            }
+                            title="Debug"
+                            subtitle="Configuración y filtros de logs"
+                            onPress={() =>
+                                router.push(
+                                    '/user/settings/debug',
+                                )
+                            }
+                        />
                     </CardContainer>
                 )}
 
                 {/* Avanzado */}
-                <CardContainer title='Avanzado'>
-                    <View
-                        style={[
-                            styles.card,
-                            styles.dangerCard,
-                        ]}
+                <CardContainer title='Avanzado' cardStyle={styles.dangerCard}>
+
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        disabled={isSyncing}
+                        onPress={handleClearRepertoirePress}
+                        activeOpacity={0.7}
                     >
-                        <TouchableOpacity
-                            style={styles.settingRow}
-                            disabled={isSyncing}
-                            onPress={handleClearRepertoirePress}
-                            activeOpacity={0.7}
+                        <View
+                            style={[
+                                styles.iconContainer,
+                                styles.dangerIconContainer,
+                            ]}
                         >
-                            <View
-                                style={[
-                                    styles.iconContainer,
-                                    styles.dangerIconContainer,
-                                ]}
-                            >
-                                {isSyncing ? (
-                                    <ActivityIndicator
-                                        size="small"
-                                        color="#ef4444"
-                                    />
-                                ) : (
-                                    <ShieldAlert
-                                        size={21}
-                                        color="#ef4444"
-                                    />
-                                )}
-                            </View>
-
-                            <View style={styles.rowContent}>
-                                <Text style={styles.dangerTitle}>
-                                    Limpiar Repertorio Local
-                                </Text>
-
-                                <Text style={styles.rowSubtitle}>
-                                    {isSyncing
-                                        ? 'Borrando canciones...'
-                                        : 'Liberar espacio de almacenamiento local.'}
-                                </Text>
-                            </View>
-
-                            {!isSyncing && (
-                                <ChevronRight
-                                    size={20}
+                            {isSyncing ? (
+                                <ActivityIndicator
+                                    size="small"
                                     color="#ef4444"
-                                    opacity={0.5}
+                                />
+                            ) : (
+                                <ShieldAlert
+                                    size={21}
+                                    color="#ef4444"
                                 />
                             )}
-                        </TouchableOpacity>
-                    </View>
+                        </View>
+
+                        <View style={styles.rowContent}>
+                            <Text style={styles.dangerTitle}>
+                                Limpiar Repertorio Local
+                            </Text>
+
+                            <Text style={styles.rowSubtitle}>
+                                {isSyncing
+                                    ? 'Borrando canciones...'
+                                    : 'Liberar espacio de almacenamiento local.'}
+                            </Text>
+                        </View>
+
+                        {!isSyncing && (
+                            <ChevronRight
+                                size={20}
+                                color="#ef4444"
+                                opacity={0.5}
+                            />
+                        )}
+                    </TouchableOpacity>
+
                 </CardContainer>
 
 

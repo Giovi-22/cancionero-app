@@ -1,27 +1,86 @@
-import React, { useEffect, useRef } from 'react';
-import { Animated, StyleSheet, View, Text } from 'react-native';
-import SelahIcon from '../components/common/SelashIcon';
+import React, { useEffect, useRef, useState } from 'react';
+import { Animated, Easing, Image, LayoutChangeEvent, StyleSheet, View } from 'react-native';
 
-export default function SelahSplashScreen(): React.JSX.Element {
-    const opacity = useRef(new Animated.Value(0)).current;
+const SPLASH = require('../../assets/splash_screen.png');
+const { width: IMG_W, height: IMG_H } = Image.resolveAssetSource(SPLASH);
 
+// Mismo color que el fondo del PNG (#171b1e) y que app.config.js
+const BG = '#171B1E';
+
+const BAR_W = 120;
+const BAR_H = 3;
+// Posición vertical de la barra dentro de la imagen (0 = arriba, 1 = abajo).
+// El texto SELAH termina cerca de 0.58, así que 0.64 la deja justo debajo.
+const BAR_TOP_RATIO = 0.64;
+
+type Props = {
+    /** Cuando pasa a true, la barra se completa al 100%. */
+    done?: boolean;
+};
+
+export default function SelahSplashScreen({ done = false }: Props): React.JSX.Element {
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const progress = useRef(new Animated.Value(0)).current;
+    const [barTop, setBarTop] = useState<number | null>(null);
+
+    // Fade in de imagen + barra, y avance suave hasta ~85%
     useEffect(() => {
-        Animated.timing(opacity, {
+        Animated.timing(fadeAnim, {
             toValue: 1,
-            duration: 600,
+            duration: 500,
             useNativeDriver: true,
         }).start();
-    }, [opacity]);
+
+        Animated.timing(progress, {
+            toValue: 0.70,
+            duration: 1800,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+        }).start();
+    }, [fadeAnim, progress]);
+
+    // Cuando la app está lista, completa la barra
+    useEffect(() => {
+        if (!done) return;
+        Animated.timing(progress, {
+            toValue: 1,
+            duration: 300,
+            easing: Easing.out(Easing.quad),
+            useNativeDriver: true,
+        }).start();
+    }, [done, progress]);
+
+    // Calcula dónde quedó realmente la imagen (resizeMode contain)
+    // para que la barra siempre quede debajo de "SELAH" en cualquier pantalla.
+    const onLayout = (e: LayoutChangeEvent) => {
+        const { width, height } = e.nativeEvent.layout;
+        const scale = Math.min(width / IMG_W, height / IMG_H);
+        const renderedH = IMG_H * scale;
+        const offsetY = (height - renderedH) / 2;
+        setBarTop(offsetY + renderedH * BAR_TOP_RATIO);
+    };
+
+    const translateX = progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [-BAR_W, 0],
+    });
 
     return (
-        <View style={styles.container}>
-            <Animated.View style={[styles.content, { opacity }]}>
-                {/* Icono Vectorial Escalar */}
-                <SelahIcon size={160} />
+        <View style={styles.container} onLayout={onLayout}>
+            <Animated.Image
+                source={SPLASH}
+                style={[styles.splashImage, { opacity: fadeAnim }]}
+                resizeMode="contain"
+            />
 
-                {/* Texto Tipográfico de la Marca */}
-                <Text style={styles.title}>SELAH</Text>
-            </Animated.View>
+            {barTop !== null && (
+                <Animated.View
+                    style={[styles.track, { top: barTop, opacity: fadeAnim }]}
+                    accessibilityRole="progressbar"
+                >
+                    <Animated.View style={[styles.fill, { transform: [{ translateX }] }]} />
+                </Animated.View>
+            )}
         </View>
     );
 }
@@ -29,19 +88,27 @@ export default function SelahSplashScreen(): React.JSX.Element {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#121316',
+        backgroundColor: BG,
         alignItems: 'center',
         justifyContent: 'center',
     },
-    content: {
-        alignItems: 'center',
+    splashImage: {
+        width: '100%',
+        height: '100%',
     },
-    title: {
-        marginTop: 28,
-        fontSize: 30,
-        fontWeight: '300',
-        color: '#a855f7',
-        letterSpacing: 10,
-        textAlign: 'center',
+    track: {
+        position: 'absolute',
+        alignSelf: 'center',
+        width: BAR_W,
+        height: BAR_H,
+        borderRadius: BAR_H / 2,
+        backgroundColor: '#2A2A30',
+        overflow: 'hidden',
+    },
+    fill: {
+        width: BAR_W,
+        height: BAR_H,
+        borderRadius: BAR_H / 2,
+        backgroundColor: '#A78BFA',
     },
 });
