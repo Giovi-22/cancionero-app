@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, LayoutChangeEvent, StyleSheet, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 const SPLASH = require('../../assets/splash_screen.png');
 const { width: IMG_W, height: IMG_H } = Image.resolveAssetSource(SPLASH);
@@ -65,6 +66,11 @@ export default function SelahSplashScreen({ done = false }: Props): React.JSX.El
         outputRange: [-BAR_W, 0],
     });
 
+    const counterTranslateX = progress.interpolate({
+        inputRange: [0, 1],
+        outputRange: [BAR_W, 0],
+    });
+
     return (
         <View style={styles.container} onLayout={onLayout}>
             <Animated.Image
@@ -75,10 +81,25 @@ export default function SelahSplashScreen({ done = false }: Props): React.JSX.El
 
             {barTop !== null && (
                 <Animated.View
-                    style={[styles.track, { top: barTop, opacity: fadeAnim }]}
+                    style={[styles.track, { top: barTop - 20, opacity: fadeAnim }]}
                     accessibilityRole="progressbar"
                 >
-                    <Animated.View style={[styles.fill, { transform: [{ translateX }] }]} />
+                    <Animated.View style={[styles.fill, { transform: [{ translateX }] }]}>
+                        <Animated.View
+                            style={[
+                                styles.gradientContainer,
+                                { transform: [{ translateX: counterTranslateX }] },
+                            ]}
+                        >
+                            <LinearGradient
+                                colors={['#DFCEA3', '#C5B083', '#B29B70']}
+                                locations={[0, 0.55, 1]}
+                                start={{ x: 0, y: 0.5 }}
+                                end={{ x: 1, y: 0.5 }}
+                                style={styles.gradient}
+                            />
+                        </Animated.View>
+                    </Animated.View>
                 </Animated.View>
             )}
         </View>
@@ -109,6 +130,15 @@ const styles = StyleSheet.create({
         width: BAR_W,
         height: BAR_H,
         borderRadius: BAR_H / 2,
-        backgroundColor: '#A78BFA',
+        overflow: 'hidden',
+    },
+    gradientContainer: {
+        width: BAR_W,
+        height: BAR_H,
+    },
+    gradient: {
+        width: '100%',
+        height: '100%',
     },
 });
+

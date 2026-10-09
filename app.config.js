@@ -11,7 +11,7 @@ module.exports = {
     userInterfaceStyle: 'dark',
     newArchEnabled: true,
     splash: {
-      image: './assets/app-icon.png',
+      image: './assets/app-icon-wbg.png',
       resizeMode: 'contain',
       backgroundColor: '#171B1E'
     },
