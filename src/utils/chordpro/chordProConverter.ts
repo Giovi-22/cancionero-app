@@ -1,3 +1,4 @@
+import { normalizeChord } from '../chordUtils';
 // src/utils/chordpro/ChordProConverter.ts
 
 /**
@@ -157,10 +158,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
         trimmed.replace(/^Intro:\s*/i, "");
 
       introContent =
-        introContent.replace(
-          /[A-G][#b]?(maj|min|aug|dim|sus[24]?|m(?!aj))?(add\d+)?\d*(\/[A-G][#b]?)?/g,
-          "[$&]"
-        );
+        introContent.replace(/[^\s\-]+/g, t => `[${normalizeChord(t)}]`);
 
       metadataHeaders.push(
         `{comment: Intro: ${introContent}}`
@@ -511,7 +509,7 @@ export function convertGoogleDocToChordPro(contentArray: any[]): string {
 // DETECTAR LÍNEA DE ACORDES
 // ================================================================
 
-export function isChordLine(line: string): boolean {
+function isChordLine(line: string): boolean {
 
   if (!line || line.trim() === "") {
     return false;
@@ -542,7 +540,7 @@ export function isChordLine(line: string): boolean {
       continue;
     }
 
-    if (!chordRegex.test(token)) {
+    if (!chordRegex.test(normalizeChord(token))) {
       return false;
     }
 
@@ -557,7 +555,7 @@ export function isChordLine(line: string): boolean {
 // FUSIONAR ACORDES + LETRA
 // ================================================================
 
-export function mergeChordsAndLyrics(
+function mergeChordsAndLyrics(
   chordLine: string,
   lyricLine: string
 ): string {
@@ -626,7 +624,7 @@ export function mergeChordsAndLyrics(
   for (const item of withinBounds) {
 
     const chordFormatted =
-      `[${item.chord}]`;
+      `[${normalizeChord(item.chord)}]`;
 
     result =
       result.slice(0, item.index) +
@@ -637,7 +635,7 @@ export function mergeChordsAndLyrics(
   for (const item of beyond) {
 
     const chordFormatted =
-      `[${item.chord}]`;
+      `[${normalizeChord(item.chord)}]`;
 
     result =
       result +
@@ -653,15 +651,13 @@ export function mergeChordsAndLyrics(
 // FORMATEAR LÍNEA DE ACORDES SOLA
 // ================================================================
 
-export function formatStandaloneChordLine(
+function formatStandaloneChordLine(
   line: string
 ): string {
 
-  const chordRegex =
-    /[A-G][#b]?(maj|min|aug|dim|sus[24]?|m(?!aj))?(add\d+)?\d*(\/[A-G][#b]?)?/g;
-
+  // Por tokens: así "Cm#" no se parte en "[Cm]#"
   return line.replace(
-    chordRegex,
-    match => `[${match}]`
+    /[^\s\-]+/g,
+    token => `[${normalizeChord(token)}]`
   );
 }

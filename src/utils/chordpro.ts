@@ -1,11 +1,11 @@
-import { SongLineParsed, SongBlock, transposeChord, isMetadataLine } from './chordUtils';
+import { SongLineParsed, SongBlock, transposeChord, isMetadataLine, normalizeChord } from './chordUtils';
 
 /**
  * Valida si un string dentro de corchetes representa un acorde musical.
  */
 export function isSingleChord(token: string): boolean {
   const chordRegex = /^[A-G][b#]?(m|maj|min|dim|aug|sus|add|v|i|[0-9]|sus|add|dim|aug|maj|min)*\d*(?:[b#+-]\d+)?(?:\([^)]+\))?(?:\/[A-G][b#]?)?$/i;
-  return chordRegex.test(token.trim());
+  return chordRegex.test(normalizeChord(token.trim()));
 }
 
 /** 
@@ -374,16 +374,6 @@ export function extractTitleFromChordPro(text: string): string | null {
   }
 
   return null;
-}
-
-/**
- * Extrae el valor de la directiva {key:} o la línea "Tono: X".
- */
-export function extractKeyFromChordPro(text: string): string | null {
-  if (!text) return null;
-  const m = text.match(/\{\s*(?:key|k)\s*:\s*([^}]+)\}/i)
-    || text.match(/^\s*(?:TONO|KEY):\s*\[?([A-G][b#]?[m]?)\]?/mi);
-  return m ? m[1].trim() : null;
 }
 
 /**
