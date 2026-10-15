@@ -6,6 +6,8 @@ import React, {
 import {
     ActivityIndicator,
     FlatList,
+    Modal,
+    ScrollView,
     StyleSheet,
     Text,
     TextInput,
@@ -17,10 +19,15 @@ import {
     useLocalSearchParams,
 } from 'expo-router';
 import {
+    ArrowLeft,
+    ArrowUpDown,
     Check,
     ChevronLeft,
+    ChevronRight,
+    Folder,
     Music2,
     Search,
+    X,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -84,6 +91,18 @@ export default function BandSongSelector() {
 
     const [isSaving, setIsSaving] =
         useState(false);
+
+    const [sortBy, setSortBy] =
+        useState<'default' | 'az' | 'za'>('default');
+
+    const [isSortOpen, setIsSortOpen] =
+        useState(false);
+
+    const [pendingSort, setPendingSort] =
+        useState<string | null>(null);
+
+    const [currentFolder, setCurrentFolder] =
+        useState<string | null>(null);
 
     const [feedbackModal, setFeedbackModal] =
         useState<FeedbackModalState>({
@@ -155,31 +174,85 @@ export default function BandSongSelector() {
     }, [setlist]);
 
     /**
+     * Carpetas únicas disponibles en las canciones de la banda.
+     */
+    const folders = useMemo(() => {
+        const names = new Set<string>();
+        bandSongs.forEach(song => {
+            if (song.folderName) {
+                names.add(song.folderName);
+            }
+        });
+        return Array.from(names)
+            .map(name => ({
+                name,
+                songCount: bandSongs.filter(
+                    s => s.folderName === name
+                ).length,
+            }))
+            .sort((a, b) =>
+                a.name.localeCompare(b.name, 'es', {
+                    sensitivity: 'base',
+                })
+            );
+    }, [bandSongs]);
+
+    /**
      * Canciones disponibles para la banda.
      *
-     * La fuente es la carpeta de Google Drive
-     * configurada para la banda.
+     * Cuando hay búsqueda activa muestra todas.
+     * Cuando no, filtra por carpeta activa (igual que SongsScreen).
      */
     const availableSongs = useMemo(() => {
         const normalizedSearch =
             search.trim().toLowerCase();
 
-        return bandSongs.filter(song => {
-            if (!normalizedSearch) {
-                return true;
+        let list = bandSongs.filter(song => {
+            if (normalizedSearch) {
+                return (
+                    song.name?.toLowerCase() || ''
+                ).includes(normalizedSearch);
             }
-
-            const name =
-                song.name?.toLowerCase() || '';
-
-            return name.includes(
-                normalizedSearch
-            );
+            if (currentFolder === null) {
+                return !song.folderName;
+            }
+            return song.folderName === currentFolder;
         });
+
+        if (sortBy === 'az') {
+            list = [...list].sort((a, b) =>
+                a.name.localeCompare(b.name, 'es', {
+                    sensitivity: 'base',
+                })
+            );
+        } else if (sortBy === 'za') {
+            list = [...list].sort((a, b) =>
+                b.name.localeCompare(a.name, 'es', {
+                    sensitivity: 'base',
+                })
+            );
+        }
+
+        return list;
     }, [
         bandSongs,
         search,
+        sortBy,
+        currentFolder,
     ]);
+
+    const handleSelectSort = (
+        value: 'default' | 'az' | 'za'
+    ) => {
+        setPendingSort(value);
+        setTimeout(() => {
+            setSortBy(value);
+            setPendingSort(null);
+            setIsSortOpen(false);
+        }, 350);
+    };
+
+    const isSearching = search.trim().length > 0;
 
     /**
      * Alterna la selección de una canción.
@@ -705,50 +778,67 @@ export default function BandSongSelector() {
                 </Text>
             </View>
 
-            {/* Buscador */}
-            <View
-                style={
-                    styles.searchContainer
-                }
-            >
-                <Search
-                    size={20}
-                    color={
-                        COLORS.mutedForeground
-                    }
-                />
-
-                <TextInput
+            {/* Buscador + botón ordenar */}
+            <View style={styles.searchRow}>
+                <View
                     style={
-                        styles.searchInput
+                        styles.searchContainer
                     }
-                    value={search}
-                    onChangeText={
-                        setSearch
-                    }
-                    placeholder="Buscar canción..."
-                    placeholderTextColor={
-                        COLORS.mutedForeground
-                    }
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                />
-
-                {search.length > 0 && (
-                    <TouchableOpacity
-                        onPress={() =>
-                            setSearch('')
+                >
+                    <Search
+                        size={20}
+                        color={
+                            COLORS.mutedForeground
                         }
-                    >
-                        <Text
-                            style={
-                                styles.clearSearch
+                    />
+
+                    <TextInput
+                        style={
+                            styles.searchInput
+                        }
+                        value={search}
+                        onChangeText={
+                            setSearch
+                        }
+                        placeholder="Buscar canción..."
+                        placeholderTextColor={
+                            COLORS.mutedForeground
+                        }
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                    />
+
+                    {search.length > 0 && (
+                        <TouchableOpacity
+                            onPress={() =>
+                                setSearch('')
                             }
                         >
-                            ×
-                        </Text>
-                    </TouchableOpacity>
-                )}
+                            <X
+                                size={16}
+                                color={
+                                    COLORS.foreground
+                                }
+                            />
+                        </TouchableOpacity>
+                    )}
+                </View>
+
+                <TouchableOpacity
+                    style={styles.sortButton}
+                    onPress={() =>
+                        setIsSortOpen(true)
+                    }
+                >
+                    <ArrowUpDown
+                        size={20}
+                        color={
+                            sortBy !== 'default'
+                                ? COLORS.accent
+                                : COLORS.foreground
+                        }
+                    />
+                </TouchableOpacity>
             </View>
 
             {/* Contador */}
@@ -769,58 +859,237 @@ export default function BandSongSelector() {
                 </Text>
             </View>
 
-            {/* Lista */}
-            <FlatList
-                data={availableSongs}
-                keyExtractor={item =>
-                    item.id
-                }
-                renderItem={renderSong}
-                contentContainerStyle={[
-                    styles.listContent,
-                    availableSongs.length ===
-                    0 &&
-                    styles.emptyListContent,
-                ]}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={
-                    false
-                }
-                ListEmptyComponent={
-                    <View
-                        style={
-                            styles.listEmpty
-                        }
-                    >
-                        <Music2
-                            size={40}
-                            color={
-                                COLORS.mutedForeground
-                            }
+            {/* Contenido: carpetas + lista */}
+            {isSearching ? (
+                <FlatList
+                    data={availableSongs}
+                    keyExtractor={item => item.id}
+                    renderItem={renderSong}
+                    contentContainerStyle={[
+                        styles.listContent,
+                        availableSongs.length === 0 &&
+                        styles.emptyListContent,
+                    ]}
+                    keyboardShouldPersistTaps="handled"
+                    showsVerticalScrollIndicator={false}
+                    ListEmptyComponent={
+                        <View style={styles.listEmpty}>
+                            <Music2
+                                size={40}
+                                color={COLORS.mutedForeground}
+                            />
+                            <Text style={styles.listEmptyTitle}>
+                                No se encontraron canciones
+                            </Text>
+                            <Text style={styles.listEmptyText}>
+                                Probá con otro nombre de canción.
+                            </Text>
+                        </View>
+                    }
+                />
+            ) : (
+                <ScrollView
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ paddingBottom: 20 }}
+                    keyboardShouldPersistTaps="handled"
+                >
+                    {/* Breadcrumb */}
+                    {currentFolder !== null && (
+                        <View style={styles.breadcrumbContainer}>
+                            <TouchableOpacity
+                                onPress={() =>
+                                    setCurrentFolder(null)
+                                }
+                                style={styles.breadcrumbBack}
+                            >
+                                <ArrowLeft
+                                    size={20}
+                                    color={COLORS.accent}
+                                />
+                            </TouchableOpacity>
+                            <Text style={styles.breadcrumbText}>
+                                Inicio /{' '}
+                                <Text
+                                    style={styles.breadcrumbCurrent}
+                                >
+                                    {currentFolder}
+                                </Text>
+                            </Text>
+                        </View>
+                    )}
+
+                    {/* Carpetas (sólo en raíz) */}
+                    {currentFolder === null &&
+                        folders.length > 0 && (
+                        <View style={styles.foldersContainer}>
+                            {folders.map(folder => (
+                                <TouchableOpacity
+                                    key={folder.name}
+                                    style={styles.folderRow}
+                                    activeOpacity={0.7}
+                                    onPress={() =>
+                                        setCurrentFolder(
+                                            folder.name
+                                        )
+                                    }
+                                >
+                                    <View
+                                        style={
+                                            styles.folderIconContainer
+                                        }
+                                    >
+                                        <Folder
+                                            size={22}
+                                            color={COLORS.accent}
+                                        />
+                                    </View>
+                                    <View style={styles.folderInfo}>
+                                        <Text
+                                            style={styles.folderNameText}
+                                        >
+                                            {folder.name}
+                                        </Text>
+                                        <Text
+                                            style={styles.folderMetaText}
+                                        >
+                                            {folder.songCount} canciones
+                                        </Text>
+                                    </View>
+                                    <ChevronRight
+                                        size={20}
+                                        color={COLORS.mutedForeground}
+                                    />
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    )}
+
+                    {/* Canciones del nivel actual */}
+                    {availableSongs.length > 0 ? (
+                        <FlatList
+                            data={availableSongs}
+                            keyExtractor={item => item.id}
+                            renderItem={renderSong}
+                            contentContainerStyle={styles.listContent}
+                            keyboardShouldPersistTaps="handled"
+                            showsVerticalScrollIndicator={false}
+                            scrollEnabled={false}
                         />
+                    ) : (
+                        (currentFolder !== null ||
+                            folders.length === 0) && (
+                            <View style={styles.listEmpty}>
+                                <Music2
+                                    size={40}
+                                    color={COLORS.mutedForeground}
+                                />
+                                <Text style={styles.listEmptyTitle}>
+                                    No hay canciones aquí
+                                </Text>
+                                <Text style={styles.listEmptyText}>
+                                    No hay canciones disponibles en la
+                                    fuente de Google Drive configurada
+                                    para esta banda.
+                                </Text>
+                            </View>
+                        )
+                    )}
+                </ScrollView>
+            )}
 
-                        <Text
-                            style={
-                                styles.listEmptyTitle
-                            }
-                        >
-                            {search
-                                ? 'No se encontraron canciones'
-                                : 'No hay canciones en la carpeta de la banda'}
-                        </Text>
-
-                        <Text
-                            style={
-                                styles.listEmptyText
-                            }
-                        >
-                            {search
-                                ? 'Probá con otro nombre de canción.'
-                                : 'No hay canciones disponibles en la fuente de Google Drive configurada para esta banda.'}
-                        </Text>
-                    </View>
+            {/* Modal de ordenamiento */}
+            <Modal
+                visible={isSortOpen}
+                transparent
+                animationType="fade"
+                onRequestClose={() =>
+                    setIsSortOpen(false)
                 }
-            />
+            >
+                <TouchableOpacity
+                    style={styles.modalOverlay}
+                    activeOpacity={1}
+                    onPress={() => setIsSortOpen(false)}
+                >
+                    <View
+                        style={styles.modalCard}
+                        onStartShouldSetResponder={() => true}
+                    >
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>
+                                Ordenar canciones
+                            </Text>
+                            <TouchableOpacity
+                                onPress={() =>
+                                    setIsSortOpen(false)
+                                }
+                                style={styles.closeBtn}
+                            >
+                                <X
+                                    size={20}
+                                    color={COLORS.foreground}
+                                />
+                            </TouchableOpacity>
+                        </View>
+
+                        <View style={styles.sortOptions}>
+                            {(
+                                [
+                                    'default',
+                                    'az',
+                                    'za',
+                                ] as const
+                            ).map(option => {
+                                const labels = {
+                                    default: 'Por defecto',
+                                    az: 'Alfabético (A-Z)',
+                                    za: 'Alfabético (Z-A)',
+                                };
+                                const isActive = sortBy === option;
+                                const isPending =
+                                    pendingSort === option;
+                                return (
+                                    <TouchableOpacity
+                                        key={option}
+                                        style={[
+                                            styles.sortOption,
+                                            (isActive || isPending) &&
+                                            styles.sortOptionActive,
+                                        ]}
+                                        onPress={() =>
+                                            handleSelectSort(option)
+                                        }
+                                        disabled={
+                                            pendingSort !== null
+                                        }
+                                    >
+                                        <Text
+                                            style={[
+                                                styles.sortOptionText,
+                                                (isActive || isPending) &&
+                                                styles.sortOptionTextActive,
+                                            ]}
+                                        >
+                                            {labels[option]}
+                                        </Text>
+                                        {isPending ? (
+                                            <ActivityIndicator
+                                                size="small"
+                                                color={COLORS.accent}
+                                            />
+                                        ) : isActive ? (
+                                            <Check
+                                                size={18}
+                                                color={COLORS.accent}
+                                            />
+                                        ) : null}
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    </View>
+                </TouchableOpacity>
+            </Modal>
 
             {/* Botón inferior */}
             <View
@@ -1031,9 +1300,16 @@ const styles = StyleSheet.create({
         fontWeight: '500',
     },
 
-    searchContainer: {
+    searchRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
         marginHorizontal: 16,
         marginBottom: 10,
+        gap: 10,
+    },
+
+    searchContainer: {
+        flex: 1,
         height: 46,
         flexDirection: 'row',
         alignItems: 'center',
@@ -1054,12 +1330,154 @@ const styles = StyleSheet.create({
         paddingVertical: 0,
     },
 
-    clearSearch: {
-        color:
-            COLORS.mutedForeground,
-        fontSize: 25,
-        lineHeight: 25,
-        paddingHorizontal: 3,
+    sortButton: {
+        width: 46,
+        height: 46,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+
+    // Breadcrumb
+    breadcrumbContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: `${COLORS.accent}12`,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: COLORS.border,
+        gap: 12,
+        marginBottom: 6,
+    },
+
+    breadcrumbBack: {
+        padding: 4,
+    },
+
+    breadcrumbText: {
+        fontSize: 15,
+        color: COLORS.mutedForeground,
+        fontWeight: '500',
+    },
+
+    breadcrumbCurrent: {
+        color: COLORS.accent,
+        fontWeight: '700',
+    },
+
+    // Folders
+    foldersContainer: {
+        paddingHorizontal: 12,
+        paddingTop: 6,
+        paddingBottom: 6,
+        gap: 8,
+    },
+
+    folderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: COLORS.surface,
+        padding: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        gap: 12,
+    },
+
+    folderIconContainer: {
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        backgroundColor: `${COLORS.accent}15`,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
+    folderInfo: {
+        flex: 1,
+        gap: 3,
+    },
+
+    folderNameText: {
+        color: COLORS.foreground,
+        fontSize: 15,
+        fontWeight: '600',
+    },
+
+    folderMetaText: {
+        color: COLORS.mutedForeground,
+        fontSize: 12,
+    },
+
+    // Sort modal
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.75)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 24,
+    },
+
+    modalCard: {
+        backgroundColor: COLORS.surface,
+        borderRadius: 20,
+        padding: 20,
+        width: '100%',
+        borderWidth: 1,
+        borderColor: COLORS.border,
+    },
+
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+
+    modalTitle: {
+        color: COLORS.foreground,
+        fontSize: 18,
+        fontWeight: 'bold',
+    },
+
+    closeBtn: {
+        padding: 4,
+    },
+
+    sortOptions: {
+        gap: 8,
+    },
+
+    sortOption: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 14,
+        paddingHorizontal: 16,
+        borderRadius: 12,
+        backgroundColor: COLORS.background,
+        borderWidth: 1,
+        borderColor: 'transparent',
+    },
+
+    sortOptionActive: {
+        borderColor: COLORS.accent,
+        backgroundColor: `${COLORS.accent}10`,
+    },
+
+    sortOptionText: {
+        color: COLORS.mutedForeground,
+        fontSize: 15,
+        fontWeight: '500',
+    },
+
+    sortOptionTextActive: {
+        color: COLORS.accent,
+        fontWeight: '600',
     },
 
     selectionInfo: {

@@ -1,0 +1,45 @@
+Título de tu canción
+Intro: G C G D
+Tono: G
+BPM: 72
+Compás: 4/4
+Nota: Plantilla de ejemplo. Reemplazá todo por tu canción.
+
+[VERSO 1]
+G                      C
+Escribí acá la primera línea
+G                D
+y acá la segunda línea
+Em               C
+tercera línea de tu letra
+G      D         G
+cuarta línea del verso
+
+[CORO]
+C       G
+Primera línea del coro
+D       Em
+segunda línea del coro
+C       G
+tercera línea del coro
+D                G
+cuarta línea del coro
+
+[VERSO 2]
+G                 C
+Primera línea del segundo verso
+G                 D
+segunda línea del segundo verso
+
+[PUENTE]
+Em        C
+Letra del puente
+G  D
+se puede repetir x2
+
+[INTERLUDIO]
+G C G D
+
+[FINAL]
+C      D     G
+Última línea de la canción
