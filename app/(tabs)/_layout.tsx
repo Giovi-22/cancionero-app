@@ -9,9 +9,11 @@ import {
     List,
     Users,
     User,
+    Settings,
 } from "lucide-react-native";
 
 import { COLORS } from "../../src/constants/theme";
+import { features } from "@/src/config/features";
 
 function AnimatedTabButton({ children, onPress, onPressIn, onPressOut, accessibilityState }: any) {
     const selected = accessibilityState?.selected;
@@ -130,6 +132,16 @@ export default function TabsLayout() {
                         <User color={color} size={size} />
                     ),
                     tabBarButton: (props) => <AnimatedTabButton {...props} />
+                }}
+            />
+            <Tabs.Screen
+                name="test"
+                options={{
+                    href: features.debugTools ? "/test" : null,
+                    title: "Test",
+                    tabBarIcon: ({ color, size }) => (
+                        <Settings color={color} size={size} />
+                    ),
                 }}
             />
         </Tabs>

@@ -6,6 +6,8 @@ import {
     TouchableOpacity,
     ScrollView,
     ActivityIndicator,
+    TextInput,
+    Image
 } from 'react-native';
 import { router } from 'expo-router';
 import {
@@ -13,6 +15,8 @@ import {
     LogOut,
     ChevronRight,
     KeyRound,
+    BookOpen,
+    Search,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Constants from 'expo-constants';
@@ -25,6 +29,7 @@ import { authService } from '../../../src/services/AuthService';
 
 import packageJson from '../../../package.json';
 import AppModal from '../../../src/components/common/AppModal';
+import CardContainer from '@/src/components/common/CardContainer';
 
 const APP_VERSION =
     Constants.expoConfig?.version ||
@@ -37,6 +42,12 @@ export default function UserTab() {
     const {
         isSyncing,
         handleSync,
+        setIsLibrariesOpen,
+        activeLibrary,
+        driveFolderId,
+        handleSaveConfig,
+        openFolderPicker,
+        isLoadingFolders,
     } = useAppContext();
 
     const {
@@ -216,6 +227,75 @@ export default function UserTab() {
                     )}
                 </View>
 
+                {/* Repertorio */}
+                <Text style={styles.sectionTitle}>
+                    Repertorio
+                </Text>
+
+                <View style={styles.glassCard}>
+                    <View style={styles.repertoireRow}>
+                        <View style={styles.settingRowIcon}>
+                            <BookOpen
+                                size={20}
+                                color={activeLibrary?.color || COLORS.accent}
+                            />
+                        </View>
+
+                        <View style={styles.settingRowInfo}>
+                            <Text style={styles.settingRowTitle}>
+                                Biblioteca Activa
+                            </Text>
+                            <Text style={styles.settingRowSubtitle}>
+                                {activeLibrary?.name || 'Cargando...'}
+                            </Text>
+                        </View>
+
+                        <TouchableOpacity
+                            style={styles.actionButton}
+                            onPress={() => setIsLibrariesOpen(true)}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.actionButtonText}>
+                                Administrar
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.divider} />
+
+                    <Text style={styles.settingRowTitle}>
+                        Carpeta de Canciones
+                    </Text>
+
+                    <View style={styles.folderRow}>
+                        <TextInput
+                            style={styles.input}
+                            value={driveFolderId}
+                            onChangeText={handleSaveConfig}
+                            placeholder="ID de la carpeta Drive..."
+                            placeholderTextColor={COLORS.mutedForeground}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                        />
+
+                        <TouchableOpacity
+                            style={[
+                                styles.browseButton,
+                                (!user || isLoadingFolders) && styles.disabledBtn,
+                            ]}
+                            onPress={() => openFolderPicker()}
+                            disabled={!user || isLoadingFolders}
+                            activeOpacity={0.7}
+                        >
+                            {isLoadingFolders ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                            ) : (
+                                <Search size={18} color="#fff" />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                </View>
+
                 {/* Configuración */}
                 <Text style={styles.sectionTitle}>
                     Aplicación
@@ -240,7 +320,7 @@ export default function UserTab() {
                             </Text>
 
                             <Text style={styles.settingRowSubtitle}>
-                                Biblioteca, pedal y opciones avanzadas
+                                Pedal, actualizaciones y opciones avanzadas
                             </Text>
                         </View>
 
@@ -252,14 +332,17 @@ export default function UserTab() {
                 </View>
 
                 {/* Información de la aplicación */}
-                <View style={styles.footerContainer}>
-                    <Text style={styles.footerAppName}>
-                        Cancionero Mobile
-                    </Text>
+                <View >
+                    <View style={styles.footerContainer}>
+                        <Image
+                            source={require('@/assets/app-icon-selah.png')}
+                            style={styles.footerAppIcon}
+                        />
 
-                    <Text style={styles.footerVersion}>
-                        Versión {APP_VERSION}
-                    </Text>
+                        <Text style={styles.footerVersion}>
+                            Versión {APP_VERSION}
+                        </Text>
+                    </View>
                 </View>
             </ScrollView>
 
@@ -443,6 +526,58 @@ const styles = StyleSheet.create({
         color: COLORS.mutedForeground,
     },
 
+    repertoireRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+
+    actionButton: {
+        backgroundColor: 'rgba(255,255,255,0.1)',
+        paddingVertical: 7,
+        paddingHorizontal: 12,
+        borderRadius: 20,
+    },
+
+    actionButtonText: {
+        color: COLORS.foreground,
+        fontSize: 12,
+        fontWeight: '600',
+    },
+
+    divider: {
+        height: StyleSheet.hairlineWidth,
+        backgroundColor: COLORS.border,
+        marginVertical: 14,
+    },
+
+    folderRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        marginTop: 8,
+    },
+
+    input: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.2)',
+        color: COLORS.foreground,
+        paddingHorizontal: 10,
+        paddingVertical: 9,
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: COLORS.border,
+        fontSize: 12,
+    },
+
+    browseButton: {
+        backgroundColor: COLORS.accent,
+        width: 40,
+        height: 40,
+        borderRadius: 10,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+
     footerContainer: {
         alignItems: 'center',
         justifyContent: 'center',
@@ -456,6 +591,13 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: COLORS.mutedForeground,
         marginBottom: 2,
+    },
+    footerAppIcon: {
+        width: 86,
+        height: 86,
+        borderRadius: 12, // Bordes redondeados modernos estilo app
+        marginBottom: 8,
+        resizeMode: 'contain',
     },
 
     footerVersion: {

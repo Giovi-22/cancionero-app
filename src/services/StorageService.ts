@@ -3,7 +3,6 @@ import { SongMetadata, Library, Setlist } from '../types';
 import { auth, firestore } from '../lib/firebase';
 import { FileSystemService } from './FileSystemService';
 import { legacyToChordPro } from '../utils/legacyToChordPro';
-import { isSingleChord } from '../utils/chordpro';
 
 const DB_NAME = 'cancionero.db';
 

@@ -9,6 +9,7 @@ import {
 import { SlidersHorizontal, X, AlertCircle, CheckCircle2 } from 'lucide-react-native';
 
 import { usePedal } from '../../hooks/usePedal';
+import { usePedalAutoDiscovery } from '../../hooks/usePedalAutoDiscovery';
 import { COLORS } from '../../constants/theme';
 
 export const PedalDiscoveryCard: React.FC = () => {
@@ -23,17 +24,22 @@ export const PedalDiscoveryCard: React.FC = () => {
         onDeviceChange,
     } = usePedal();
 
+    const { enabled: autoDiscovery, ready: autoDiscoveryReady } =
+        usePedalAutoDiscovery();
+
     const [isDismissed, setIsDismissed] = useState(false);
     const [connectError, setConnectError] = useState<string | null>(null);
 
-    // Iniciar descubrimiento pasivo UDP :4444 al montar si no está conectado ni buscando
+    // Descubrimiento pasivo UDP :4444: SOLO si el usuario activó la búsqueda
+    // automática (Perfil > Configuración > Pedal WiFi).
     useEffect(() => {
+        if (!autoDiscoveryReady || !autoDiscovery) return;
         if (!connected && !discovering && !device) {
             discover().catch(() => {
                 // Discovery silencioso en segundo plano
             });
         }
-    }, [connected, discovering, device, discover]);
+    }, [autoDiscovery, autoDiscoveryReady, connected, discovering, device, discover]);
 
     // Cuando el pedal vuelve a anunciarse por UDP, reactivar la card si estaba descartada
     useEffect(() => {

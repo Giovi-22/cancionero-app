@@ -1,18 +1,24 @@
 import { COLORS } from "@/src/constants/theme";
-import { StyleSheet, View, Text } from "react-native";
+import { StyleSheet, View, Text, ViewStyle } from "react-native";
 
 interface CardContainerProps {
-    title: string;
+    title?: string;
+    cardStyle?: ViewStyle;
     children: React.ReactNode;
 }
 
-export default function CardContainer({ title, children }: CardContainerProps) {
+export default function CardContainer({ title, children, cardStyle }: CardContainerProps) {
     return (
         <View style={styles.container}>
-            <Text style={styles.sectionTitle}>
-                {title}
-            </Text>
-            {children}
+            {
+                title && (
+                    <Text style={styles.sectionTitle}>
+                        {title}
+                    </Text>
+                )}
+            <View style={[styles.card, cardStyle]}>
+                {children}
+            </View>
         </View>
     );
 }
@@ -22,6 +28,13 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: COLORS.background,
         marginBottom: 24,
+    },
+    card: {
+        backgroundColor: COLORS.surface,
+        borderRadius: 16,
+        paddingHorizontal: 18,
+        borderWidth: 1,
+        borderColor: COLORS.border,
     },
 
     sectionTitle: {

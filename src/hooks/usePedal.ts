@@ -41,6 +41,9 @@ interface UsePedalResult {
     /** Escucha pasivamente el broadcast UDP del ESP32. NUNCA conecta. */
     discover: (timeoutMs?: number) => Promise<PedalDevice | null>;
 
+    /** Detiene la búsqueda de descubrimiento UDP en curso. */
+    stopDiscover: () => void;
+
     /** Conecta por TCP al device dado (o al último descubierto). NUNCA hace discover interno. */
     connect: (device?: PedalDevice) => Promise<void>;
 
@@ -135,6 +138,11 @@ export const usePedal = (): UsePedalResult => {
         []
     );
 
+    const stopDiscover = useCallback(() => {
+        PedalService.stopDiscover();
+        setDiscovering(false);
+    }, []);
+
     /**
      * Conecta por TCP al device especificado (o al último descubierto).
      * NUNCA hace discover interno.
@@ -169,6 +177,7 @@ export const usePedal = (): UsePedalResult => {
         onEvent,
         onDeviceChange,
         discover,
+        stopDiscover,
         connect,
         disconnect,
     };

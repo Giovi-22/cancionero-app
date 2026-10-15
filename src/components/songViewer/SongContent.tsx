@@ -240,6 +240,31 @@ export const SongContent: React.FC<
                                 )
                                 .join('');
 
+                        // Ocultar líneas de metadata cuyo valor esté vacío o sea solo "-".
+                        // Intro y Tono siempre se muestran aunque estén vacíos.
+                        if (line.isMetadata) {
+                            const colonIdx = fullLineText.indexOf(':');
+                            if (colonIdx !== -1) {
+                                const label = fullLineText.slice(0, colonIdx).trim();
+                                const alwaysShow = /^(intro|tono)$/i.test(label);
+
+                                if (!alwaysShow) {
+                                    // Construir el contenido completo incluyendo acordes de todos los bloques
+                                    const fullContentWithChords = line.blocks
+                                        .map(b => `${b.chord ?? ''} ${b.text ?? ''}`)
+                                        .join('');
+                                    const fullColonIdx = fullContentWithChords.indexOf(':');
+                                    const valueContent = fullColonIdx !== -1
+                                        ? fullContentWithChords.slice(fullColonIdx + 1).trim()
+                                        : fullContentWithChords.trim();
+
+                                    if (!valueContent || valueContent === '-') {
+                                        return null;
+                                    }
+                                }
+                            }
+                        }
+
                         const isNonPlayableMetadata =
                             line.isMetadata &&
                             /^(NOTA|TONO|KEY|BPM|TEMPO|CAPO|COMP[ÁA]S):/i.test(

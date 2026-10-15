@@ -17,7 +17,8 @@ export const SongsScreen = () => {
     setSearchQuery,
     handleSongPress,
     handleSync,
-    isSyncing
+    isSyncing,
+    loadingSongId,
   } = useAppContext();
 
   const { user } = useUserContext();
@@ -26,6 +27,7 @@ export const SongsScreen = () => {
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [pendingSort, setPendingSort] = useState<string | null>(null);
   const [currentFolder, setCurrentFolder] = useState<string | null>(null);
+  const [loadingFolder, setLoadingFolder] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
 
   const handleSelectSort = (value: 'default' | 'az' | 'za') => {
@@ -123,6 +125,7 @@ export const SongsScreen = () => {
           onSongPress={handleSongPress}
           onSyncPress={handleSync}
           isSetlistMode={false}
+          loadingSongId={loadingSongId}
         />
       ) : (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: 100 }}>
@@ -145,7 +148,13 @@ export const SongsScreen = () => {
                 <TouchableOpacity
                   key={folder.name}
                   style={styles.folderRow}
-                  onPress={() => setCurrentFolder(folder.name)}
+                  onPress={() => {
+                    setLoadingFolder(folder.name);
+                    setTimeout(() => {
+                      setCurrentFolder(folder.name);
+                      setLoadingFolder(null);
+                    }, 180);
+                  }}
                   activeOpacity={0.7}
                 >
                   <View style={styles.folderIconContainer}>
@@ -155,7 +164,11 @@ export const SongsScreen = () => {
                     <Text style={styles.folderNameText}>{folder.name}</Text>
                     <Text style={styles.folderMetaText}>{folder.songCount} canciones</Text>
                   </View>
-                  <ChevronRight size={20} color={COLORS.mutedForeground} />
+                  {loadingFolder === folder.name ? (
+                    <ActivityIndicator size="small" color={COLORS.accent} />
+                  ) : (
+                    <ChevronRight size={20} color={COLORS.mutedForeground} />
+                  )}
                 </TouchableOpacity>
               ))}
             </View>
@@ -176,6 +189,7 @@ export const SongsScreen = () => {
               onSyncPress={handleSync}
               isSetlistMode={false}
               scrollEnabled={false}
+              loadingSongId={loadingSongId}
             />
           ) : (
             (currentFolder !== null || folders.length === 0) && (
