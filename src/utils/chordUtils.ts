@@ -92,13 +92,33 @@ export function isChordLine(line: string): boolean {
   if (tokens.length === 0) return false;
 
   let chordCount = 0;
+  let totalEvaluated = 0;
+
   for (const token of tokens) {
-    if (chordRegex.test(normalizeChord(token)) || /^[:|/\\-]{1,4}$/.test(token)) {
+    if (/^[:|/\\-]{1,4}$/.test(token)) {
+      chordCount++;
+      totalEvaluated++;
+      continue;
+    }
+
+    if (token.includes('-')) {
+      const subTokens = token.split(/-+/).filter(Boolean);
+      for (const sub of subTokens) {
+        totalEvaluated++;
+        if (chordRegex.test(normalizeChord(sub))) {
+          chordCount++;
+        }
+      }
+      continue;
+    }
+
+    totalEvaluated++;
+    if (chordRegex.test(normalizeChord(token))) {
       chordCount++;
     }
   }
 
-  return chordCount / tokens.length >= 0.5;
+  return totalEvaluated > 0 && chordCount / totalEvaluated >= 0.5;
 }
 
 export function cleanSongText(text: string): string {

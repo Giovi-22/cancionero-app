@@ -535,8 +535,23 @@ function isChordLine(line: string): boolean {
 
   for (const token of tokens) {
 
-    // Guiones son separadores
+    // Guiones solos son separadores
     if (/^-+$/.test(token)) {
+      continue;
+    }
+
+    // Si el token contiene guiones que separan acordes (ej: "B-A", "F#m-B7", "C-D-Em")
+    if (token.includes('-')) {
+      const subTokens = token.split(/-+/).filter(Boolean);
+      if (subTokens.length === 0) {
+        continue;
+      }
+      for (const sub of subTokens) {
+        if (!chordRegex.test(normalizeChord(sub))) {
+          return false;
+        }
+        validTokens++;
+      }
       continue;
     }
 

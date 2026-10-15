@@ -299,7 +299,7 @@ function formatChordsOnlyToChordPro(
   line: string
 ): string {
   return line.replace(
-    /\S+/g,
+    /[^\s\-]+/g,
     token => `[${token}]`
   );
 }
@@ -321,7 +321,7 @@ function mergeLineToChordPro(
   chordLine: string,
   lyricLine: string
 ): string {
-  const chordRegex = /\S+/g;
+  const chordRegex = /[^\s\-]+/g;
 
   const chords: Array<{
     chord: string;
