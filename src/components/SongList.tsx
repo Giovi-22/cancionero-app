@@ -52,6 +52,8 @@ interface SongListProps {
    */
   onSyncPress?: () => void;
 
+  onHowToCreatePress?: () => void;
+
   isSetlistMode?: boolean;
 
   /**
@@ -124,6 +126,7 @@ export const SongList: React.FC<
   songs,
   onSongPress,
   onSyncPress,
+  onHowToCreatePress,
   isSetlistMode,
   canManageSetlist = false,
   onRemoveFromSetlist,
@@ -318,24 +321,46 @@ export const SongList: React.FC<
               </TouchableOpacity>
             )
           ) : (
-            onSyncPress && (
-              <TouchableOpacity
-                style={
-                  styles.syncButton
-                }
-                onPress={
-                  onSyncPress
-                }
-              >
-                <Text
+            <>
+              {onSyncPress && (
+                <TouchableOpacity
                   style={
-                    styles.syncButtonText
+                    styles.syncButton
+                  }
+                  onPress={
+                    onSyncPress
                   }
                 >
-                  Sincronizar ahora
-                </Text>
-              </TouchableOpacity>
-            )
+                  <Text
+                    style={
+                      styles.syncButtonText
+                    }
+                  >
+                    Sincronizar ahora
+                  </Text>
+                </TouchableOpacity>
+              )}
+
+              {onHowToCreatePress && (
+                <TouchableOpacity
+                  style={
+                    styles.howToCreateButton
+                  }
+                  onPress={
+                    onHowToCreatePress
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={
+                      styles.howToCreateButtonText
+                    }
+                  >
+                    Cómo crear mis canciones
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </>
           )}
         </View>
       );
@@ -639,6 +664,22 @@ const styles =
         COLORS.foreground,
       fontWeight: '600',
       fontSize: 16,
+    },
+
+    howToCreateButton: {
+      marginTop: 12,
+      paddingHorizontal: 20,
+      paddingVertical: 10,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: COLORS.border,
+      backgroundColor: 'transparent',
+    },
+
+    howToCreateButtonText: {
+      color: COLORS.accent,
+      fontWeight: '600',
+      fontSize: 14,
     },
 
     songNoteModalOverlay: {

@@ -89,8 +89,8 @@ export class SyncService {
         .filter((rf: any) => !failedSongIds.has(rf.id))
         .map((rf: any) => ({
           id: rf.id,
-          // Quitar extensiones ChordPro del nombre para mostrar títulos limpios
-          name: rf.name.replace(/\.(chordpro|pro|cho|chopro|crd)$/i, ''),
+          // Quitar extensiones ChordPro y txt del nombre para mostrar títulos limpios
+          name: rf.name.replace(/\.(chordpro|pro|cho|chopro|crd|txt)$/i, ''),
           mimeType: rf.mimeType,
           modifiedTime: rf.modifiedTime,
           localPath: FileSystemService.getLocalPath(rf.id),

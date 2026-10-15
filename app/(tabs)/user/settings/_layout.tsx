@@ -24,6 +24,10 @@ export default function SettingsLayout() {
                 headerShown: true,
                 title: "Pedal WiFi"
             }} />
+            <Stack.Screen name="help" options={{
+                headerShown: true,
+                title: "Ayuda"
+            }} />
             <Stack.Screen name="debug" />
         </Stack>
     );

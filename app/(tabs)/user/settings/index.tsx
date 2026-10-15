@@ -11,6 +11,7 @@ import {
     Bluetooth,
     Bug,
     ChevronRight,
+    HelpCircle,
     RefreshCw,
     ShieldAlert,
     Wifi,
@@ -156,6 +157,23 @@ export default function SettingsScreen() {
                         }
                     />
 
+                </CardContainer>
+
+                {/* Ayuda */}
+                <CardContainer title='Ayuda'>
+                    <SettingRow
+                        icon={
+                            <HelpCircle
+                                size={21}
+                                color={COLORS.accent}
+                            />
+                        }
+                        title="Guía de uso"
+                        subtitle="Cómo usar la app, crear canciones y Director Mode"
+                        onPress={() =>
+                            router.push('/user/settings/help')
+                        }
+                    />
                 </CardContainer>
 
                 {/* Aplicación */}
