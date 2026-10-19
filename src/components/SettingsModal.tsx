@@ -13,6 +13,7 @@ import {
   Plus,
 } from 'lucide-react-native';
 import { features } from '../config/features';
+import { MIN_FONT_SIZE, MAX_FONT_SIZE, FONT_SIZE_STEP } from '../constants/songViewer';
 
 const COLORS = {
   background: '#0a0a0a',
@@ -103,7 +104,7 @@ export const SettingsModal: React.FC<
             <TouchableOpacity
               onPress={() =>
                 setFontSize(p =>
-                  Math.max(10, p - 2)
+                  Math.max(MIN_FONT_SIZE, p - FONT_SIZE_STEP)
                 )
               }
               style={styles.smallBtn}
@@ -123,7 +124,7 @@ export const SettingsModal: React.FC<
             <TouchableOpacity
               onPress={() =>
                 setFontSize(p =>
-                  Math.min(40, p + 2)
+                  Math.min(MAX_FONT_SIZE, p + FONT_SIZE_STEP)
                 )
               }
               style={styles.smallBtn}
