@@ -105,6 +105,13 @@ service cloud.firestore {
 
       // Los perfiles no se eliminan directamente desde el cliente
       allow delete: if false;
+
+      // -----------------------------------------------------------------------
+      // BIBLIOTECAS DEL USUARIO (users/{userId}/libraries/{libraryId})
+      // -----------------------------------------------------------------------
+      match /libraries/{libraryId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
 

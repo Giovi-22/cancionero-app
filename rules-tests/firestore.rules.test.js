@@ -140,6 +140,91 @@ describe("USERS - Perfiles", () => {
     });
 });
 
+describe("USERS - Bibliotecas (users/{userId}/libraries/{libraryId})", () => {
+    test("usuario autenticado puede crear y leer su propia biblioteca", async () => {
+        const user = authenticatedUser("user-1", "user1@test.com");
+        const db = user.firestore();
+
+        await assertSucceeds(
+            db.collection("users").doc("user-1").collection("libraries").doc("lib-1").set({
+                id: "lib-1",
+                name: "Mi Biblioteca",
+                driveFolderId: "folder-123",
+                driveFolderName: "Carpeta Drive",
+                updatedAt: new Date().toISOString(),
+            })
+        );
+
+        await assertSucceeds(
+            db.collection("users").doc("user-1").collection("libraries").doc("lib-1").get()
+        );
+    });
+
+    test("usuario autenticado puede actualizar o escribir tombstone en su biblioteca", async () => {
+        const user = authenticatedUser("user-1", "user1@test.com");
+        const db = user.firestore();
+
+        await assertSucceeds(
+            db.collection("users").doc("user-1").collection("libraries").doc("lib-1").set({
+                id: "lib-1",
+                name: "Mi Biblioteca",
+                driveFolderId: "folder-123",
+                updatedAt: new Date().toISOString(),
+            })
+        );
+
+        await assertSucceeds(
+            db.collection("users").doc("user-1").collection("libraries").doc("lib-1").set({
+                deletedAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+            }, { merge: true })
+        );
+    });
+
+    test("usuario autenticado NO puede leer ni escribir en bibliotecas de otro usuario", async () => {
+        const user1 = authenticatedUser("user-1", "user1@test.com");
+        const user2 = authenticatedUser("user-2", "user2@test.com");
+        const db1 = user1.firestore();
+        const db2 = user2.firestore();
+
+        await assertSucceeds(
+            db1.collection("users").doc("user-1").collection("libraries").doc("lib-1").set({
+                id: "lib-1",
+                name: "Biblioteca Privada",
+                driveFolderId: "folder-1",
+                updatedAt: new Date().toISOString(),
+            })
+        );
+
+        await assertFails(
+            db2.collection("users").doc("user-1").collection("libraries").doc("lib-1").get()
+        );
+
+        await assertFails(
+            db2.collection("users").doc("user-1").collection("libraries").doc("lib-1").set({
+                name: "Hackeado",
+                updatedAt: new Date().toISOString(),
+            })
+        );
+    });
+
+    test("usuario no autenticado NO puede leer ni escribir bibliotecas", async () => {
+        const db = unauthenticatedDb();
+
+        await assertFails(
+            db.collection("users").doc("user-1").collection("libraries").doc("lib-1").get()
+        );
+
+        await assertFails(
+            db.collection("users").doc("user-1").collection("libraries").doc("lib-1").set({
+                id: "lib-1",
+                name: "Anónimo",
+                updatedAt: new Date().toISOString(),
+            })
+        );
+    });
+});
+
 // ============================================================================
 // BANDS
 // ============================================================================

@@ -8,6 +8,7 @@ import React, {
 import { SongMetadata, Library, Setlist } from '../types';
 import { firestore } from '../lib/firebase';
 import { StorageService } from '../services/StorageService';
+import { LibraryService } from '../services/LibraryService';
 import { SyncService } from '../services/SyncService';
 import { DriveService } from '../services/DriveService';
 import { FileSystemService } from '../services/FileSystemService';
@@ -213,6 +214,30 @@ export const AppContextProvider = ({
     setSearchQuery('');
   }, [activeSetlist]);
 
+  // Sincronización de bibliotecas con Firestore al cambiar de usuario / iniciar sesión
+  useEffect(() => {
+    if (!user?.uid) return;
+
+    let isMounted = true;
+
+    const syncLibraries = async () => {
+      try {
+        const changed = await LibraryService.syncWithCloud(user.uid);
+        if (changed && isMounted) {
+          await loadLibraries();
+        }
+      } catch (e) {
+        console.warn('[AppContext] Error during cloud library sync:', e);
+      }
+    };
+
+    syncLibraries();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.uid]);
+
   /**
    * Si el usuario o la biblioteca activa cambian, intentamos
    * iniciar la sincronización de fondo cuando corresponde.
@@ -229,27 +254,31 @@ export const AppContextProvider = ({
     );
   }, [user, activeLibrary?.id]);
 
+  const loadLibraries = async () => {
+    // Cargar bibliotecas desde DB
+    const allLibraries = await StorageService.getAllLibraries();
+    setLibraries(allLibraries);
+
+    // Obtener biblioteca activa
+    const savedLibId =
+      await StorageService.getSetting<string>('active_library_id');
+
+    const activeLib =
+      allLibraries.find(l => l.id === savedLibId) ||
+      allLibraries.find(l => l.id === 'default') ||
+      allLibraries[0] ||
+      null;
+
+    setActiveLibraryState(activeLib);
+
+    if (activeLib) {
+      await refreshLocalDataForLibrary(activeLib.id);
+    }
+  };
+
   const loadInitialData = async () => {
     try {
-      // Cargar bibliotecas desde DB
-      const allLibraries = await StorageService.getAllLibraries();
-      setLibraries(allLibraries);
-
-      // Obtener biblioteca activa
-      const savedLibId =
-        await StorageService.getSetting<string>('active_library_id');
-
-      const activeLib =
-        allLibraries.find(l => l.id === savedLibId) ||
-        allLibraries.find(l => l.id === 'default') ||
-        allLibraries[0] ||
-        null;
-
-      setActiveLibraryState(activeLib);
-
-      if (activeLib) {
-        await refreshLocalDataForLibrary(activeLib.id);
-      }
+      await loadLibraries();
 
       // Cargar tema global
       const savedGlobalTheme =
@@ -507,7 +536,7 @@ export const AppContextProvider = ({
         updatedAt: Date.now(),
       };
 
-      await StorageService.saveLibrary(updated);
+      await LibraryService.save(updated);
 
       setActiveLibraryState(updated);
 
@@ -942,7 +971,7 @@ export const AppContextProvider = ({
       updatedAt: now,
     };
 
-    await StorageService.saveLibrary(
+    await LibraryService.save(
       newLib
     );
 
@@ -963,7 +992,7 @@ export const AppContextProvider = ({
       updatedAt: Date.now(),
     };
 
-    await StorageService.saveLibrary(
+    await LibraryService.save(
       updated
     );
 
@@ -1003,7 +1032,7 @@ export const AppContextProvider = ({
           text: 'Eliminar',
           style: 'destructive',
           onPress: async () => {
-            await StorageService.deleteLibrary(
+            await LibraryService.remove(
               id
             );
 
