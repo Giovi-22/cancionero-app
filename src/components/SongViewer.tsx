@@ -26,6 +26,7 @@ import { PdfService } from '../services/PdfService';
 import { BluetoothInputBridge } from './BluetoothInputBridge';
 import { usePedal } from '../hooks/usePedal';
 import { PedalEvent } from '../types/pedal';
+import { GestureDetector } from 'react-native-gesture-handler';
 
 // Hooks
 import { useSongScroll } from '../hooks/useSongScroll';
@@ -34,6 +35,7 @@ import { useSongSettings } from '../hooks/useSongSettings';
 import { useSongMetronome } from '../hooks/useSongMetronome';
 import { useSongNotes } from '../hooks/useSongNotes';
 import { useSongEditor } from '../hooks/useSongEditor';
+import { useSongPinchZoom } from '../hooks/useSongPinchZoom';
 
 // Sub-componentes
 import { DraggableNote } from './songViewer/DraggableNote';
@@ -49,6 +51,7 @@ import { SongViewerHeader } from './songViewer/SongViewerHeader';
 import { SetlistNavSubHeader } from './songViewer/SetlistNavSubHeader';
 import { SettingsModal } from './SettingsModal';
 import { SongContent } from './songViewer/SongContent';
+import { FontSizeIndicator } from './songViewer/FontSizeIndicator';
 import { COLORS } from '../constants/theme';
 import { features } from '../config/features';
 import { makeSongKey } from '../utils/SongKey';
@@ -379,6 +382,23 @@ export const SongViewer: React.FC<
     void viewportHeightRef;
     void contentHeightRef;
     void getScrollProgress;
+
+    // ─────────────────────────────────────────────
+    // Zoom con gesto de dos dedos (Pinch-to-zoom)
+    // ─────────────────────────────────────────────
+
+    const {
+      pinchGesture,
+      displayFontSize,
+      showIndicator: showZoomIndicator,
+    } = useSongPinchZoom({
+      fontSize,
+      setFontSize,
+      setIsScrollEnabled,
+      isScrolling,
+      setIsScrolling,
+      enabled: !isSongUnavailable,
+    });
 
     // ─────────────────────────────────────────────
     // Editor de notas
@@ -961,101 +981,110 @@ export const SongViewer: React.FC<
               </Text>
             </View>
           ) : (
-            <ScrollView
-              ref={scrollRef}
-              style={styles.scroll}
-              contentContainerStyle={
-                styles.scrollContent
-              }
-              onContentSizeChange={
-                handleContentSizeChange
-              }
-              onScroll={e => {
-                handleScroll(
-                  e.nativeEvent
-                    .contentOffset.y
-                );
-              }}
-              scrollEventThrottle={1}
-              scrollEnabled={
-                isScrollEnabled
-              }
-            >
-              <SongContent
-                parsedLines={
-                  parsedLines
-                }
-                fontSize={
-                  fontSize
-                }
-                viewMode={
-                  viewMode
-                }
-                theme={theme}
-                isStageMode={
-                  isStageMode
-                }
-                isDebugMode={
-                  features.debugTools &&
-                  isDebugMode
-                }
-                isEditToolActive={
-                  isEditToolActive
-                }
-                onLineLayout={
-                  handleLineLayout
-                }
-                onContainerLayout={
-                  handleContainerLayout
-                }
-                onLinePress={(
-                  lineIndex,
-                  pageX,
-                  pageY
-                ) => {
-                  if (
-                    isEditToolActive
-                  ) {
-                    openLineEditModal(
-                      lineIndex
+            <GestureDetector gesture={pinchGesture}>
+              <View style={styles.scrollWrapper} collapsable={false}>
+                <ScrollView
+                  ref={scrollRef}
+                  style={styles.scroll}
+                  contentContainerStyle={
+                    styles.scrollContent
+                  }
+                  onContentSizeChange={
+                    handleContentSizeChange
+                  }
+                  onScroll={e => {
+                    handleScroll(
+                      e.nativeEvent
+                        .contentOffset.y
                     );
-                  } else {
-                    addFloatingNoteAtLine(
+                  }}
+                  scrollEventThrottle={1}
+                  scrollEnabled={
+                    isScrollEnabled
+                  }
+                >
+                  <SongContent
+                    parsedLines={
+                      parsedLines
+                    }
+                    fontSize={
+                      fontSize
+                    }
+                    viewMode={
+                      viewMode
+                    }
+                    theme={theme}
+                    isStageMode={
+                      isStageMode
+                    }
+                    isDebugMode={
+                      features.debugTools &&
+                      isDebugMode
+                    }
+                    isEditToolActive={
+                      isEditToolActive
+                    }
+                    onLineLayout={
+                      handleLineLayout
+                    }
+                    onContainerLayout={
+                      handleContainerLayout
+                    }
+                    onLinePress={(
+                      lineIndex,
                       pageX,
                       pageY
-                    );
-                  }
-                }}
-              />
-
-              {Object.entries(musicianNotes || {}).map(
-                ([noteId, noteData]: [string, any]) => {
-                  if (
-                    !noteData ||
-                    typeof noteData === 'string' ||
-                    !noteData.text
-                  ) {
-                    return null;
-                  }
-                  return (
-                    <DraggableNote
-                      key={noteId}
-                      id={noteId}
-                      initialText={noteData.text}
-                      initialX={noteData.x}
-                      initialY={noteData.y}
-                      isStageMode={isStageMode}
-                      onRequestEdit={(id, text) =>
-                        setEditingNote({ id, text })
+                    ) => {
+                      if (
+                        isEditToolActive
+                      ) {
+                        openLineEditModal(
+                          lineIndex
+                        );
+                      } else {
+                        addFloatingNoteAtLine(
+                          pageX,
+                          pageY
+                        );
                       }
-                      onUpdate={handleUpdateNote}
-                      onDelete={handleDeleteNote}
-                      setScrollEnabled={setIsScrollEnabled}
-                    />
-                  );
-                }
-              )}
-            </ScrollView>
+                    }}
+                  />
+
+                  {Object.entries(musicianNotes || {}).map(
+                    ([noteId, noteData]: [string, any]) => {
+                      if (
+                        !noteData ||
+                        typeof noteData === 'string' ||
+                        !noteData.text
+                      ) {
+                        return null;
+                      }
+                      return (
+                        <DraggableNote
+                          key={noteId}
+                          id={noteId}
+                          initialText={noteData.text}
+                          initialX={noteData.x}
+                          initialY={noteData.y}
+                          isStageMode={isStageMode}
+                          onRequestEdit={(id, text) =>
+                            setEditingNote({ id, text })
+                          }
+                          onUpdate={handleUpdateNote}
+                          onDelete={handleDeleteNote}
+                          setScrollEnabled={setIsScrollEnabled}
+                        />
+                      );
+                    }
+                  )}
+                </ScrollView>
+
+                <FontSizeIndicator
+                  visible={showZoomIndicator}
+                  fontSize={displayFontSize}
+                />
+              </View>
+            </GestureDetector>
           )}
         </View>
 
@@ -1236,6 +1265,11 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor:
       COLORS.background,
+  },
+
+  scrollWrapper: {
+    flex: 1,
+    position: 'relative',
   },
 
   scroll: {

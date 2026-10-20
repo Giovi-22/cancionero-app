@@ -115,5 +115,30 @@ int main() {
     uint32_t tw = 0xFFFFFF00u; m3.motionStart(+1, tw); for (int i=0;i<200;i++){ tw += 5; m3.update(tw);} float pw; m3.getSongPos("w",pw);
     printf("pos tras cruzar wrap de millis: %.3f\n", pw); CHECK(pw > 1.5f && pw < 2.1f);
 
+
+    // 15) REGRESIÓN: el loop real de la ESP32 corre a ~1 ms por vuelta (o con tiempos irregulares).
+    //     Antes, a 1 ms la aceleración inicial se tomaba por "frenado completo" y el movimiento
+    //     se cancelaba en el primer tick, publicando la posición vieja como final.
+    for (int tickMs = 1; tickMs <= 4; tickMs++) {
+        PedalSyncModel mr; Sink sr; mr.begin(&sr, 2.0f, 150); mr.onClientConnected(0);
+        mr.onClientLine(0, "HELLO r.1 7 40 1.9"); uint32_t tr = 5000; mr.motionStart(+1, tr);
+        for (uint32_t end = 7000; tr < end; tr += tickMs) mr.update(tr);
+        float pr; mr.getSongPos("r.1", pr); CHECK(mr.isMoving()); CHECK(fabsf(pr - 5.75f) < 0.05f);
+        mr.motionStop(); for (uint32_t end = tr + 400; tr < end; tr += tickMs) mr.update(tr);
+        mr.getSongPos("r.1", pr); CHECK(!mr.isMoving()); CHECK(fabsf(pr - 5.90f) < 0.05f);
+        int mv = -1; for (auto& mm : sr.out) if (startsWith(mm.line,"POS ")) { char k[64]; float q; sscanf(mm.line.c_str(),"POS %63s %f %d",k,&q,&mv); }
+        CHECK(mv == 0);
+    }
+    // loop con tiempos irregulares (0 a 3 ms entre vueltas, con algún bloqueo largo de 40 ms)
+    { PedalSyncModel mr; Sink sr; mr.begin(&sr, 2.0f, 150); mr.onClientConnected(0); mr.onClientLine(0, "HELLO r.2 7 40 1.9");
+      uint32_t tr = 9000; mr.motionStart(+1, tr); srand(7); int n = 0;
+      for (uint32_t end = 11000; tr < end; tr += rand() % 4, n++) { if (n % 400 == 399) tr += 40; mr.update(tr); }
+      float pr; mr.getSongPos("r.2", pr); CHECK(mr.isMoving()); CHECK(pr > 5.0f && pr < 6.0f);
+      printf("loop irregular: pos tras 2 s = %.2f\n", pr); }
+    // soltar antes del primer update no debe dejar el modelo colgado ni mover la posición
+    { PedalSyncModel mr; Sink sr; mr.begin(&sr, 2.0f, 150); mr.onClientConnected(0); mr.onClientLine(0, "HELLO r.3 7 40 1.9");
+      mr.motionStart(+1, 100); mr.motionStop(); mr.update(101); mr.update(105); float pr; mr.getSongPos("r.3", pr);
+      CHECK(!mr.isMoving()); CHECK(pr == 1.9f); }
+
     printf(fails? "\n%d FALLAS\n":"\nTODO OK\n", fails); return fails?1:0;
 }

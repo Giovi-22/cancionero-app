@@ -389,7 +389,13 @@ void PedalSyncModel::update(uint32_t now) {
         vel_ = (vel_ - rate < target_) ? target_ : vel_ - rate;
     }
 
-    if (vel_ > MIN_VELOCITY && dir_ != 0) {
+    // Se considera detenido solo si ya no se pide movimiento (pedal soltado)
+    // y la velocidad llegó a cero. Al acelerar desde cero la velocidad de los
+    // primeros ticks es menor a MIN_VELOCITY: eso NO es "frenado completo".
+    const bool keepMoving =
+        dir_ != 0 && (vel_ > MIN_VELOCITY || target_ > 0.0f);
+
+    if (keepMoving) {
         const float delta =
             static_cast<float>(dir_) * vel_ * (static_cast<float>(dtMs) / 1000.0f);
 

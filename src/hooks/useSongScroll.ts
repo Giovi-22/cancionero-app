@@ -802,7 +802,13 @@ export const useSongScroll = ({
 
                 const dir = linePedalDirRef.current;
 
-                if (vel > LINE_MIN_VELOCITY && dir !== null) {
+                // Solo se detiene cuando ya no se pide movimiento (pedal soltado)
+                // y la velocidad llegó a cero; al acelerar desde cero la
+                // velocidad de los primeros frames es menor al umbral.
+                if (
+                    dir !== null &&
+                    (vel > LINE_MIN_VELOCITY || target > 0)
+                ) {
                     const current = linePosRef.current ?? 0;
                     const next =
                         current +
