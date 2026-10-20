@@ -6,6 +6,9 @@ import {
     PedalEvent,
     PedalEventType,
     PedalTransportType,
+    WifiConfigMessage,
+    WifiHelloReport,
+    WifiPositionMessage,
 } from '../../types/pedal';
 import { IPedalAdapter } from './IPedalAdapter';
 
@@ -34,6 +37,8 @@ export class WifiPedalAdapter implements IPedalAdapter {
 
     private eventListeners = new Set<(event: PedalEvent) => void>();
     private connectionListeners = new Set<(connected: boolean) => void>();
+    private positionListeners = new Set<(message: WifiPositionMessage) => void>();
+    private configListeners = new Set<(message: WifiConfigMessage) => void>();
 
     isConnected(): boolean {
         return this.tcpClient !== null;
@@ -278,6 +283,18 @@ export class WifiPedalAdapter implements IPedalAdapter {
     }
 
     private handleLine(value: string): void {
+        // Mensajes de sincronización del ESP32 (no son eventos de botón).
+        // POS llega varias veces por segundo: no se loguea.
+        if (value.startsWith('POS ')) {
+            this.handlePosition(value);
+            return;
+        }
+
+        if (value.startsWith('CFG ')) {
+            this.handleConfig(value);
+            return;
+        }
+
         if (!VALID_EVENTS.includes(value as PedalEventType)) {
             console.log('[WifiPedalAdapter] Evento desconocido ignorado:', value);
             return;
@@ -292,6 +309,102 @@ export class WifiPedalAdapter implements IPedalAdapter {
         console.log('[WifiPedalAdapter] Evento normalizado emitido:', event);
 
         this.eventListeners.forEach(listener => listener(event));
+    }
+
+    /** POS <songKey> <pos> <moving> */
+    private handlePosition(value: string): void {
+        const parts = value.split(' ');
+
+        if (parts.length !== 4) return;
+
+        const pos = Number(parts[2]);
+
+        if (!Number.isFinite(pos)) return;
+
+        const message: WifiPositionMessage = {
+            songKey: parts[1],
+            pos,
+            moving: parts[3] === '1',
+        };
+
+        this.positionListeners.forEach(listener => listener(message));
+    }
+
+    /** CFG <linesPerSec> <rampMs> */
+    private handleConfig(value: string): void {
+        const parts = value.split(' ');
+
+        if (parts.length !== 3) return;
+
+        const linesPerSec = Number(parts[1]);
+        const rampMs = Number(parts[2]);
+
+        if (!Number.isFinite(linesPerSec) || !Number.isFinite(rampMs)) return;
+
+        console.log('[WifiPedalAdapter] Config del pedal:', linesPerSec, rampMs);
+
+        this.configListeners.forEach(listener =>
+            listener({ linesPerSec, rampMs })
+        );
+    }
+
+    /**
+     * Envía una línea al ESP32. Devuelve false si no hay conexión o falla.
+     */
+    private sendLine(line: string): boolean {
+        if (!this.tcpClient) {
+            return false;
+        }
+
+        try {
+            this.tcpClient.write(`${line}\n`);
+            return true;
+        } catch (error) {
+            console.warn('[WifiPedalAdapter] Error enviando:', error);
+            return false;
+        }
+    }
+
+    /**
+     * Avisa al ESP32 que esta canción está abierta, y cuántas líneas
+     * entran en esta pantalla.
+     */
+    sendHello(report: WifiHelloReport): boolean {
+        const total = Math.round(report.totalLines);
+
+        if (total < 1 || /\s/.test(report.songKey)) {
+            return false;
+        }
+
+        const visible = Math.max(0, Math.round(report.visibleLines));
+        const pos = Number.isFinite(report.pos) ? report.pos : 0;
+
+        return this.sendLine(
+            `HELLO ${report.songKey} ${visible} ${total} ${pos.toFixed(2)}`
+        );
+    }
+
+    /** Avisa al ESP32 que se cerró la canción. */
+    sendLeave(songKey: string): boolean {
+        if (/\s/.test(songKey)) {
+            return false;
+        }
+
+        return this.sendLine(`LEAVE ${songKey}`);
+    }
+
+    onPosition(listener: (message: WifiPositionMessage) => void): () => void {
+        this.positionListeners.add(listener);
+        return () => {
+            this.positionListeners.delete(listener);
+        };
+    }
+
+    onConfig(listener: (message: WifiConfigMessage) => void): () => void {
+        this.configListeners.add(listener);
+        return () => {
+            this.configListeners.delete(listener);
+        };
     }
 
     onEvent(listener: (event: PedalEvent) => void): () => void {

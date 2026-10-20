@@ -11,6 +11,21 @@ import {
     View,
 } from 'react-native';
 
+import {
+    LINE_ANCHOR_FRACTION,
+    LINE_MIN_VELOCITY,
+    LINE_SYNC_EPSILON,
+    LINE_TRUST_TOLERANCE_PX,
+    SERVER_BLEND,
+    SERVER_SNAP_LINES,
+    WIFI_PEDAL_LINES_PER_SEC,
+    WIFI_PEDAL_RAMP_MS,
+    buildTops,
+    minVisibleLines,
+    posToY,
+    yToPos,
+} from '../utils/lineMap';
+
 interface UseSongScrollParams {
     scrollRef: RefObject<ScrollView | null>;
     scrollAreaRef: RefObject<View | null>;
@@ -20,6 +35,8 @@ interface UseSongScrollParams {
     onScrollPositionChange?: (
         progress: number
     ) => void;
+    /** Cantidad de líneas lógicas (parsedLines.length). */
+    lineCount?: number;
 }
 
 export interface UseSongScrollReturn {
@@ -60,6 +77,44 @@ export interface UseSongScrollReturn {
     scrollAreaPageY: React.MutableRefObject<number>;
     scrollAreaPageX: React.MutableRefObject<number>;
     measureScrollArea: () => void;
+
+    // ── Scroll por líneas lógicas (pedal WiFi) ──
+    hasLineMap: () => boolean;
+    handleLineLayout: (
+        lineIndex: number,
+        y: number,
+        height: number
+    ) => void;
+    handleContainerLayout: (y: number) => void;
+    getLinePos: () => number;
+    scrollToLinePos: (
+        pos: number,
+        animated?: boolean
+    ) => void;
+    startLinePedalScroll: (
+        direction: 'up' | 'down'
+    ) => void;
+    stopLinePedalScroll: () => void;
+
+    // ── Posición compartida con el ESP32 ──
+    /** Se incrementa cuando el mapa de líneas o el viewport terminan de cambiar. */
+    lineMapVersion: number;
+    /** Datos para el HELLO: líneas visibles (peor caso), total y posición actual. */
+    getLineReport: () => {
+        visible: number;
+        total: number;
+        pos: number;
+    } | null;
+    /** Aplica una posición publicada por el ESP32. */
+    applyServerLinePos: (
+        pos: number,
+        moving: boolean
+    ) => void;
+    /** Velocidad y rampa del pedal, definidas por el ESP32. */
+    setLinePedalConfig: (
+        linesPerSec: number,
+        rampMs: number
+    ) => void;
 }
 
 const ACCEL_RATE = 0.008;
@@ -74,6 +129,7 @@ export const useSongScroll = ({
     pedalSpeed,
     isScrolling,
     onScrollPositionChange,
+    lineCount = 0,
 }: UseSongScrollParams): UseSongScrollReturn => {
     const [isScrollEnabled, setIsScrollEnabled] =
         useState(true);
@@ -154,6 +210,22 @@ export const useSongScroll = ({
         [onScrollPositionChange]
     );
 
+    // Cambia (con un pequeño retardo) cuando el mapa de líneas o el viewport
+    // dejaron de moverse. SongViewer lo usa para volver a reportar al ESP32.
+    const [lineMapVersion, setLineMapVersion] = useState(0);
+    const lineMapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    const bumpLineMapVersion = useCallback(() => {
+        if (lineMapTimerRef.current !== null) {
+            clearTimeout(lineMapTimerRef.current);
+        }
+
+        lineMapTimerRef.current = setTimeout(() => {
+            lineMapTimerRef.current = null;
+            setLineMapVersion(v => v + 1);
+        }, 300);
+    }, []);
+
     const measureScrollArea =
         useCallback(() => {
             scrollAreaRef.current?.measure(
@@ -181,8 +253,9 @@ export const useSongScroll = ({
                     event.nativeEvent.layout.height;
 
                 measureScrollArea();
+                bumpLineMapVersion();
             },
-            [measureScrollArea]
+            [measureScrollArea, bumpLineMapVersion]
         );
 
     const handleContentSizeChange =
@@ -502,6 +575,342 @@ export const useSongScroll = ({
                 0;
         }, []);
 
+    // ─────────────────────────────────────────────
+    // Scroll por líneas lógicas (pedal WiFi)
+    //
+    // Trabaja con una posición expresada en líneas
+    // (ej. 42.6), no en píxeles. Cada dispositivo la
+    // convierte a píxeles con las alturas que midió
+    // SongContent, así que dos pantallas distintas
+    // muestran la misma zona de la canción.
+    //
+    // El pedal Bluetooth NO usa esto: sigue con el
+    // loop en píxeles de más arriba.
+    // ─────────────────────────────────────────────
+
+    const lineCountRef = useRef(lineCount);
+    lineCountRef.current = lineCount;
+
+    const lineYRef = useRef<(number | undefined)[]>([]);
+    const lineHRef = useRef<(number | undefined)[]>([]);
+    const containerYRef = useRef(0);
+    const topsCacheRef = useRef<number[] | null>(null);
+
+    // Posición lógica vigente y el scrollY que le corresponde.
+    // Si el scroll real ya no coincide con lineScrollYRef,
+    // alguien más lo movió (dedo, autoscroll, pedal BT) y
+    // se vuelve a derivar la posición desde el scroll.
+    const linePosRef = useRef<number | null>(null);
+    const lineScrollYRef = useRef(0);
+    const ignoreScrollUntilRef = useRef(0);
+
+    // Velocidad del pedal: valores por defecto hasta que el ESP32 envíe CFG.
+    const linesPerSecRef = useRef(WIFI_PEDAL_LINES_PER_SEC);
+    const rampMsRef = useRef(WIFI_PEDAL_RAMP_MS);
+
+    // Posición final (moving=0) que llegó mientras el loop local seguía frenando.
+    const serverFinalPosRef = useRef<number | null>(null);
+
+    const linePedalRafRef = useRef<number | null>(null);
+    const linePedalDirRef = useRef<'up' | 'down' | null>(null);
+    const linePedalVelRef = useRef(0);
+    const linePedalTargetRef = useRef(0);
+    const linePedalLastTickRef = useRef(0);
+
+    const handleLineLayout = useCallback(
+        (lineIndex: number, y: number, height: number) => {
+            lineYRef.current[lineIndex] = y;
+            lineHRef.current[lineIndex] = height;
+            topsCacheRef.current = null;
+            bumpLineMapVersion();
+        },
+        [bumpLineMapVersion]
+    );
+
+    const handleContainerLayout = useCallback((y: number) => {
+        containerYRef.current = y;
+        topsCacheRef.current = null;
+        bumpLineMapVersion();
+    }, [bumpLineMapVersion]);
+
+    const getTops = useCallback(() => {
+        const count = lineCountRef.current;
+        const cached = topsCacheRef.current;
+
+        if (cached && cached.length === count + 1) {
+            return cached;
+        }
+
+        const tops = buildTops(
+            lineYRef.current,
+            lineHRef.current,
+            count,
+            containerYRef.current,
+            contentHeightRef.current
+        );
+
+        topsCacheRef.current = tops;
+        return tops;
+    }, []);
+
+    const hasLineMap = useCallback(() => {
+        const count = lineCountRef.current;
+
+        if (count <= 0 || viewportHeightRef.current <= 0) {
+            return false;
+        }
+
+        for (let i = 0; i < count; i++) {
+            if (lineYRef.current[i] !== undefined) {
+                return true;
+            }
+        }
+
+        return false;
+    }, []);
+
+    /** Línea (decimal) que hoy está en el punto de anclaje del viewport. */
+    const getLinePos = useCallback(() => {
+        const anchorY =
+            scrollPosRef.current +
+            viewportHeightRef.current * LINE_ANCHOR_FRACTION;
+
+        return yToPos(getTops(), anchorY);
+    }, [getTops]);
+
+    const getTrustedLinePos = useCallback(() => {
+        if (
+            linePosRef.current !== null &&
+            Math.abs(scrollPosRef.current - lineScrollYRef.current) <
+            LINE_TRUST_TOLERANCE_PX
+        ) {
+            return linePosRef.current;
+        }
+
+        return getLinePos();
+    }, [getLinePos]);
+
+    /** Lleva el viewport a que la línea `pos` quede en el punto de anclaje. */
+    const applyLinePos = useCallback(
+        (pos: number, animated: boolean) => {
+            const clamped = Math.min(
+                lineCountRef.current,
+                Math.max(0, pos)
+            );
+
+            const targetY =
+                posToY(getTops(), clamped) -
+                viewportHeightRef.current * LINE_ANCHOR_FRACTION;
+
+            const y = Math.max(0, Math.min(getMaxScroll(), targetY));
+
+            linePosRef.current = clamped;
+            lineScrollYRef.current = y;
+            scrollPosRef.current = y;
+
+            // Evita que los onScroll que dispara este mismo scrollTo
+            // pisen scrollPosRef con valores intermedios.
+            ignoreScrollUntilRef.current =
+                Date.now() + (animated ? 700 : 250);
+
+            scrollRef.current?.scrollTo({ y, animated });
+        },
+        [getTops, getMaxScroll, scrollRef]
+    );
+
+    const cancelLinePedalLoop = useCallback(() => {
+        if (linePedalRafRef.current !== null) {
+            cancelAnimationFrame(linePedalRafRef.current);
+            linePedalRafRef.current = null;
+        }
+
+        linePedalVelRef.current = 0;
+        linePedalTargetRef.current = 0;
+        linePedalDirRef.current = null;
+        linePedalLastTickRef.current = 0;
+        serverFinalPosRef.current = null;
+    }, []);
+
+    const scrollToLinePos = useCallback(
+        (pos: number, animated = true) => {
+            cancelLinePedalLoop();
+            applyLinePos(pos, animated);
+            notifyProgress(getScrollProgress(), true);
+        },
+        [
+            cancelLinePedalLoop,
+            applyLinePos,
+            notifyProgress,
+            getScrollProgress,
+        ]
+    );
+
+    const startLinePedalScroll = useCallback(
+        (direction: 'up' | 'down') => {
+            // Si el loop en píxeles estuviera activo, se corta.
+            if (pedalRafRef.current !== null) {
+                cancelAnimationFrame(pedalRafRef.current);
+                pedalRafRef.current = null;
+            }
+
+            pedalVelocityRef.current = 0;
+            pedalTargetVelRef.current = 0;
+            pedalScrollDirRef.current = null;
+            pedalLastTickRef.current = 0;
+
+            serverFinalPosRef.current = null;
+
+            linePedalDirRef.current = direction;
+            linePedalTargetRef.current = linesPerSecRef.current;
+
+            if (linePedalRafRef.current !== null) {
+                return;
+            }
+
+            linePosRef.current = getTrustedLinePos();
+            lineScrollYRef.current = scrollPosRef.current;
+            linePedalVelRef.current = 0;
+            linePedalLastTickRef.current = 0;
+
+            const tick = (timestamp: number) => {
+                if (linePedalLastTickRef.current === 0) {
+                    linePedalLastTickRef.current = timestamp;
+                    linePedalRafRef.current =
+                        requestAnimationFrame(tick);
+                    return;
+                }
+
+                const dt = Math.min(
+                    timestamp - linePedalLastTickRef.current,
+                    50
+                );
+
+                linePedalLastTickRef.current = timestamp;
+
+                const target = linePedalTargetRef.current;
+                const rate =
+                    (linesPerSecRef.current / rampMsRef.current) * dt;
+
+                let vel = linePedalVelRef.current;
+
+                vel =
+                    target > vel
+                        ? Math.min(target, vel + rate)
+                        : Math.max(target, vel - rate);
+
+                linePedalVelRef.current = vel;
+
+                const dir = linePedalDirRef.current;
+
+                if (vel > LINE_MIN_VELOCITY && dir !== null) {
+                    const current = linePosRef.current ?? 0;
+                    const next =
+                        current +
+                        (dir === 'down' ? 1 : -1) * vel * (dt / 1000);
+
+                    applyLinePos(next, false);
+                    notifyProgress(getScrollProgress());
+
+                    linePedalRafRef.current =
+                        requestAnimationFrame(tick);
+                } else {
+                    linePedalRafRef.current = null;
+                    linePedalVelRef.current = 0;
+                    linePedalTargetRef.current = 0;
+                    linePedalDirRef.current = null;
+                    linePedalLastTickRef.current = 0;
+
+                    // Si el ESP32 ya informó dónde quedó, terminar exactamente ahí.
+                    const finalPos = serverFinalPosRef.current;
+                    serverFinalPosRef.current = null;
+
+                    if (finalPos !== null) {
+                        applyLinePos(finalPos, true);
+                    }
+
+                    notifyProgress(getScrollProgress(), true);
+                }
+            };
+
+            linePedalRafRef.current = requestAnimationFrame(tick);
+        },
+        [applyLinePos, getTrustedLinePos, notifyProgress, getScrollProgress]
+    );
+
+    const stopLinePedalScroll = useCallback(() => {
+        linePedalTargetRef.current = 0;
+    }, []);
+
+    const setLinePedalConfig = useCallback(
+        (linesPerSec: number, rampMs: number) => {
+            if (linesPerSec > 0 && linesPerSec <= 20) {
+                linesPerSecRef.current = linesPerSec;
+            }
+
+            if (rampMs >= 1 && rampMs <= 2000) {
+                rampMsRef.current = rampMs;
+            }
+        },
+        []
+    );
+
+    /**
+     * Posición publicada por el ESP32 (fuente de verdad).
+     *
+     * - Con el loop local corriendo: se corrige una fracción del error (o se
+     *   salta si es grande) para que el movimiento siga fluido.
+     * - La posición final (moving=false) se aplica cuando el loop frena.
+     * - Sin loop local (dispositivo que no recibió el inicio, o ya parado):
+     *   se lleva el scroll a esa posición con animación.
+     */
+    const applyServerLinePos = useCallback(
+        (pos: number, moving: boolean) => {
+            if (!Number.isFinite(pos)) {
+                return;
+            }
+
+            if (linePedalRafRef.current !== null) {
+                if (!moving) {
+                    serverFinalPosRef.current = pos;
+                    return;
+                }
+
+                const current = linePosRef.current ?? pos;
+                const error = pos - current;
+
+                linePosRef.current =
+                    Math.abs(error) > SERVER_SNAP_LINES
+                        ? pos
+                        : current + error * SERVER_BLEND;
+
+                return;
+            }
+
+            if (Math.abs(pos - getTrustedLinePos()) < LINE_SYNC_EPSILON) {
+                return;
+            }
+
+            applyLinePos(pos, true);
+            notifyProgress(getScrollProgress(), true);
+        },
+        [applyLinePos, getTrustedLinePos, notifyProgress, getScrollProgress]
+    );
+
+    const getLineReport = useCallback(() => {
+        if (!hasLineMap()) {
+            return null;
+        }
+
+        return {
+            visible: minVisibleLines(
+                getTops(),
+                viewportHeightRef.current
+            ),
+            total: lineCountRef.current,
+            pos: getTrustedLinePos(),
+        };
+    }, [hasLineMap, getTops, getTrustedLinePos]);
+
     useEffect(() => {
         if (!isScrolling) {
             if (
@@ -576,7 +985,9 @@ export const useSongScroll = ({
                 if (
                     !isScrolling &&
                     pedalScrollDirRef.current ===
-                    null
+                    null &&
+                    Date.now() >=
+                    ignoreScrollUntilRef.current
                 ) {
                     scrollPosRef.current =
                         offsetY;
@@ -662,6 +1073,22 @@ export const useSongScroll = ({
                 pedalRafRef.current = null;
             }
 
+            if (
+                linePedalRafRef.current !==
+                null
+            ) {
+                cancelAnimationFrame(
+                    linePedalRafRef.current
+                );
+
+                linePedalRafRef.current = null;
+            }
+
+            if (lineMapTimerRef.current !== null) {
+                clearTimeout(lineMapTimerRef.current);
+                lineMapTimerRef.current = null;
+            }
+
             pedalVelocityRef.current = 0;
             pedalTargetVelRef.current = 0;
             pedalScrollDirRef.current = null;
@@ -692,5 +1119,16 @@ export const useSongScroll = ({
         scrollAreaPageY,
         scrollAreaPageX,
         measureScrollArea,
+        hasLineMap,
+        handleLineLayout,
+        handleContainerLayout,
+        getLinePos,
+        scrollToLinePos,
+        startLinePedalScroll,
+        stopLinePedalScroll,
+        lineMapVersion,
+        getLineReport,
+        applyServerLinePos,
+        setLinePedalConfig,
     };
 };

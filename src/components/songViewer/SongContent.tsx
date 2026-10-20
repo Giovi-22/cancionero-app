@@ -28,6 +28,20 @@ interface SongContentProps {
         pageX: number,
         pageY: number
     ) => void;
+
+    /**
+     * Reporta la posición y el alto de cada línea lógica (índice de
+     * parsedLines), relativos al contenedor de la canción.
+     * Se usa para convertir "línea N" a píxeles en este dispositivo.
+     */
+    onLineLayout?: (
+        lineIndex: number,
+        y: number,
+        height: number
+    ) => void;
+
+    /** Reporta la posición Y del contenedor dentro del ScrollView. */
+    onContainerLayout?: (y: number) => void;
 }
 
 const COLORS = {
@@ -50,6 +64,8 @@ export const SongContent: React.FC<
     isDebugMode,
     isEditToolActive,
     onLinePress,
+    onLineLayout,
+    onContainerLayout,
 }) => {
         const getRenderItems =
             useCallback(
@@ -213,7 +229,14 @@ export const SongContent: React.FC<
             );
 
         return (
-            <View style={styles.songContainer}>
+            <View
+                style={styles.songContainer}
+                onLayout={e => {
+                    onContainerLayout?.(
+                        e.nativeEvent.layout.y
+                    );
+                }}
+            >
                 {parsedLines.map(
                     (
                         line,
@@ -285,6 +308,13 @@ export const SongContent: React.FC<
                         return (
                             <View
                                 key={lIndex}
+                                onLayout={e => {
+                                    onLineLayout?.(
+                                        lIndex,
+                                        e.nativeEvent.layout.y,
+                                        e.nativeEvent.layout.height
+                                    );
+                                }}
                             >
                                 <TouchableOpacity
                                     activeOpacity={0.7}

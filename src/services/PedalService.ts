@@ -19,6 +19,9 @@
 import {
     PedalDevice,
     PedalEvent,
+    WifiConfigMessage,
+    WifiHelloReport,
+    WifiPositionMessage,
 } from '../types/pedal';
 
 import { bluetoothPedalAdapter } from './pedal/BluetoothPedalAdapter';
@@ -201,6 +204,38 @@ class PedalServiceClass {
 
     isDiscovering(): boolean {
         return wifiPedalAdapter.isDiscovering();
+    }
+
+    isWifiConnected(): boolean {
+        return wifiPedalAdapter.isConnected();
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // WiFi — Posición compartida (ESP32 como fuente de verdad)
+    // ──────────────────────────────────────────────────────────
+
+    /** Informa al ESP32 que esta canción está abierta. false si no hay conexión WiFi. */
+    sendHello(report: WifiHelloReport): boolean {
+        return wifiPedalAdapter.sendHello(report);
+    }
+
+    /** Informa al ESP32 que se cerró la canción. */
+    sendLeave(songKey: string): boolean {
+        return wifiPedalAdapter.sendLeave(songKey);
+    }
+
+    /**
+     * Posición compartida publicada por el ESP32.
+     * Va por un canal aparte de onEvent a propósito: llega varias veces
+     * por segundo y no debe disparar re-renders.
+     */
+    onPosition(listener: (message: WifiPositionMessage) => void): () => void {
+        return wifiPedalAdapter.onPosition(listener);
+    }
+
+    /** Velocidad del pedal definida por el ESP32. */
+    onWifiConfig(listener: (message: WifiConfigMessage) => void): () => void {
+        return wifiPedalAdapter.onConfig(listener);
     }
 }
 

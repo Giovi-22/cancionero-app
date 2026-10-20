@@ -14,6 +14,35 @@ export interface PedalEvent {
 
 export type PedalTransportType = 'bluetooth' | 'wifi' | 'none';
 
+/**
+ * Reporte que la app le manda al ESP32 al abrir una canción
+ * (o cuando cambia su pantalla / tamaño de letra).
+ */
+export interface WifiHelloReport {
+    /** Identifica la canción y su contenido (ver utils/songKey). */
+    songKey: string;
+    /** Líneas lógicas que entran enteras en esta pantalla (peor caso). */
+    visibleLines: number;
+    /** Cantidad total de líneas lógicas de la canción. */
+    totalLines: number;
+    /** Posición actual en líneas; solo la usa el ESP32 si es el primero en abrirla. */
+    pos: number;
+}
+
+/** Posición compartida de una canción, publicada por el ESP32. */
+export interface WifiPositionMessage {
+    songKey: string;
+    pos: number;
+    /** true mientras el pedal está en movimiento; false = posición final. */
+    moving: boolean;
+}
+
+/** Velocidad del pedal definida por el ESP32. */
+export interface WifiConfigMessage {
+    linesPerSec: number;
+    rampMs: number;
+}
+
 export interface PedalDevice {
     ip: string;
     port: number;

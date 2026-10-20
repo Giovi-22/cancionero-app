@@ -27,8 +27,6 @@ import { BluetoothInputBridge } from './BluetoothInputBridge';
 import { usePedal } from '../hooks/usePedal';
 import { PedalEvent } from '../types/pedal';
 
-import { GestureDetector } from 'react-native-gesture-handler';
-
 // Hooks
 import { useSongScroll } from '../hooks/useSongScroll';
 import { useSongContent } from '../hooks/useSongContent';
@@ -36,7 +34,6 @@ import { useSongSettings } from '../hooks/useSongSettings';
 import { useSongMetronome } from '../hooks/useSongMetronome';
 import { useSongNotes } from '../hooks/useSongNotes';
 import { useSongEditor } from '../hooks/useSongEditor';
-import { useSongPinchZoom } from '../hooks/useSongPinchZoom';
 
 // Sub-componentes
 import { DraggableNote } from './songViewer/DraggableNote';
@@ -52,9 +49,9 @@ import { SongViewerHeader } from './songViewer/SongViewerHeader';
 import { SetlistNavSubHeader } from './songViewer/SetlistNavSubHeader';
 import { SettingsModal } from './SettingsModal';
 import { SongContent } from './songViewer/SongContent';
-import { FontSizeIndicator } from './songViewer/FontSizeIndicator';
 import { COLORS } from '../constants/theme';
 import { features } from '../config/features';
+import { makeSongKey } from '../utils/SongKey';
 
 
 interface SongViewerProps {
@@ -354,6 +351,17 @@ export const SongViewer: React.FC<
 
       getScrollProgress,
       scrollToProgress,
+
+      hasLineMap,
+      handleLineLayout,
+      handleContainerLayout,
+      scrollToLinePos,
+      startLinePedalScroll,
+      stopLinePedalScroll,
+      lineMapVersion,
+      getLineReport,
+      applyServerLinePos,
+      setLinePedalConfig,
     } = useSongScroll({
       scrollRef,
       scrollAreaRef,
@@ -363,29 +371,14 @@ export const SongViewer: React.FC<
 
       onScrollPositionChange:
         handleScrollPositionChange,
+
+      lineCount: parsedLines.length,
     });
 
     void scrollAreaPageX;
     void viewportHeightRef;
     void contentHeightRef;
     void getScrollProgress;
-
-    // ─────────────────────────────────────────────
-    // Zoom con gesto de dos dedos (Pinch-to-zoom)
-    // ─────────────────────────────────────────────
-
-    const {
-      pinchGesture,
-      displayFontSize,
-      showIndicator: showZoomIndicator,
-    } = useSongPinchZoom({
-      fontSize,
-      setFontSize,
-      setIsScrollEnabled,
-      isScrolling,
-      setIsScrolling,
-      enabled: !isSongUnavailable,
-    });
 
     // ─────────────────────────────────────────────
     // Editor de notas
@@ -436,7 +429,14 @@ export const SongViewer: React.FC<
     // ─────────────────────────────────────────────
     // Pedal — suscripción a PedalEvent vía usePedal
     // ─────────────────────────────────────────────
-    const { onEvent: onPedalEvent } = usePedal();
+    const {
+      onEvent: onPedalEvent,
+      wifiConnected,
+      sendHello,
+      sendLeave,
+      onPosition,
+      onWifiConfig,
+    } = usePedal();
 
     /**
      * Indica si el pedal está activo en este momento.
@@ -456,33 +456,126 @@ export const SongViewer: React.FC<
       (event: PedalEvent) => {
         if (!pedalEnabledRef.current) return;
 
+        // El pedal WiFi se comparte entre varios dispositivos: se mueve
+        // por líneas lógicas para que todos vean la misma zona.
+        // El pedal Bluetooth es de un solo usuario: sigue continuo en píxeles.
+        const byLines =
+          event.source === 'wifi' && hasLineMap();
+
         switch (event.type) {
           case 'UP_PRESS':
-            startLocalPedalScrollUp();
+            if (byLines) {
+              startLinePedalScroll('up');
+            } else {
+              startLocalPedalScrollUp();
+            }
             break;
           case 'DOWN_PRESS':
-            startLocalPedalScrollDown();
+            if (byLines) {
+              startLinePedalScroll('down');
+            } else {
+              startLocalPedalScrollDown();
+            }
             break;
           case 'UP_RELEASE':
           case 'DOWN_RELEASE':
             stopPedalScroll();
+            stopLinePedalScroll();
             break;
           case 'HOME':
-            goToSongStart();
+            if (byLines) {
+              scrollToLinePos(0, true);
+            } else {
+              goToSongStart();
+            }
             break;
           case 'END':
-            goToSongEnd();
+            if (byLines) {
+              scrollToLinePos(Infinity, true);
+            } else {
+              goToSongEnd();
+            }
             break;
         }
       },
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd]
+      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd, hasLineMap, startLinePedalScroll, stopLinePedalScroll, scrollToLinePos]
     );
 
     // Suscribir a eventos normalizados del pedal unificado
     useEffect(() => {
       return onPedalEvent(handlePedalEvent);
     }, [onPedalEvent, handlePedalEvent]);
+
+    // ─────────────────────────────────────────────
+    // Pedal WiFi — posición compartida
+    //
+    // El ESP32 guarda la posición de cada canción (en líneas lógicas) y la
+    // publica; cada dispositivo la traduce a píxeles con su propia pantalla.
+    // El movimiento local se sigue prediciendo para que sea fluido y la
+    // posición del ESP32 lo corrige.
+    // ─────────────────────────────────────────────
+
+    // Basada en el contenido original: transponer no la cambia, pero dos
+    // versiones distintas de la letra no se mezclan.
+    const songKey = useMemo(
+      () => makeSongKey(songId, currentContent),
+      [songId, currentContent]
+    );
+
+    const songKeyRef = useRef(songKey);
+    useEffect(() => {
+      songKeyRef.current = songKey;
+    }, [songKey]);
+
+    const syncWithPedal =
+      isActive && isStageMode && wifiConnected && !isSongUnavailable;
+
+    // "Esta canción está abierta, y en mi pantalla entran N líneas."
+    // Se reenvía cuando cambia la letra, la pantalla o el contenido.
+    useEffect(() => {
+      if (!syncWithPedal) return;
+
+      const timer = setTimeout(() => {
+        const report = getLineReport();
+        if (!report) return;
+
+        sendHello({
+          songKey,
+          visibleLines: report.visible,
+          totalLines: report.total,
+          pos: report.pos,
+        });
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }, [syncWithPedal, songKey, lineMapVersion, getLineReport, sendHello]);
+
+    // "Cerré esta canción."
+    useEffect(() => {
+      if (!syncWithPedal) return;
+
+      return () => {
+        sendLeave(songKey);
+      };
+    }, [syncWithPedal, songKey, sendLeave]);
+
+    // Posición publicada por el ESP32
+    useEffect(() => {
+      return onPosition(message => {
+        if (!pedalEnabledRef.current) return;
+        if (message.songKey !== songKeyRef.current) return;
+
+        applyServerLinePos(message.pos, message.moving);
+      });
+    }, [onPosition, applyServerLinePos]);
+
+    // Velocidad del pedal definida por el ESP32
+    useEffect(() => {
+      return onWifiConfig(config => {
+        setLinePedalConfig(config.linesPerSec, config.rampMs);
+      });
+    }, [onWifiConfig, setLinePedalConfig]);
 
     // ─────────────────────────────────────────────
     // Helpers
@@ -868,104 +961,101 @@ export const SongViewer: React.FC<
               </Text>
             </View>
           ) : (
-            <GestureDetector gesture={pinchGesture}>
-              <View style={styles.scrollWrapper} collapsable={false}>
-                <ScrollView
-                  ref={scrollRef}
-                  style={styles.scroll}
-                  contentContainerStyle={
-                    styles.scrollContent
-                  }
-                  onContentSizeChange={
-                    handleContentSizeChange
-                  }
-                  onScroll={e => {
-                    handleScroll(
-                      e.nativeEvent
-                        .contentOffset.y
+            <ScrollView
+              ref={scrollRef}
+              style={styles.scroll}
+              contentContainerStyle={
+                styles.scrollContent
+              }
+              onContentSizeChange={
+                handleContentSizeChange
+              }
+              onScroll={e => {
+                handleScroll(
+                  e.nativeEvent
+                    .contentOffset.y
+                );
+              }}
+              scrollEventThrottle={1}
+              scrollEnabled={
+                isScrollEnabled
+              }
+            >
+              <SongContent
+                parsedLines={
+                  parsedLines
+                }
+                fontSize={
+                  fontSize
+                }
+                viewMode={
+                  viewMode
+                }
+                theme={theme}
+                isStageMode={
+                  isStageMode
+                }
+                isDebugMode={
+                  features.debugTools &&
+                  isDebugMode
+                }
+                isEditToolActive={
+                  isEditToolActive
+                }
+                onLineLayout={
+                  handleLineLayout
+                }
+                onContainerLayout={
+                  handleContainerLayout
+                }
+                onLinePress={(
+                  lineIndex,
+                  pageX,
+                  pageY
+                ) => {
+                  if (
+                    isEditToolActive
+                  ) {
+                    openLineEditModal(
+                      lineIndex
                     );
-                  }}
-                  scrollEventThrottle={1}
-                  scrollEnabled={
-                    isScrollEnabled
-                  }
-                >
-                  <SongContent
-                    parsedLines={
-                      parsedLines
-                    }
-                    fontSize={
-                      fontSize
-                    }
-                    viewMode={
-                      viewMode
-                    }
-                    theme={theme}
-                    isStageMode={
-                      isStageMode
-                    }
-                    isDebugMode={
-                      features.debugTools &&
-                      isDebugMode
-                    }
-                    isEditToolActive={
-                      isEditToolActive
-                    }
-                    onLinePress={(
-                      lineIndex,
+                  } else {
+                    addFloatingNoteAtLine(
                       pageX,
                       pageY
-                    ) => {
-                      if (
-                        isEditToolActive
-                      ) {
-                        openLineEditModal(
-                          lineIndex
-                        );
-                      } else {
-                        addFloatingNoteAtLine(
-                          pageX,
-                          pageY
-                        );
-                      }
-                    }}
-                  />
+                    );
+                  }
+                }}
+              />
 
-                  {Object.entries(musicianNotes || {}).map(
-                    ([noteId, noteData]: [string, any]) => {
-                      if (
-                        !noteData ||
-                        typeof noteData === 'string' ||
-                        !noteData.text
-                      ) {
-                        return null;
+              {Object.entries(musicianNotes || {}).map(
+                ([noteId, noteData]: [string, any]) => {
+                  if (
+                    !noteData ||
+                    typeof noteData === 'string' ||
+                    !noteData.text
+                  ) {
+                    return null;
+                  }
+                  return (
+                    <DraggableNote
+                      key={noteId}
+                      id={noteId}
+                      initialText={noteData.text}
+                      initialX={noteData.x}
+                      initialY={noteData.y}
+                      isStageMode={isStageMode}
+                      onRequestEdit={(id, text) =>
+                        setEditingNote({ id, text })
                       }
-                      return (
-                        <DraggableNote
-                          key={noteId}
-                          id={noteId}
-                          initialText={noteData.text}
-                          initialX={noteData.x}
-                          initialY={noteData.y}
-                          isStageMode={isStageMode}
-                          onRequestEdit={(id, text) =>
-                            setEditingNote({ id, text })
-                          }
-                          onUpdate={handleUpdateNote}
-                          onDelete={handleDeleteNote}
-                          setScrollEnabled={setIsScrollEnabled}
-                        />
-                      );
-                    }
-                  )}
-                </ScrollView>
-
-                <FontSizeIndicator
-                  visible={showZoomIndicator}
-                  fontSize={displayFontSize}
-                />
-              </View>
-            </GestureDetector>
+                      onUpdate={handleUpdateNote}
+                      onDelete={handleDeleteNote}
+                      setScrollEnabled={setIsScrollEnabled}
+                    />
+                  );
+                }
+              )}
+            </ScrollView>
           )}
         </View>
 
@@ -1146,11 +1236,6 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor:
       COLORS.background,
-  },
-
-  scrollWrapper: {
-    flex: 1,
-    position: 'relative',
   },
 
   scroll: {
