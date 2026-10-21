@@ -20,10 +20,12 @@ import {
 import { useAppContext } from '../../src/context/AppContext';
 import { useDirectorSession } from '../../src/hooks/useDirectorSession';
 import { useBandSetlists } from '../../src/hooks/useBandSetlists';
+import { useBandSongs } from '../../src/hooks/useBandSongs';
 
 import { SongViewer } from '../../src/components/SongViewer';
 import { FileSystemService } from '../../src/services/FileSystemService';
 import { StorageService } from '../../src/services/StorageService';
+import { BandSongService } from '../../src/services/BandSongService';
 
 import { SongMetadata } from '../../src/types';
 import { COLORS } from '../../src/constants/theme';
@@ -74,6 +76,13 @@ export default function SetlistPlayerScreen() {
     loading: bandSetlistsLoading,
     error: bandSetlistsError,
   } = useBandSetlists(
+    resolvedBandId
+  );
+
+  const {
+    songs: bandSongs,
+    loading: bandSongsLoading,
+  } = useBandSongs(
     resolvedBandId
   );
 
@@ -180,7 +189,7 @@ export default function SetlistPlayerScreen() {
 
       if (
         isBandMode &&
-        bandSetlistsLoading
+        (bandSetlistsLoading || (bandSongsLoading && bandSongs.length === 0))
       ) {
         return;
       }
@@ -268,6 +277,15 @@ export default function SetlistPlayerScreen() {
           }
           if (isCancelled) return;
         }
+      } else {
+        const bandSongsMetadata: SongMetadata[] = bandSongs.map(bs => ({
+          id: bs.id,
+          name: bs.name,
+          mimeType: bs.mimeType,
+          modifiedTime: bs.modifiedTime,
+          folderName: bs.folderName,
+        }));
+        candidateSongs = [...bandSongsMetadata, ...songs];
       }
 
       /**
@@ -382,6 +400,8 @@ export default function SetlistPlayerScreen() {
     bandSetlists,
     bandSetlistsLoading,
     bandSetlistsError,
+    bandSongs,
+    bandSongsLoading,
     setlists,
     songs,
     activeLibrary?.id,
@@ -422,10 +442,35 @@ export default function SetlistPlayerScreen() {
           allPages[index];
 
         try {
-          const content =
-            await FileSystemService.getSongContent(
+          let content: string | null = null;
+
+          if (isBandMode && resolvedBandId) {
+            // 1. Almacenamiento local de la banda
+            content = await FileSystemService.getBandSongContent(
+              resolvedBandId,
               song.id
             );
+
+            // 2. Si no está en almacenamiento local, descargarlo desde Google Drive
+            if (!content) {
+              const bandSongItem = bandSongs.find(s => s.id === song.id);
+              content = await BandSongService.getSongContent(
+                resolvedBandId,
+                bandSongItem || {
+                  id: song.id,
+                  name: song.name,
+                  mimeType: song.mimeType || 'text/plain',
+                }
+              );
+            }
+
+            // 3. Fallback a almacenamiento personal si estuviera disponible
+            if (!content) {
+              content = await FileSystemService.getSongContent(song.id);
+            }
+          } else {
+            content = await FileSystemService.getSongContent(song.id);
+          }
 
           /**
            * La canción puede existir en el
@@ -470,6 +515,19 @@ export default function SetlistPlayerScreen() {
             return;
           }
 
+          let resolvedSongName = song.name;
+          if (resolvedSongName === 'Canción no disponible') {
+            const foundInBand = bandSongs.find(s => s.id === song.id);
+            if (foundInBand) {
+              resolvedSongName = foundInBand.name;
+            } else {
+              const titleMatch = content.match(/\{(?:title|t):\s*([^}]+)\}/i);
+              if (titleMatch) {
+                resolvedSongName = titleMatch[1].trim();
+              }
+            }
+          }
+
           const libId =
             activeLibrary?.id ||
             'default';
@@ -505,6 +563,10 @@ export default function SetlistPlayerScreen() {
 
             updated[index] = {
               ...updated[index],
+              song: {
+                ...updated[index].song,
+                name: resolvedSongName,
+              },
               content,
               settings,
               loaded: true,
@@ -521,7 +583,12 @@ export default function SetlistPlayerScreen() {
           );
         }
       },
-      [activeLibrary]
+      [
+        activeLibrary,
+        isBandMode,
+        resolvedBandId,
+        bandSongs,
+      ]
     );
 
   /**
@@ -1316,7 +1383,7 @@ export default function SetlistPlayerScreen() {
    */
   if (
     (isBandMode &&
-      bandSetlistsLoading) ||
+      (bandSetlistsLoading || (bandSongsLoading && bandSongs.length === 0))) ||
     !ready
   ) {
     return (

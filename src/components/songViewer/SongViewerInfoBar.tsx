@@ -6,6 +6,8 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
+  ActivityIndicator,
+  Alert,
 } from 'react-native';
 import {
   Music,
@@ -18,7 +20,9 @@ import {
   Plus,
   Minus,
   AlertTriangle,
+  Footprints,
 } from 'lucide-react-native';
+import { PedalDevice } from '../../types/pedal';
 import { MetronomeModal } from './MetronomeModal';
 import { ScrollPedalModal } from './ScrollPedalModal';
 
@@ -166,6 +170,12 @@ interface SongViewerInfoBarProps {
    * 3 = cuarto tiempo
    */
   beat: number;
+
+  wifiConnected?: boolean;
+  pedalConnecting?: boolean;
+  pedalDevice?: PedalDevice | null;
+  onConnectPedal?: () => void;
+  onDisconnectPedal?: () => void;
 }
 
 export const SongViewerInfoBar: React.FC<
@@ -194,6 +204,11 @@ export const SongViewerInfoBar: React.FC<
   metronomeMuted,
   setMetronomeMuted,
   beat,
+  wifiConnected = false,
+  pedalConnecting = false,
+  pedalDevice = null,
+  onConnectPedal,
+  onDisconnectPedal,
 }) => {
     const [isPickerOpen, setIsPickerOpen] =
       useState(false);
@@ -437,6 +452,76 @@ export const SongViewerInfoBar: React.FC<
               style={{ marginLeft: 1 }}
             />
           </TouchableOpacity>
+
+          {/* Pedal WiFi — visible si hay un pedal detectado, conectando o conectado */}
+          {(pedalDevice || wifiConnected || pedalConnecting) && (
+            <TouchableOpacity
+              activeOpacity={0.7}
+              disabled={pedalConnecting}
+              onPress={() => {
+                if (wifiConnected) {
+                  Alert.alert(
+                    'Pedal WiFi',
+                    `Conectado a ${pedalDevice?.ip || 'Pedal'}.\n¿Deseas desconectarlo?`,
+                    [
+                      { text: 'Cancelar', style: 'cancel' },
+                      {
+                        text: 'Desconectar',
+                        style: 'destructive',
+                        onPress: onDisconnectPedal,
+                      },
+                    ]
+                  );
+                } else {
+                  onConnectPedal?.();
+                }
+              }}
+              style={[
+                styles.infoBadge,
+                wifiConnected && {
+                  borderColor: '#22c55e',
+                  borderWidth: 1,
+                  backgroundColor: 'rgba(34, 197, 94, 0.15)',
+                },
+                !wifiConnected && !pedalConnecting && {
+                  borderColor: COLORS.accent,
+                  borderWidth: 1,
+                  backgroundColor: 'rgba(59, 130, 246, 0.12)',
+                },
+              ]}
+            >
+              {pedalConnecting ? (
+                <ActivityIndicator size={12} color={COLORS.accent} />
+              ) : (
+                <Footprints
+                  size={12}
+                  color={
+                    wifiConnected
+                      ? '#22c55e'
+                      : COLORS.accent
+                  }
+                />
+              )}
+
+              <Text
+                style={[
+                  styles.infoBadgeText,
+                  wifiConnected && {
+                    color: '#4ade80',
+                  },
+                  !wifiConnected && !pedalConnecting && {
+                    color: COLORS.accent,
+                  },
+                ]}
+              >
+                {pedalConnecting
+                  ? 'Pedal...'
+                  : wifiConnected
+                    ? 'Pedal'
+                    : 'Pedal'}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* Modal Desplegable de Selección de Tono */}

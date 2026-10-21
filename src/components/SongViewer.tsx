@@ -125,7 +125,6 @@ export const SongViewer: React.FC<
 
   followDirector = true,
   onFollowDirectorChange,
-
   setlistSongs = [],
   onDirectorNext,
   onDirectorPrev,
@@ -450,6 +449,12 @@ export const SongViewer: React.FC<
     // Pedal — suscripción a PedalEvent vía usePedal
     // ─────────────────────────────────────────────
     const {
+      device: pedalDevice,
+      connecting: pedalConnecting,
+      discovering: pedalDiscovering,
+      discover: discoverPedal,
+      connect: connectPedal,
+      disconnect: disconnectPedal,
       onEvent: onPedalEvent,
       wifiConnected,
       sendHello,
@@ -457,6 +462,46 @@ export const SongViewer: React.FC<
       onPosition,
       onWifiConfig,
     } = usePedal();
+
+    // Descubrimiento pasivo en segundo plano si no hay pedal conectado/detectado
+    useEffect(() => {
+      if (!isActive || wifiConnected || pedalDevice) return;
+
+      let isMounted = true;
+      const runDiscover = async () => {
+        if (!isMounted || wifiConnected || pedalDevice) return;
+        try {
+          await discoverPedal(6000);
+        } catch {
+          // Silencioso
+        }
+      };
+
+      runDiscover();
+      const interval = setInterval(runDiscover, 10000);
+
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
+    }, [isActive, wifiConnected, pedalDevice, discoverPedal]);
+
+    const handleConnectPedal = useCallback(async () => {
+      if (!pedalDevice || pedalConnecting) return;
+      try {
+        await connectPedal(pedalDevice);
+      } catch (err: any) {
+        console.error('[SongViewer] Error connecting to pedal:', err);
+        Alert.alert(
+          'Error al conectar',
+          err?.message || 'No se pudo conectar al pedal WiFi.'
+        );
+      }
+    }, [pedalDevice, pedalConnecting, connectPedal]);
+
+    const handleDisconnectPedal = useCallback(() => {
+      disconnectPedal();
+    }, [disconnectPedal]);
 
     /**
      * Indica si el pedal está activo en este momento.
@@ -835,6 +880,11 @@ export const SongViewer: React.FC<
           metronomeMuted={metronomeMuted}
           setMetronomeMuted={setMetronomeMuted}
           beat={beat}
+          wifiConnected={wifiConnected}
+          pedalConnecting={pedalConnecting}
+          pedalDevice={pedalDevice}
+          onConnectPedal={handleConnectPedal}
+          onDisconnectPedal={handleDisconnectPedal}
         />
 
         {isEditToolActive && (
@@ -877,7 +927,7 @@ export const SongViewer: React.FC<
           notes={setlistNotes}
           songNote={songNote}
         />
-
+        {/*follow director? */}
         {isFollower && (
           <View
             style={
@@ -934,6 +984,7 @@ export const SongViewer: React.FC<
             />
           </View>
         )}
+
 
         <View
           ref={scrollAreaRef}
