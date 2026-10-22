@@ -1,22 +1,16 @@
 #include "WebPages.h"
 
-String WebPages::dashboard(
-    bool apMode,
-    bool wifiConnected,
-    bool bluetoothEnabled,
-    bool bluetoothConnected,
-    bool tcpEnabled,
-    uint8_t tcpClients,
-    const String& ip,
-    const String& ssid,
-    unsigned long doubleWindow,
-    unsigned long holdThreshold,
-    unsigned long wifiResetHold
-) {
-    String page;
-    page.reserve(11000);
+String WebPages::dashboard(bool apMode, bool wifiConnected,
+                           bool bluetoothEnabled, bool bluetoothConnected,
+                           bool tcpEnabled, uint8_t tcpClients,
+                           const String &ip, const String &ssid,
+                           unsigned long doubleWindow,
+                           unsigned long holdThreshold,
+                           unsigned long wifiResetHold) {
+  String page;
+  page.reserve(11000);
 
-    page += R"rawliteral(
+  page += R"rawliteral(
 <!doctype html>
 <html lang="es">
 <head>
@@ -50,6 +44,8 @@ small{color:#888}
 .slider:before{content:"";position:absolute;width:21px;height:21px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s}
 .switch input:checked+.slider{background:#2563eb}
 .switch input:checked+.slider:before{transform:translateX(21px)}
+a.link{display:block;text-decoration:none;color:inherit}
+a.link:hover{border-color:#3b82f6}
 </style>
 </head>
 <body>
@@ -62,12 +58,17 @@ small{color:#888}
 <div class="row"><span>Servidor TCP</span><span id="tcp" class="badge">...</span></div>
 <div class="row"><span>Clientes TCP</span><span id="clients" class="badge">0</span></div>
 <div class="row"><span>IP</span><span class="badge">)rawliteral";
-    page += ip;
-    page += R"rawliteral(</span></div>
+  page += ip;
+  page += R"rawliteral(</span></div>
 <div class="row"><span>SSID</span><span class="badge">)rawliteral";
-    page += ssid.isEmpty() ? "-" : ssid;
-    page += R"rawliteral(</span></div>
+  page += ssid.isEmpty() ? "-" : ssid;
+  page += R"rawliteral(</span></div>
 </div>
+
+<a class="card link" href="/diagnostico">
+<h2 style="margin-bottom:4px">Diagnóstico y registro de eventos</h2>
+<span class="muted">Pulsadores en vivo, dispositivos conectados y eventos enviados &rarr;</span>
+</a>
 
 <div class="card">
 <h2>Conexiones</h2>
@@ -76,8 +77,9 @@ small{color:#888}
 <span>Bluetooth HID</span>
 <label class="switch">
 <input id="bleToggle" type="checkbox" )rawliteral";
-    if (bluetoothEnabled) page += "checked";
-    page += R"rawliteral( onchange="saveConnection()">
+  if (bluetoothEnabled)
+    page += "checked";
+  page += R"rawliteral( onchange="saveConnection()">
 <span class="slider"></span>
 </label>
 </div>
@@ -86,8 +88,9 @@ small{color:#888}
 <span>Servidor TCP / eventos</span>
 <label class="switch">
 <input id="tcpToggle" type="checkbox" )rawliteral";
-    if (tcpEnabled) page += "checked";
-    page += R"rawliteral( onchange="saveConnection()">
+  if (tcpEnabled)
+    page += "checked";
+  page += R"rawliteral( onchange="saveConnection()">
 <span class="slider"></span>
 </label>
 </div>
@@ -99,13 +102,13 @@ small{color:#888}
 <h2>WiFi</h2>
 <label>Red</label>
 <input id="ssid" value=")rawliteral";
-    String escapedSSID = ssid;
-    escapedSSID.replace("&","&amp;");
-    escapedSSID.replace("\"","&quot;");
-    escapedSSID.replace("<","&lt;");
-    escapedSSID.replace(">","&gt;");
-    page += escapedSSID;
-    page += R"rawliteral(">
+  String escapedSSID = ssid;
+  escapedSSID.replace("&", "&amp;");
+  escapedSSID.replace("\"", "&quot;");
+  escapedSSID.replace("<", "&lt;");
+  escapedSSID.replace(">", "&gt;");
+  page += escapedSSID;
+  page += R"rawliteral(">
 
 <label>Contraseña</label>
 <input id="pass" type="password" placeholder="Dejar vacío para mantener la actual">
@@ -122,18 +125,18 @@ small{color:#888}
 
 <label>Ventana de doble toque (ms)</label>
 <input id="doubleWindow" type="number" min="150" max="1500" value=")rawliteral";
-    page += String(doubleWindow);
-    page += R"rawliteral(">
+  page += String(doubleWindow);
+  page += R"rawliteral(">
 
 <label>Tiempo para comenzar scroll (ms)</label>
 <input id="holdThreshold" type="number" min="150" max="3000" value=")rawliteral";
-    page += String(holdThreshold);
-    page += R"rawliteral(">
+  page += String(holdThreshold);
+  page += R"rawliteral(">
 
 <label>Tiempo de reset WiFi (ms)</label>
 <input id="wifiResetHold" type="number" min="1000" max="10000" value=")rawliteral";
-    page += String(wifiResetHold);
-    page += R"rawliteral(">
+  page += String(wifiResetHold);
+  page += R"rawliteral(">
 
 <div class="actions">
 <button onclick="saveTiming()">Guardar comportamiento</button>
@@ -235,11 +238,11 @@ setInterval(refresh,2000);
 </html>
 )rawliteral";
 
-    return page;
+  return page;
 }
 
 String WebPages::savedPage() {
-    return R"rawliteral(
+  return R"rawliteral(
 <!doctype html>
 <html lang="es">
 <head>
@@ -259,46 +262,40 @@ body{font-family:system-ui;background:#0b0b0b;color:#fff;display:grid;place-item
 )rawliteral";
 }
 
-String WebPages::jsonStatus(
-    bool apMode,
-    bool wifiConnected,
-    bool bluetoothEnabled,
-    bool bluetoothConnected,
-    bool tcpEnabled,
-    uint8_t tcpClients,
-    const String& ip,
-    const String& ssid
-) {
-    String json = "{";
+String WebPages::jsonStatus(bool apMode, bool wifiConnected,
+                            bool bluetoothEnabled, bool bluetoothConnected,
+                            bool tcpEnabled, uint8_t tcpClients,
+                            const String &ip, const String &ssid) {
+  String json = "{";
 
-    json += "\"apMode\":";
-    json += apMode ? "true" : "false";
+  json += "\"apMode\":";
+  json += apMode ? "true" : "false";
 
-    json += ",\"wifiConnected\":";
-    json += wifiConnected ? "true" : "false";
+  json += ",\"wifiConnected\":";
+  json += wifiConnected ? "true" : "false";
 
-    json += ",\"bluetoothEnabled\":";
-    json += bluetoothEnabled ? "true" : "false";
+  json += ",\"bluetoothEnabled\":";
+  json += bluetoothEnabled ? "true" : "false";
 
-    json += ",\"bluetoothConnected\":";
-    json += bluetoothConnected ? "true" : "false";
+  json += ",\"bluetoothConnected\":";
+  json += bluetoothConnected ? "true" : "false";
 
-    json += ",\"tcpEnabled\":";
-    json += tcpEnabled ? "true" : "false";
+  json += ",\"tcpEnabled\":";
+  json += tcpEnabled ? "true" : "false";
 
-    json += ",\"tcpClients\":";
-    json += String(tcpClients);
+  json += ",\"tcpClients\":";
+  json += String(tcpClients);
 
-    json += ",\"ip\":\"";
-    json += ip;
-    json += "\"";
+  json += ",\"ip\":\"";
+  json += ip;
+  json += "\"";
 
-    json += ",\"ssid\":\"";
-    String safeSSID = ssid;
-    safeSSID.replace("\\", "\\\\");
-    safeSSID.replace("\"", "\\\"");
-    json += safeSSID;
-    json += "\"}";
+  json += ",\"ssid\":\"";
+  String safeSSID = ssid;
+  safeSSID.replace("\\", "\\\\");
+  safeSSID.replace("\"", "\\\"");
+  json += safeSSID;
+  json += "\"}";
 
-    return json;
+  return json;
 }

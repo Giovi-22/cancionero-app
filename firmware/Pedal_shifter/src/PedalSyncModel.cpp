@@ -442,6 +442,50 @@ uint8_t PedalSyncModel::songCount() const {
     return count;
 }
 
+bool PedalSyncModel::clientSong(uint8_t slot, char* key, uint16_t& visible,
+                                uint16_t& total) const {
+    if (slot >= MAX_SLOTS || !clients_[slot].hasKey) return false;
+
+    const ClientInfo& client = clients_[slot];
+    if (key != nullptr) {
+        strncpy(key, client.key, KEY_MAX - 1);
+        key[KEY_MAX - 1] = '\0';
+    }
+    visible = client.visible;
+    total = client.total;
+    return true;
+}
+
+bool PedalSyncModel::songAt(uint8_t index, char* key, float& pos,
+                            uint16_t& total, uint8_t& clients,
+                            uint16_t& minVisible) const {
+    uint8_t usedIndex = 0;
+
+    for (uint8_t i = 0; i < MAX_SLOTS; ++i) {
+        const Song& song = songs_[i];
+        if (!song.used) continue;
+        if (usedIndex++ != index) continue;
+
+        if (key != nullptr) {
+            strncpy(key, song.key, KEY_MAX - 1);
+            key[KEY_MAX - 1] = '\0';
+        }
+        pos = song.pos;
+        total = song.total;
+        clients = 0;
+        for (uint8_t slot = 0; slot < MAX_SLOTS; ++slot) {
+            if (clients_[slot].hasKey &&
+                strcmp(clients_[slot].key, song.key) == 0) {
+                ++clients;
+            }
+        }
+        minVisible = minVisibleLines(song.key);
+        return true;
+    }
+
+    return false;
+}
+
 uint16_t PedalSyncModel::minVisibleLines(const char* key) const {
     uint16_t best = 0;
 

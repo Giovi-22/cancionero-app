@@ -10,23 +10,22 @@ class PedalSocketServer;
 
 class PedalEventManager {
 public:
-    void begin(
-        PedalConfig& config,
-        BluetoothManager& bluetooth,
-        PedalSocketServer& socketServer
-    );
+  void begin(PedalConfig &config, BluetoothManager &bluetooth,
+             PedalSocketServer &socketServer);
 
-    void handle(PedalEvent event);
-    void update();
+  void handle(PedalEvent event);
+  void update();
 
-    void cancelActivePresses();
+  void cancelActivePresses();
 
 private:
-    PedalConfig* config_ = nullptr;
-    BluetoothManager* bluetooth_ = nullptr;
-    PedalSocketServer* socketServer_ = nullptr;
+  void logDelivery(const char *tcpMessage);
 
-    void sendPress(const char* tcpMessage, char bleKey);
-    void sendRelease(const char* tcpMessage, char bleKey);
-    void sendWrite(const char* tcpMessage, char bleKey);
+  PedalConfig *config_ = nullptr;
+  BluetoothManager *bluetooth_ = nullptr;
+  PedalSocketServer *socketServer_ = nullptr;
+
+  void sendPress(const char *tcpMessage, char bleKey);
+  void sendRelease(const char *tcpMessage, char bleKey);
+  void sendWrite(const char *tcpMessage, char bleKey);
 };

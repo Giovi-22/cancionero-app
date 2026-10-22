@@ -1,6 +1,9 @@
 #include "PedalSocketServer.h"
 
+#include <string.h>
+
 #include "../config/PedalConfig.h"
+#include "../diag/PedalDiag.h"
 #include "../wifi/WiFiManager.h"
 
 void PedalSocketServer::begin(PedalConfig &config, WiFiManager &wifi) {
@@ -150,6 +153,14 @@ void PedalSocketServer::acceptClients() {
       rxOverflow_[i] = false;
       sync_.onClientConnected(i);
 
+      connectedAt_[i] = millis();
+      lastRxAt_[i] = 0;
+      rxLines_[i] = 0;
+
+      PedalDiag::add(PedalDiag::Cat::TCP, "cliente conectado: slot %u, %s",
+                     static_cast<unsigned>(i),
+                     clients_[i].remoteIP().toString().c_str());
+
       Serial.printf("[TCP] Cliente conectado slot %u.\n", i);
       return;
     }
@@ -167,6 +178,10 @@ void PedalSocketServer::cleanClients() {
       rxLen_[i] = 0;
       rxOverflow_[i] = false;
       sync_.onClientDisconnected(i);
+
+      PedalDiag::add(
+          PedalDiag::Cat::TCP, "cliente desconectado: slot %u (estuvo %lu s)",
+          static_cast<unsigned>(i), (millis() - connectedAt_[i]) / 1000UL);
 
       Serial.printf("[TCP] Cliente desconectado slot %u.\n", i);
     }
@@ -210,6 +225,8 @@ void PedalSocketServer::readClients() {
       if (c == '\n') {
         if (!rxOverflow_[i] && rxLen_[i] > 0) {
           rx_[i][rxLen_[i]] = '\0';
+          lastRxAt_[i] = millis();
+          ++rxLines_[i];
           sync_.onClientLine(i, rx_[i]);
         }
 
@@ -226,6 +243,12 @@ void PedalSocketServer::readClients() {
         rx_[i][rxLen_[i]++] = c;
       } else {
         // Línea demasiado larga: se descarta hasta el próximo '\n'.
+        if (!rxOverflow_[i]) {
+          PedalDiag::add(PedalDiag::Cat::TCP,
+                         "slot %u: línea demasiado larga, se descarta",
+                         static_cast<unsigned>(i));
+        }
+
         rxOverflow_[i] = true;
       }
     }
@@ -242,7 +265,17 @@ void PedalSocketServer::sendToSlot(uint8_t slot, const char *line) {
   }
 }
 
-void PedalSocketServer::log(const char *message) { Serial.println(message); }
+void PedalSocketServer::log(const char *message) {
+  Serial.println(message);
+
+  // El prefijo "[SYNC] " ya lo indica la categoría del registro.
+  const char *text = message;
+  if (strncmp(text, "[SYNC] ", 7) == 0) {
+    text += 7;
+  }
+
+  PedalDiag::add(PedalDiag::Cat::SYNC, "%s", text);
+}
 
 void PedalSocketServer::syncMotionStart(int8_t dir) {
   if (running_) {
@@ -284,3 +317,40 @@ void PedalSocketServer::broadcastDiscovery() {
   udp_.write(reinterpret_cast<const uint8_t *>(payload), strlen(payload));
   udp_.endPacket();
 }
+
+bool PedalSocketServer::deviceDiag(uint8_t slot, DeviceDiag &out) {
+  if (slot >= MAX_CLIENTS || !clients_[slot] || !clients_[slot].connected()) {
+    return false;
+  }
+
+  const unsigned long now = millis();
+
+  out.slot = slot;
+
+  strncpy(out.ip, clients_[slot].remoteIP().toString().c_str(),
+          sizeof(out.ip) - 1);
+  out.ip[sizeof(out.ip) - 1] = '\0';
+
+  out.connectedMs = static_cast<uint32_t>(now - connectedAt_[slot]);
+  out.everSpoke = rxLines_[slot] > 0;
+  out.lastRxMs =
+      out.everSpoke ? static_cast<uint32_t>(now - lastRxAt_[slot]) : 0;
+  out.rxLines = rxLines_[slot];
+
+  out.hasSong = sync_.clientSong(slot, out.key, out.visible, out.total);
+
+  if (!out.hasSong) {
+    out.key[0] = '\0';
+    out.visible = 0;
+    out.total = 0;
+  }
+
+  return true;
+}
+
+bool PedalSocketServer::songDiag(uint8_t index, SongDiag &out) const {
+  return sync_.songAt(index, out.key, out.pos, out.total, out.clients,
+                      out.minVisible);
+}
+
+bool PedalSocketServer::motionActive() const { return sync_.isMoving(); }

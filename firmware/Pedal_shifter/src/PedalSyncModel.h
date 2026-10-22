@@ -87,6 +87,12 @@ public:
     bool getSongPos(const char* key, float& pos) const;
     uint8_t songCount() const;
 
+    /** Datos de diagnóstico del cliente o de la canción por índice usado. */
+    bool clientSong(uint8_t slot, char* key, uint16_t& visible,
+                    uint16_t& total) const;
+    bool songAt(uint8_t index, char* key, float& pos, uint16_t& total,
+                uint8_t& clients, uint16_t& minVisible) const;
+
     /** Mínimo de líneas visibles entre los clientes de una canción (0 si no hay). */
     uint16_t minVisibleLines(const char* key) const;
 

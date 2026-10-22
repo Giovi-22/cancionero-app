@@ -47,7 +47,7 @@ void setup() {
 
     events.begin(config, bluetooth, socketServer);
 
-    web.begin(config, wifi, bluetooth, socketServer);
+    web.begin(config, wifi, bluetooth, socketServer, buttons);
 
     buttons.begin(config);
     buttons.setEventCallback(onPedalEvent);
