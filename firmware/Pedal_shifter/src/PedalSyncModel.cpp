@@ -106,7 +106,21 @@ void PedalSyncModel::onClientConnected(uint8_t slot) {
 }
 
 void PedalSyncModel::onClientDisconnected(uint8_t slot) {
+    if (slot >= MAX_SLOTS) return;
+
+    char previousKey[KEY_MAX];
+    const bool hadKey = clients_[slot].hasKey;
+
+    if (hadKey) {
+        memcpy(previousKey, clients_[slot].key, KEY_MAX);
+    }
+
     onClientConnected(slot);
+
+    // Los que siguen con esa canción abierta pueden tener ahora otra pantalla mínima.
+    if (hadKey) {
+        broadcastMinVisible(previousKey);
+    }
 }
 
 void PedalSyncModel::onClientLine(uint8_t slot, const char* line) {
@@ -161,6 +175,13 @@ void PedalSyncModel::handleHello(uint8_t slot, char* args) {
 
     const bool join = !(client.hasKey && strcmp(client.key, key) == 0);
 
+    char previousKey[KEY_MAX];
+    const bool changedSong = join && client.hasKey;
+
+    if (changedSong) {
+        memcpy(previousKey, client.key, KEY_MAX);
+    }
+
     client.hasKey = true;
     memcpy(client.key, key, keyLength + 1);
     client.visible = static_cast<uint16_t>(visible);
@@ -206,6 +227,13 @@ void PedalSyncModel::handleHello(uint8_t slot, char* args) {
         sendConfig(slot);
         sendPos(slot, *song, active_);
     }
+
+    // Si venía de otra canción, a los que se quedaron ahí les cambió el mínimo.
+    if (changedSong) {
+        broadcastMinVisible(previousKey);
+    }
+
+    broadcastMinVisible(key);
 }
 
 void PedalSyncModel::handleLeave(uint8_t slot, char* args) {
@@ -223,6 +251,7 @@ void PedalSyncModel::handleLeave(uint8_t slot, char* args) {
         client.total = 0;
 
         pruneSongs();
+        broadcastMinVisible(key);
     }
 }
 
@@ -307,6 +336,26 @@ void PedalSyncModel::sendPos(uint8_t slot, const Song& song, bool moving) {
     );
 
     sink_->sendToSlot(slot, line);
+}
+
+void PedalSyncModel::broadcastMinVisible(const char* key) {
+    if (sink_ == nullptr || key == nullptr) return;
+
+    char line[96];
+
+    snprintf(
+        line,
+        sizeof(line),
+        "MINV %s %u\n",
+        key,
+        static_cast<unsigned>(minVisibleLines(key))
+    );
+
+    for (uint8_t c = 0; c < MAX_SLOTS; ++c) {
+        if (clients_[c].hasKey && strcmp(clients_[c].key, key) == 0) {
+            sink_->sendToSlot(c, line);
+        }
+    }
 }
 
 void PedalSyncModel::broadcastPositions(bool moving) {

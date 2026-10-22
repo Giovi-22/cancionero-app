@@ -8,6 +8,7 @@ import {
     PedalTransportType,
     WifiConfigMessage,
     WifiHelloReport,
+    WifiMinVisibleMessage,
     WifiPositionMessage,
 } from '../../types/pedal';
 import { IPedalAdapter } from './IPedalAdapter';
@@ -39,6 +40,9 @@ export class WifiPedalAdapter implements IPedalAdapter {
     private connectionListeners = new Set<(connected: boolean) => void>();
     private positionListeners = new Set<(message: WifiPositionMessage) => void>();
     private configListeners = new Set<(message: WifiConfigMessage) => void>();
+    private minVisibleListeners = new Set<
+        (message: WifiMinVisibleMessage) => void
+    >();
 
     isConnected(): boolean {
         return this.tcpClient !== null;
@@ -295,6 +299,11 @@ export class WifiPedalAdapter implements IPedalAdapter {
             return;
         }
 
+        if (value.startsWith('MINV ')) {
+            this.handleMinVisible(value);
+            return;
+        }
+
         if (!VALID_EVENTS.includes(value as PedalEventType)) {
             console.log('[WifiPedalAdapter] Evento desconocido ignorado:', value);
             return;
@@ -328,6 +337,21 @@ export class WifiPedalAdapter implements IPedalAdapter {
         };
 
         this.positionListeners.forEach(listener => listener(message));
+    }
+
+    /** MINV <songKey> <minVisible> */
+    private handleMinVisible(value: string): void {
+        const parts = value.split(' ');
+
+        if (parts.length !== 3) return;
+
+        const minVisible = Number(parts[2]);
+
+        if (!Number.isFinite(minVisible) || minVisible < 0) return;
+
+        this.minVisibleListeners.forEach(listener =>
+            listener({ songKey: parts[1], minVisible })
+        );
     }
 
     /** CFG <linesPerSec> <rampMs> */
@@ -397,6 +421,15 @@ export class WifiPedalAdapter implements IPedalAdapter {
         this.positionListeners.add(listener);
         return () => {
             this.positionListeners.delete(listener);
+        };
+    }
+
+    onMinVisible(
+        listener: (message: WifiMinVisibleMessage) => void
+    ): () => void {
+        this.minVisibleListeners.add(listener);
+        return () => {
+            this.minVisibleListeners.delete(listener);
         };
     }
 

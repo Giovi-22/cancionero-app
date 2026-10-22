@@ -28,6 +28,11 @@
  *   ESP32 -> Cliente
  *     CFG <linesPerSec> <rampMs>
  *         Velocidad y rampa del pedal. Se envía al unirse a una canción.
+ *     MINV <songKey> <minVisible>
+ *         Líneas que entran en la pantalla más chica que tiene abierta esa
+ *         canción (0 = ninguna lo reportó). Se envía a todos los que la
+ *         tienen abierta cada vez que alguien entra, sale o cambia de pantalla.
+ *         La app lo usa para marcar hasta dónde llega esa pantalla.
  *     POS <songKey> <pos> <moving>
  *         Posición vigente. moving=1 mientras el pedal está en movimiento,
  *         moving=0 cuando quedó quieta (valor final).
@@ -135,6 +140,7 @@ private:
 
     void sendConfig(uint8_t slot);
     void sendPos(uint8_t slot, const Song& song, bool moving);
+    void broadcastMinVisible(const char* key);
     void broadcastPositions(bool moving);
 
     static float clampf(float v, float lo, float hi);

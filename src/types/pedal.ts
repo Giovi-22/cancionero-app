@@ -1,3 +1,16 @@
+/** Modo de operación del pedal */
+export type PedalMode = 'scroll' | 'sections';
+
+/**
+ * Configuración del modo "salto por secciones".
+ * `overlapFraction`: fracción del viewport que queda visible
+ * por encima de la nueva sección (contexto del verso anterior).
+ * Valor por defecto: 0.3 (30%).
+ */
+export interface SectionJumpConfig {
+    overlapFraction: number;
+}
+
 export type PedalEventType =
     | 'UP_PRESS'
     | 'UP_RELEASE'
@@ -35,6 +48,15 @@ export interface WifiPositionMessage {
     pos: number;
     /** true mientras el pedal está en movimiento; false = posición final. */
     moving: boolean;
+}
+
+/**
+ * Cuántas líneas entran, como mínimo, en las pantallas que tienen abierta
+ * esta canción (la pantalla más chica manda). 0 = ningún dispositivo la reportó.
+ */
+export interface WifiMinVisibleMessage {
+    songKey: string;
+    minVisible: number;
 }
 
 /** Velocidad del pedal definida por el ESP32. */

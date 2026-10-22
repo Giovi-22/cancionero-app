@@ -21,6 +21,7 @@ import {
     PedalEvent,
     WifiConfigMessage,
     WifiHelloReport,
+    WifiMinVisibleMessage,
     WifiPositionMessage,
 } from '../types/pedal';
 
@@ -231,6 +232,13 @@ class PedalServiceClass {
      */
     onPosition(listener: (message: WifiPositionMessage) => void): () => void {
         return wifiPedalAdapter.onPosition(listener);
+    }
+
+    /** Líneas visibles de la pantalla más chica que tiene abierta la canción. */
+    onWifiMinVisible(
+        listener: (message: WifiMinVisibleMessage) => void
+    ): () => void {
+        return wifiPedalAdapter.onMinVisible(listener);
     }
 
     /** Velocidad del pedal definida por el ESP32. */

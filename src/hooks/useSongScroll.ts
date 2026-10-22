@@ -21,6 +21,7 @@ import {
     WIFI_PEDAL_LINES_PER_SEC,
     WIFI_PEDAL_RAMP_MS,
     buildTops,
+    linesBelowAnchor,
     minVisibleLines,
     posToY,
     yToPos,
@@ -95,6 +96,8 @@ export interface UseSongScrollReturn {
         direction: 'up' | 'down'
     ) => void;
     stopLinePedalScroll: () => void;
+    /** Posiciones Y de cada línea (para useSongSections). */
+    getTops: () => ReadonlyArray<number | undefined>;
 
     // ── Posición compartida con el ESP32 ──
     /** Se incrementa cuando el mapa de líneas o el viewport terminan de cambiar. */
@@ -115,6 +118,18 @@ export interface UseSongScrollReturn {
         linesPerSec: number,
         rampMs: number
     ) => void;
+
+    // ── Límite de la pantalla más chica ──
+    /**
+     * Distancia (px) desde el borde superior del viewport hasta donde termina
+     * lo que ve la pantalla más chica. null = no hay nada que marcar
+     * (esta es la más chica, o todavía no hay datos).
+     */
+    sharedLimitY: number | null;
+    /** Líneas que entran en la pantalla más chica (null = sin dato). */
+    setSharedMinVisible: (minVisible: number | null) => void;
+    /** Recalcula el límite para un scrollY dado (llamar desde onScroll). */
+    updateSharedLimit: (scrollY: number) => void;
 }
 
 const ACCEL_RATE = 0.008;
@@ -917,6 +932,76 @@ export const useSongScroll = ({
         };
     }, [hasLineMap, getTops, getTrustedLinePos]);
 
+    // ─────────────────────────────────────────────
+    // Límite de la pantalla más chica
+    //
+    // Todos los dispositivos comparten la posición (en líneas) del punto
+    // de anclaje. La pantalla más chica ve `minVisible` líneas, así que su
+    // borde inferior cae `linesBelowAnchor(minVisible)` líneas más abajo.
+    // Acá se traduce ese borde a píxeles de ESTA pantalla.
+    // ─────────────────────────────────────────────
+
+    const [sharedLimitY, setSharedLimitY] = useState<number | null>(null);
+    const sharedMinVisibleRef = useRef<number | null>(null);
+
+    const updateSharedLimit = useCallback(
+        (scrollY: number) => {
+            const minVisible = sharedMinVisibleRef.current;
+            const viewportHeight = viewportHeightRef.current;
+
+            let next: number | null = null;
+
+            if (
+                minVisible !== null &&
+                minVisible > 0 &&
+                viewportHeight > 0 &&
+                hasLineMap()
+            ) {
+                const tops = getTops();
+                const ownVisible = minVisibleLines(tops, viewportHeight);
+
+                // Si esta pantalla ya es la más chica no hay nada que marcar.
+                if (minVisible < ownVisible) {
+                    const anchorPos = yToPos(
+                        tops,
+                        scrollY + viewportHeight * LINE_ANCHOR_FRACTION
+                    );
+
+                    const limit =
+                        posToY(tops, anchorPos + linesBelowAnchor(minVisible)) -
+                        scrollY;
+
+                    if (limit > 0 && limit < viewportHeight) {
+                        next = limit;
+                    }
+                }
+            }
+
+            // Evita re-renders por variaciones de menos de 1.5 px.
+            setSharedLimitY(prev =>
+                prev === null || next === null
+                    ? next
+                    : Math.abs(prev - next) < 1.5
+                        ? prev
+                        : next
+            );
+        },
+        [hasLineMap, getTops]
+    );
+
+    const setSharedMinVisible = useCallback(
+        (minVisible: number | null) => {
+            sharedMinVisibleRef.current = minVisible;
+            updateSharedLimit(scrollPosRef.current);
+        },
+        [updateSharedLimit]
+    );
+
+    // Cuando cambia el mapa de líneas o el viewport, se recalcula.
+    useEffect(() => {
+        updateSharedLimit(scrollPosRef.current);
+    }, [lineMapVersion, updateSharedLimit]);
+
     useEffect(() => {
         if (!isScrolling) {
             if (
@@ -1136,5 +1221,9 @@ export const useSongScroll = ({
         getLineReport,
         applyServerLinePos,
         setLinePedalConfig,
+        sharedLimitY,
+        setSharedMinVisible,
+        updateSharedLimit,
+        getTops,
     };
 };

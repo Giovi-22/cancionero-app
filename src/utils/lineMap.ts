@@ -29,6 +29,13 @@ export const LINE_ANCHOR_FRACTION = 0.15;
  */
 export const WIFI_PEDAL_LINES_PER_SEC = 2;
 
+/**
+ * Líneas que la pantalla más chica ve por debajo del punto de anclaje,
+ * a partir de cuántas líneas le entran en total.
+ */
+export const linesBelowAnchor = (visibleLines: number): number =>
+    visibleLines * (1 - LINE_ANCHOR_FRACTION);
+
 /** Tiempo de aceleración / frenado del pedal WiFi. */
 export const WIFI_PEDAL_RAMP_MS = 150;
 

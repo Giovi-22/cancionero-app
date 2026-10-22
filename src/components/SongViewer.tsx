@@ -25,7 +25,7 @@ import {
 import { PdfService } from '../services/PdfService';
 import { BluetoothInputBridge } from './BluetoothInputBridge';
 import { usePedal } from '../hooks/usePedal';
-import { PedalEvent } from '../types/pedal';
+import { PedalEvent, PedalMode } from '../types/pedal';
 import { GestureDetector } from 'react-native-gesture-handler';
 
 // Hooks
@@ -36,6 +36,7 @@ import { useSongMetronome } from '../hooks/useSongMetronome';
 import { useSongNotes } from '../hooks/useSongNotes';
 import { useSongEditor } from '../hooks/useSongEditor';
 import { useSongPinchZoom } from '../hooks/useSongPinchZoom';
+import { useSongSections } from '../hooks/useSongSections';
 
 // Sub-componentes
 import { DraggableNote } from './songViewer/DraggableNote';
@@ -55,6 +56,7 @@ import { FontSizeIndicator } from './songViewer/FontSizeIndicator';
 import { COLORS } from '../constants/theme';
 import { features } from '../config/features';
 import { makeSongKey } from '../utils/SongKey';
+import { StorageService } from '../services/StorageService';
 
 
 interface SongViewerProps {
@@ -215,6 +217,68 @@ export const SongViewer: React.FC<
       setIsDebugMode,
     ] = useState(false);
 
+    // ─────────────────────────────────────────────
+    // Modo del Pedal
+    // ─────────────────────────────────────────────
+
+    const [
+      pedalMode,
+      setPedalModeState,
+    ] = useState<PedalMode>('scroll');
+
+    /**
+     * Porcentaje de superposición para el modo "secciones".
+     * Indica qué fracción del viewport (en %) muestra el final del
+     * verso anterior encima de la nueva sección.
+     * Default: 30%.
+     */
+    const [
+      overlapPercent,
+      setOverlapPercentState,
+    ] = useState(30);
+
+    // Cargar preferencias del pedal persistidas
+    useEffect(() => {
+      let isMounted = true;
+      StorageService.getSetting<PedalMode>('pedal_mode').then(savedMode => {
+        if (isMounted && savedMode && (savedMode === 'scroll' || savedMode === 'sections')) {
+          setPedalModeState(savedMode);
+        }
+      });
+      StorageService.getSetting<number>('pedal_overlap_percent').then(savedPct => {
+        if (isMounted && typeof savedPct === 'number' && savedPct >= 0 && savedPct <= 60) {
+          setOverlapPercentState(savedPct);
+        }
+      });
+      return () => {
+        isMounted = false;
+      };
+    }, []);
+
+    const setPedalMode = useCallback((mode: PedalMode) => {
+      setPedalModeState(mode);
+      StorageService.saveSetting('pedal_mode', mode).catch(e =>
+        console.error('[SongViewer] Error saving pedal_mode:', e)
+      );
+    }, []);
+
+    const setOverlapPercent = useCallback((pct: number) => {
+      setOverlapPercentState(pct);
+      StorageService.saveSetting('pedal_overlap_percent', pct).catch(e =>
+        console.error('[SongViewer] Error saving pedal_overlap_percent:', e)
+      );
+    }, []);
+
+    const pedalModeRef = useRef<PedalMode>(pedalMode);
+    useEffect(() => {
+      pedalModeRef.current = pedalMode;
+    }, [pedalMode]);
+
+    const overlapPercentRef = useRef(overlapPercent);
+    useEffect(() => {
+      overlapPercentRef.current = overlapPercent;
+    }, [overlapPercent]);
+
     const [
       theme,
       setTheme,
@@ -364,6 +428,10 @@ export const SongViewer: React.FC<
       getLineReport,
       applyServerLinePos,
       setLinePedalConfig,
+      sharedLimitY,
+      setSharedMinVisible,
+      updateSharedLimit,
+      getTops,
     } = useSongScroll({
       scrollRef,
       scrollAreaRef,
@@ -381,6 +449,37 @@ export const SongViewer: React.FC<
     void viewportHeightRef;
     void contentHeightRef;
     void getScrollProgress;
+
+    // ─────────────────────────────────────────────
+    // Salto por secciones (modo pedal)
+    // ─────────────────────────────────────────────
+
+    const hasSections = useMemo(
+      () => parsedLines.some(l => l.type === 'section'),
+      [parsedLines]
+    );
+
+    const {
+      jumpToNextSection,
+      jumpToPrevSection,
+      resetSectionIndex,
+      currentSectionLabel,
+      sectionCount,
+    } = useSongSections({
+      parsedLines,
+      scrollRef,
+      getTops,
+      viewportHeightRef,
+      overlapFraction: overlapPercent / 100,
+    });
+
+    void sectionCount;
+
+    // Resetear índice de secciones al cambiar de canción
+    useEffect(() => {
+      resetSectionIndex();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [songId, currentContent]);
 
     // ─────────────────────────────────────────────
     // Zoom con gesto de dos dedos (Pinch-to-zoom)
@@ -449,6 +548,7 @@ export const SongViewer: React.FC<
     // Pedal — suscripción a PedalEvent vía usePedal
     // ─────────────────────────────────────────────
     const {
+      connected: pedalConnected,
       device: pedalDevice,
       connecting: pedalConnecting,
       discovering: pedalDiscovering,
@@ -460,6 +560,7 @@ export const SongViewer: React.FC<
       sendHello,
       sendLeave,
       onPosition,
+      onWifiMinVisible,
       onWifiConfig,
     } = usePedal();
 
@@ -521,6 +622,28 @@ export const SongViewer: React.FC<
       (event: PedalEvent) => {
         if (!pedalEnabledRef.current) return;
 
+        // Modo "Salto por secciones": un pulso = saltar a la siguiente/anterior sección.
+        // No se usa scroll continuo en este modo.
+        if (pedalModeRef.current === 'sections') {
+          switch (event.type) {
+            case 'DOWN_PRESS':
+              jumpToNextSection();
+              break;
+            case 'UP_PRESS':
+              jumpToPrevSection();
+              break;
+            case 'HOME':
+              scrollToLinePos(0, true);
+              break;
+            case 'END':
+              scrollToLinePos(Infinity, true);
+              break;
+            // RELEASE events are ignored in sections mode
+          }
+          return;
+        }
+
+        // Modo "Scroll continuo" (comportamiento original)
         // El pedal WiFi se comparte entre varios dispositivos: se mueve
         // por líneas lógicas para que todos vean la misma zona.
         // El pedal Bluetooth es de un solo usuario: sigue continuo en píxeles.
@@ -564,7 +687,7 @@ export const SongViewer: React.FC<
         }
       },
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd, hasLineMap, startLinePedalScroll, stopLinePedalScroll, scrollToLinePos]
+      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd, hasLineMap, startLinePedalScroll, stopLinePedalScroll, scrollToLinePos, jumpToNextSection, jumpToPrevSection]
     );
 
     // Suscribir a eventos normalizados del pedal unificado
@@ -634,6 +757,28 @@ export const SongViewer: React.FC<
         applyServerLinePos(message.pos, message.moving);
       });
     }, [onPosition, applyServerLinePos]);
+
+    // Líneas que entran en la pantalla más chica con esta canción abierta.
+    // Se usa para marcar hasta dónde llega lo que ve esa pantalla.
+    useEffect(() => {
+      if (!syncWithPedal) {
+        setSharedMinVisible(null);
+        return;
+      }
+
+      const unsubscribe = onWifiMinVisible(message => {
+        if (message.songKey !== songKeyRef.current) return;
+
+        setSharedMinVisible(
+          message.minVisible > 0 ? message.minVisible : null
+        );
+      });
+
+      return () => {
+        unsubscribe();
+        setSharedMinVisible(null);
+      };
+    }, [syncWithPedal, songKey, onWifiMinVisible, setSharedMinVisible]);
 
     // Velocidad del pedal definida por el ESP32
     useEffect(() => {
@@ -880,11 +1025,17 @@ export const SongViewer: React.FC<
           metronomeMuted={metronomeMuted}
           setMetronomeMuted={setMetronomeMuted}
           beat={beat}
+          connected={pedalConnected}
           wifiConnected={wifiConnected}
           pedalConnecting={pedalConnecting}
           pedalDevice={pedalDevice}
           onConnectPedal={handleConnectPedal}
           onDisconnectPedal={handleDisconnectPedal}
+          pedalMode={pedalMode}
+          onPedalModeChange={setPedalMode}
+          overlapPercent={overlapPercent}
+          onOverlapPercentChange={setOverlapPercent}
+          hasSections={hasSections}
         />
 
         {isEditToolActive && (
@@ -1048,6 +1199,11 @@ export const SongViewer: React.FC<
                       e.nativeEvent
                         .contentOffset.y
                     );
+
+                    updateSharedLimit(
+                      e.nativeEvent
+                        .contentOffset.y
+                    );
                   }}
                   scrollEventThrottle={1}
                   scrollEnabled={
@@ -1129,6 +1285,17 @@ export const SongViewer: React.FC<
                     }
                   )}
                 </ScrollView>
+
+                {/* Hasta acá llega lo que ve la pantalla más chica */}
+                {sharedLimitY !== null && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.sharedLimit,
+                      { top: sharedLimitY },
+                    ]}
+                  />
+                )}
 
                 <FontSizeIndicator
                   visible={showZoomIndicator}
@@ -1321,6 +1488,18 @@ const styles = StyleSheet.create({
   scrollWrapper: {
     flex: 1,
     position: 'relative',
+  },
+
+  // Marca sutil: tinte neutro (sirve en fondo claro y oscuro) debajo
+  // de una línea fina, hasta donde llega la pantalla más chica.
+  sharedLimit: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(128, 128, 128, 0.10)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128, 128, 128, 0.45)',
   },
 
   scroll: {

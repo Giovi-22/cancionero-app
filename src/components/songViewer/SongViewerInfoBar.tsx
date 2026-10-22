@@ -23,8 +23,10 @@ import {
   Footprints,
 } from 'lucide-react-native';
 import { PedalDevice } from '../../types/pedal';
+import { PedalMode } from '../../types/pedal';
 import { MetronomeModal } from './MetronomeModal';
 import { ScrollPedalModal } from './ScrollPedalModal';
+import { PedalConfigModal } from './PedalConfigModal';
 
 const COLORS = {
   background: '#0a0a0a',
@@ -171,11 +173,23 @@ interface SongViewerInfoBarProps {
    */
   beat: number;
 
+  connected?: boolean;
   wifiConnected?: boolean;
   pedalConnecting?: boolean;
   pedalDevice?: PedalDevice | null;
   onConnectPedal?: () => void;
   onDisconnectPedal?: () => void;
+
+  /** Modo actual del pedal ('scroll' | 'sections'). */
+  pedalMode?: PedalMode;
+  onPedalModeChange?: (mode: PedalMode) => void;
+
+  /** Porcentaje de superposición para el modo secciones (0-60). */
+  overlapPercent?: number;
+  onOverlapPercentChange?: (pct: number) => void;
+
+  /** True si la canción actual tiene al menos una sección. */
+  hasSections?: boolean;
 }
 
 export const SongViewerInfoBar: React.FC<
@@ -204,11 +218,17 @@ export const SongViewerInfoBar: React.FC<
   metronomeMuted,
   setMetronomeMuted,
   beat,
+  connected = false,
   wifiConnected = false,
   pedalConnecting = false,
   pedalDevice = null,
   onConnectPedal,
   onDisconnectPedal,
+  pedalMode = 'scroll',
+  onPedalModeChange,
+  overlapPercent = 30,
+  onOverlapPercentChange,
+  hasSections = false,
 }) => {
     const [isPickerOpen, setIsPickerOpen] =
       useState(false);
@@ -220,6 +240,9 @@ export const SongViewerInfoBar: React.FC<
       useState(false);
 
     const [isScrollModalOpen, setIsScrollModalOpen] =
+      useState(false);
+
+    const [isPedalConfigOpen, setIsPedalConfigOpen] =
       useState(false);
 
     const selectCapo = (fret: number) => {
@@ -453,8 +476,8 @@ export const SongViewerInfoBar: React.FC<
             />
           </TouchableOpacity>
 
-          {/* Pedal WiFi — visible si hay un pedal detectado, conectando o conectado */}
-          {(pedalDevice || wifiConnected || pedalConnecting) && (
+          {/* Pedal — tap corto: conectar/desconectar | tap largo: config */}
+          {(pedalDevice || wifiConnected || pedalConnecting || connected) && (
             <TouchableOpacity
               activeOpacity={0.7}
               disabled={pedalConnecting}
@@ -472,18 +495,23 @@ export const SongViewerInfoBar: React.FC<
                       },
                     ]
                   );
-                } else {
+                } else if (!connected) {
                   onConnectPedal?.();
+                } else {
+                  // Conectado por Bluetooth u otro medio: abrir modal de config
+                  setIsPedalConfigOpen(true);
                 }
               }}
+              onLongPress={() => setIsPedalConfigOpen(true)}
+              delayLongPress={400}
               style={[
                 styles.infoBadge,
-                wifiConnected && {
+                (wifiConnected || connected) && {
                   borderColor: '#22c55e',
                   borderWidth: 1,
                   backgroundColor: 'rgba(34, 197, 94, 0.15)',
                 },
-                !wifiConnected && !pedalConnecting && {
+                !wifiConnected && !connected && !pedalConnecting && {
                   borderColor: COLORS.accent,
                   borderWidth: 1,
                   backgroundColor: 'rgba(59, 130, 246, 0.12)',
@@ -496,7 +524,7 @@ export const SongViewerInfoBar: React.FC<
                 <Footprints
                   size={12}
                   color={
-                    wifiConnected
+                    (wifiConnected || connected)
                       ? '#22c55e'
                       : COLORS.accent
                   }
@@ -506,23 +534,49 @@ export const SongViewerInfoBar: React.FC<
               <Text
                 style={[
                   styles.infoBadgeText,
-                  wifiConnected && {
+                  (wifiConnected || connected) && {
                     color: '#4ade80',
                   },
-                  !wifiConnected && !pedalConnecting && {
+                  !wifiConnected && !connected && !pedalConnecting && {
                     color: COLORS.accent,
                   },
                 ]}
               >
                 {pedalConnecting
                   ? 'Pedal...'
-                  : wifiConnected
-                    ? 'Pedal'
-                    : 'Pedal'}
+                  : pedalMode === 'sections' && (wifiConnected || connected)
+                    ? '⊞ Secciones'
+                    : wifiConnected
+                      ? 'Pedal'
+                      : connected
+                        ? 'Pedal BT'
+                        : 'Pedal'}
               </Text>
             </TouchableOpacity>
           )}
         </View>
+
+        {/* Modal config del pedal */}
+        <PedalConfigModal
+          visible={isPedalConfigOpen}
+          onClose={() => setIsPedalConfigOpen(false)}
+          wifiConnected={wifiConnected}
+          pedalConnecting={pedalConnecting}
+          pedalDevice={pedalDevice}
+          onConnect={() => {
+            setIsPedalConfigOpen(false);
+            onConnectPedal?.();
+          }}
+          onDisconnect={() => {
+            setIsPedalConfigOpen(false);
+            onDisconnectPedal?.();
+          }}
+          pedalMode={pedalMode}
+          onPedalModeChange={(mode) => onPedalModeChange?.(mode)}
+          overlapPercent={overlapPercent}
+          onOverlapPercentChange={(pct) => onOverlapPercentChange?.(pct)}
+          hasSections={hasSections}
+        />
 
         {/* Modal Desplegable de Selección de Tono */}
         {onTransposeChange && (

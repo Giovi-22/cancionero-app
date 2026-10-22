@@ -9,6 +9,7 @@ import {
     PedalEvent,
     WifiConfigMessage,
     WifiHelloReport,
+    WifiMinVisibleMessage,
     WifiPositionMessage,
 } from '../types/pedal';
 
@@ -64,6 +65,11 @@ interface UsePedalResult {
     /** Posición compartida del ESP32. Canal aparte de onEvent (no re-renderiza). */
     onPosition: (
         listener: (message: WifiPositionMessage) => void
+    ) => () => void;
+
+    /** Líneas visibles de la pantalla más chica con esta canción abierta. */
+    onWifiMinVisible: (
+        listener: (message: WifiMinVisibleMessage) => void
     ) => () => void;
 
     /** Velocidad del pedal definida por el ESP32. */
@@ -211,6 +217,12 @@ export const usePedal = (): UsePedalResult => {
         []
     );
 
+    const onWifiMinVisible = useCallback(
+        (listener: (message: WifiMinVisibleMessage) => void): (() => void) =>
+            PedalService.onWifiMinVisible(listener),
+        []
+    );
+
     const onWifiConfig = useCallback(
         (listener: (message: WifiConfigMessage) => void): (() => void) =>
             PedalService.onWifiConfig(listener),
@@ -233,6 +245,7 @@ export const usePedal = (): UsePedalResult => {
         sendHello,
         sendLeave,
         onPosition,
+        onWifiMinVisible,
         onWifiConfig,
     };
 };
