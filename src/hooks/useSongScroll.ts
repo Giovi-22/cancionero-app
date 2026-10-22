@@ -98,6 +98,20 @@ export interface UseSongScrollReturn {
     stopLinePedalScroll: () => void;
     /** Posiciones Y de cada línea (para useSongSections). */
     getTops: () => ReadonlyArray<number | undefined>;
+    /** Posición de scroll actual (px), siempre al día aunque haya animaciones. */
+    getScrollY: () => number;
+    /**
+     * Lleva la línea `lineIndex` a (overlapFraction × alto del viewport) desde
+     * el borde superior. Actualiza las mismas referencias que scrollToLinePos,
+     * así el pedal Wi-Fi y el salto por secciones nunca se contradicen.
+     * Devuelve el scrollY final (ya recortado a los límites) o null si todavía
+     * no hay mapa de líneas.
+     */
+    scrollToSectionLine: (
+        lineIndex: number,
+        overlapFraction: number,
+        animated?: boolean
+    ) => number | null;
 
     // ── Posición compartida con el ESP32 ──
     /** Se incrementa cuando el mapa de líneas o el viewport terminan de cambiar. */
@@ -760,6 +774,66 @@ export const useSongScroll = ({
         ]
     );
 
+    const getScrollY = useCallback(() => scrollPosRef.current, []);
+
+    const scrollToSectionLine = useCallback(
+        (
+            lineIndex: number,
+            overlapFraction: number,
+            animated = true
+        ): number | null => {
+            if (!hasLineMap()) {
+                return null;
+            }
+
+            const tops = getTops();
+            const sectionY = tops[lineIndex];
+            const viewportHeight = viewportHeightRef.current;
+
+            if (sectionY === undefined || viewportHeight <= 0) {
+                return null;
+            }
+
+            // Si el loop de líneas estuviera corriendo, se corta.
+            cancelLinePedalLoop();
+
+            const y = Math.max(
+                0,
+                Math.min(
+                    getMaxScroll(),
+                    sectionY - viewportHeight * overlapFraction
+                )
+            );
+
+            // La posición en líneas equivalente a este scroll: si después se
+            // vuelve al modo líneas (o llega un HELLO), parte de acá.
+            linePosRef.current = yToPos(
+                tops,
+                y + viewportHeight * LINE_ANCHOR_FRACTION
+            );
+            lineScrollYRef.current = y;
+            scrollPosRef.current = y;
+
+            // Evita que los onScroll de esta animación pisen scrollPosRef.
+            ignoreScrollUntilRef.current =
+                Date.now() + (animated ? 700 : 250);
+
+            scrollRef.current?.scrollTo({ y, animated });
+            notifyProgress(getScrollProgress(), true);
+
+            return y;
+        },
+        [
+            hasLineMap,
+            getTops,
+            getMaxScroll,
+            cancelLinePedalLoop,
+            scrollRef,
+            notifyProgress,
+            getScrollProgress,
+        ]
+    );
+
     const startLinePedalScroll = useCallback(
         (direction: 'up' | 'down') => {
             // Si el loop en píxeles estuviera activo, se corta.
@@ -1225,5 +1299,7 @@ export const useSongScroll = ({
         setSharedMinVisible,
         updateSharedLimit,
         getTops,
+        getScrollY,
+        scrollToSectionLine,
     };
 };

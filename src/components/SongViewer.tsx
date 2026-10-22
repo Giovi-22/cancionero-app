@@ -57,6 +57,7 @@ import { COLORS } from '../constants/theme';
 import { features } from '../config/features';
 import { makeSongKey } from '../utils/SongKey';
 import { StorageService } from '../services/StorageService';
+import { LINE_ANCHOR_FRACTION } from '../utils/lineMap';
 
 
 interface SongViewerProps {
@@ -432,6 +433,8 @@ export const SongViewer: React.FC<
       setSharedMinVisible,
       updateSharedLimit,
       getTops,
+      getScrollY,
+      scrollToSectionLine,
     } = useSongScroll({
       scrollRef,
       scrollAreaRef,
@@ -454,32 +457,35 @@ export const SongViewer: React.FC<
     // Salto por secciones (modo pedal)
     // ─────────────────────────────────────────────
 
-    const hasSections = useMemo(
-      () => parsedLines.some(l => l.type === 'section'),
-      [parsedLines]
-    );
-
+    // La sección "actual" se calcula siempre desde la posición real del
+    // scroll (no hay un índice propio que se desincronice), y el título de la
+    // canción no cuenta como sección.
     const {
+      sectionCount,
+      activeRange,
+      updateActiveSection,
       jumpToNextSection,
       jumpToPrevSection,
-      resetSectionIndex,
-      currentSectionLabel,
-      sectionCount,
+      jumpToStart,
+      jumpToEnd,
     } = useSongSections({
       parsedLines,
-      scrollRef,
       getTops,
       viewportHeightRef,
+      getScrollY,
+      scrollToSectionLine,
+      scrollToLinePos,
       overlapFraction: overlapPercent / 100,
+      // Qué sección se resalta cuando no hubo un salto del pedal:
+      // en modo secciones, la que está en el punto del overlap;
+      // en modo líneas, la del punto de anclaje.
+      referenceFraction:
+        pedalMode === 'sections'
+          ? overlapPercent / 100
+          : LINE_ANCHOR_FRACTION,
     });
 
-    void sectionCount;
-
-    // Resetear índice de secciones al cambiar de canción
-    useEffect(() => {
-      resetSectionIndex();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [songId, currentContent]);
+    const hasSections = sectionCount > 0;
 
     // ─────────────────────────────────────────────
     // Zoom con gesto de dos dedos (Pinch-to-zoom)
@@ -633,10 +639,10 @@ export const SongViewer: React.FC<
               jumpToPrevSection();
               break;
             case 'HOME':
-              scrollToLinePos(0, true);
+              jumpToStart();
               break;
             case 'END':
-              scrollToLinePos(Infinity, true);
+              jumpToEnd();
               break;
             // RELEASE events are ignored in sections mode
           }
@@ -687,7 +693,7 @@ export const SongViewer: React.FC<
         }
       },
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd, hasLineMap, startLinePedalScroll, stopLinePedalScroll, scrollToLinePos, jumpToNextSection, jumpToPrevSection]
+      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd, hasLineMap, startLinePedalScroll, stopLinePedalScroll, scrollToLinePos, jumpToNextSection, jumpToPrevSection, jumpToStart, jumpToEnd]
     );
 
     // Suscribir a eventos normalizados del pedal unificado
@@ -753,6 +759,11 @@ export const SongViewer: React.FC<
       return onPosition(message => {
         if (!pedalEnabledRef.current) return;
         if (message.songKey !== songKeyRef.current) return;
+
+        // En modo secciones el movimiento lo hacen los saltos por sección.
+        // Aplicar acá la posición en líneas del ESP32 haría que la pantalla
+        // "vuelva" a donde el ESP32 cree que está.
+        if (pedalModeRef.current === 'sections') return;
 
         applyServerLinePos(message.pos, message.moving);
       });
@@ -1204,6 +1215,11 @@ export const SongViewer: React.FC<
                       e.nativeEvent
                         .contentOffset.y
                     );
+
+                    updateActiveSection(
+                      e.nativeEvent
+                        .contentOffset.y
+                    );
                   }}
                   scrollEventThrottle={1}
                   scrollEnabled={
@@ -1236,6 +1252,11 @@ export const SongViewer: React.FC<
                     }
                     onContainerLayout={
                       handleContainerLayout
+                    }
+                    activeRange={
+                      syncWithPedal
+                        ? activeRange
+                        : null
                     }
                     onLinePress={(
                       lineIndex,

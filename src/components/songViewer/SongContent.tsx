@@ -1,4 +1,5 @@
 import React, { useCallback } from 'react';
+import { isTitleLine } from '../../utils/sectionUtils';
 import {
     Platform,
     StyleSheet,
@@ -42,6 +43,14 @@ interface SongContentProps {
 
     /** Reporta la posición Y del contenedor dentro del ScrollView. */
     onContainerLayout?: (y: number) => void;
+
+    /**
+     * Rango de líneas (índices de parsedLines, ambos inclusive) de la sección
+     * enfocada por el pedal. Se marca con una barra lateral y un fondo tenue;
+     * el resto de la canción se atenúa. null = sin enfoque.
+     * No cambia el alto de ninguna línea, así no altera el mapa de líneas.
+     */
+    activeRange?: { start: number; end: number } | null;
 }
 
 const COLORS = {
@@ -66,6 +75,7 @@ export const SongContent: React.FC<
     onLinePress,
     onLineLayout,
     onContainerLayout,
+    activeRange,
 }) => {
         const getRenderItems =
             useCallback(
@@ -243,13 +253,7 @@ export const SongContent: React.FC<
                         lIndex
                     ) => {
                         const isTitle =
-                            line.type ===
-                            'section' &&
-                            line.blocks[0]?.text
-                                .toUpperCase()
-                                .includes(
-                                    'TITULO'
-                                );
+                            isTitleLine(line);
 
                         const sectionColor =
                             isStageMode
@@ -305,9 +309,26 @@ export const SongContent: React.FC<
                                 fullLineText
                             );
 
+                        // Enfoque de sección (pedal): solo cambia colores y
+                        // opacidad, nunca el alto, para no mover el mapa de líneas.
+                        const inActiveSection =
+                            !!activeRange &&
+                            lIndex >= activeRange.start &&
+                            lIndex <= activeRange.end;
+
+                        const dimmed =
+                            !!activeRange &&
+                            !inActiveSection;
+
                         return (
                             <View
                                 key={lIndex}
+                                style={[
+                                    inActiveSection &&
+                                    styles.activeSectionLine,
+                                    dimmed &&
+                                    styles.dimmedLine,
+                                ]}
                                 onLayout={e => {
                                     onLineLayout?.(
                                         lIndex,
@@ -316,6 +337,13 @@ export const SongContent: React.FC<
                                     );
                                 }}
                             >
+                                {inActiveSection && (
+                                    <View
+                                        pointerEvents="none"
+                                        style={styles.activeSectionBar}
+                                    />
+                                )}
+
                                 <TouchableOpacity
                                     activeOpacity={0.7}
                                     onPress={e => {
@@ -643,6 +671,25 @@ const styles = StyleSheet.create({
         marginBottom: 5,
         paddingHorizontal: 5,
         borderRadius: 5,
+    },
+
+    // ── Enfoque de la sección activa (pedal) ──
+
+    activeSectionLine: {
+        backgroundColor: 'rgba(251, 191, 36, 0.10)',
+    },
+
+    activeSectionBar: {
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 3,
+        backgroundColor: '#fbbf24',
+    },
+
+    dimmedLine: {
+        opacity: 0.5,
     },
 
     titleLine: {
