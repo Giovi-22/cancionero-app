@@ -134,6 +134,7 @@ const char* PedalDiag::catName(Cat cat) {
         case Cat::SYNC: return "SYNC";
         case Cat::BLE:  return "BLE";
         case Cat::WIFI: return "WIFI";
+        case Cat::SEC:  return "SEC";
     }
     return "?";
 }

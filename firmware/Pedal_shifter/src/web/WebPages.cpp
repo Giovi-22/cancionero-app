@@ -6,9 +6,11 @@ String WebPages::dashboard(bool apMode, bool wifiConnected,
                            const String &ip, const String &ssid,
                            unsigned long doubleWindow,
                            unsigned long holdThreshold,
-                           unsigned long wifiResetHold) {
+                           unsigned long wifiResetHold, bool sectionsMode,
+                           uint8_t overlapPercent,
+                           unsigned long sectionHold) {
   String page;
-  page.reserve(11000);
+  page.reserve(14000);
 
   page += R"rawliteral(
 <!doctype html>
@@ -30,7 +32,7 @@ h1,h2{margin-top:0}
 .badge{padding:5px 9px;border-radius:999px;background:#292929;font-size:13px}
 .ok{color:#4ade80}
 .off{color:#aaa}
-input{width:100%;padding:12px;border-radius:10px;border:1px solid #444;background:#222;color:#fff;font-size:16px}
+input,select{width:100%;padding:12px;border-radius:10px;border:1px solid #444;background:#222;color:#fff;font-size:16px}
 button{border:0;border-radius:10px;padding:11px 15px;background:#3b82f6;color:#fff;font-size:15px;cursor:pointer}
 button.secondary{background:#333}
 button.danger{background:#7f1d1d}
@@ -121,7 +123,43 @@ a.link:hover{border-color:#3b82f6}
 </div>
 
 <div class="card">
+<h2>Modo del pedal</h2>
+
+<label>Funcionamiento</label>
+<select id="mode" onchange="toggleModeFields()">
+<option value="lines")rawliteral";
+  if (!sectionsMode)
+    page += " selected";
+  page += R"rawliteral(>Scroll por líneas (mantener apretado)</option>
+<option value="sections")rawliteral";
+  if (sectionsMode)
+    page += " selected";
+  page += R"rawliteral(>Salto por secciones (un toque = una sección)</option>
+</select>
+
+<div id="sectionFields">
+<label>Contexto de la sección anterior (%)</label>
+<input id="overlap" type="number" min="0" max="60" value=")rawliteral";
+  page += String(overlapPercent);
+  page += R"rawliteral(">
+
+<label>Mantener para ir al inicio / final (ms)</label>
+<input id="sectionHold" type="number" min="600" max="5000" value=")rawliteral";
+  page += String(sectionHold);
+  page += R"rawliteral(">
+
+<p class="muted"><small>Un toque corto en el botón de abajo avanza una sección y en el de arriba retrocede una.
+Mantener apretado lleva al final (abajo) o al inicio (arriba). Dos toques rápidos son dos secciones.</small></p>
+</div>
+
+<div class="actions">
+<button onclick="saveMode()">Guardar modo</button>
+</div>
+</div>
+
+<div class="card">
 <h2>Comportamiento</h2>
+<p class="muted"><small>Estos tiempos se usan en el modo "Scroll por líneas".</small></p>
 
 <label>Ventana de doble toque (ms)</label>
 <input id="doubleWindow" type="number" min="150" max="1500" value=")rawliteral";
@@ -178,6 +216,19 @@ async function saveTiming(){
     alert("Configuración guardada");
   }catch(e){alert(e.message)}
 }
+function toggleModeFields(){
+  document.getElementById("sectionFields").style.display=
+    document.getElementById("mode").value==="sections"?"block":"none";
+}
+async function saveMode(){
+  try{
+    await post("/api/config",{mode:document.getElementById("mode").value,
+                              overlapPercent:Number(document.getElementById("overlap").value),
+                              sectionHoldMs:Number(document.getElementById("sectionHold").value)});
+    alert("Modo guardado");
+    location.reload();
+  }catch(e){alert(e.message)}
+}
 async function saveWifi(){
   try{
     await post("/api/wifi/save",{ssid:document.getElementById("ssid").value,
@@ -231,6 +282,7 @@ async function refresh(){
     document.getElementById("clients").textContent=s.tcpClients;
   }catch(e){}
 }
+toggleModeFields();
 refresh();
 setInterval(refresh,2000);
 </script>
@@ -265,7 +317,8 @@ body{font-family:system-ui;background:#0b0b0b;color:#fff;display:grid;place-item
 String WebPages::jsonStatus(bool apMode, bool wifiConnected,
                             bool bluetoothEnabled, bool bluetoothConnected,
                             bool tcpEnabled, uint8_t tcpClients,
-                            const String &ip, const String &ssid) {
+                            const String &ip, const String &ssid,
+                            bool sectionsMode) {
   String json = "{";
 
   json += "\"apMode\":";
@@ -285,6 +338,10 @@ String WebPages::jsonStatus(bool apMode, bool wifiConnected,
 
   json += ",\"tcpClients\":";
   json += String(tcpClients);
+
+  json += ",\"mode\":\"";
+  json += sectionsMode ? "sections" : "lines";
+  json += "\"";
 
   json += ",\"ip\":\"";
   json += ip;

@@ -123,6 +123,12 @@ void DiagJson::build(const DiagSnapshot& s, String& out) {
     num(out, "doubleMs", s.doubleMs);
     out += ',';
     num(out, "resetMs", s.resetMs);
+    out += ',';
+    str(out, "mode", s.sectionsMode ? "sections" : "lines");
+    out += ',';
+    num(out, "overlapPercent", s.overlapPercent);
+    out += ',';
+    num(out, "sectionHoldMs", s.sectionHoldMs);
     out += '}';
 
     // Pulsadores
@@ -165,6 +171,8 @@ void DiagJson::build(const DiagSnapshot& s, String& out) {
         num(out, "visible", d.visible);
         out += ',';
         num(out, "total", d.total);
+        out += ',';
+        num(out, "proto", d.proto);
         out += '}';
     }
     out += ']';
@@ -187,6 +195,21 @@ void DiagJson::build(const DiagSnapshot& s, String& out) {
         num(out, "clients", g.clients);
         out += ',';
         num(out, "minVisible", g.minVisible);
+        out += ',';
+        snum(out, "sectionIndex", g.sectionIndex);
+        out += ',';
+        num(out, "sectionCount", g.sectionCount);
+        out += ',';
+        num(out, "seq", g.seq);
+        out += ',';
+
+        char checksum[8];
+        snprintf(checksum, sizeof(checksum), "%04x",
+                 static_cast<unsigned>(g.checksum));
+        str(out, "checksum", checksum);
+
+        out += ',';
+        str(out, "label", g.label);
         out += '}';
     }
     out += ']';

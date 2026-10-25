@@ -23,7 +23,8 @@ public:
         TCP = 3,   // clientes WiFi que se conectan / desconectan
         SYNC = 4,  // posición compartida (HELLO, movimiento)
         BLE = 5,   // Bluetooth
-        WIFI = 6   // red WiFi del pedal
+        WIFI = 6,  // red WiFi del pedal
+        SEC = 7    // secciones: estado enviado a las apps, listas adoptadas
     };
 
     static const size_t CAPACITY = 100;

@@ -13,6 +13,9 @@ void PedalSocketServer::begin(PedalConfig &config, WiFiManager &wifi) {
   sync_.begin(this, PedalSyncModel::DEFAULT_LINES_PER_SEC,
               PedalSyncModel::DEFAULT_RAMP_MS);
 
+  // Arranca con el modo guardado (aunque el servidor TCP esté apagado).
+  applyBehavior();
+
   if (!config_->connections().tcpEnabled) {
     Serial.println("[TCP] Servidor desactivado.");
     return;
@@ -277,6 +280,18 @@ void PedalSocketServer::log(const char *message) {
   PedalDiag::add(PedalDiag::Cat::SYNC, "%s", text);
 }
 
+void PedalSocketServer::logSec(const char *message) {
+  Serial.println(message);
+
+  // El prefijo "[SEC] " ya lo indica la categoría del registro.
+  const char *text = message;
+  if (strncmp(text, "[SEC] ", 6) == 0) {
+    text += 6;
+  }
+
+  PedalDiag::add(PedalDiag::Cat::SEC, "%s", text);
+}
+
 void PedalSocketServer::syncMotionStart(int8_t dir) {
   if (running_) {
     sync_.motionStart(dir, static_cast<uint32_t>(millis()));
@@ -298,6 +313,60 @@ void PedalSocketServer::syncHome() {
 void PedalSocketServer::syncEnd() {
   if (running_) {
     sync_.goEnd();
+  }
+}
+
+void PedalSocketServer::syncSectionStep(int8_t dir) {
+  if (running_) {
+    sync_.sectionStep(dir);
+  }
+}
+
+void PedalSocketServer::applyBehavior() {
+  if (!config_) {
+    return;
+  }
+
+  const PedalBehaviorConfig &behavior = config_->behavior();
+
+  sync_.setMode(behavior.mode == PedalMode::SECTIONS
+                    ? PedalSyncModel::Mode::SECTIONS
+                    : PedalSyncModel::Mode::LINES,
+                behavior.overlapPercent);
+}
+
+void PedalSocketServer::setModeChangedCallback(void (*callback)()) {
+  modeChangedCallback_ = callback;
+}
+
+// Una app pidió cambiar el modo: el modelo ya lo aplicó y avisó a las demás
+// apps. Acá se GUARDA (para que sobreviva al reinicio) y se avisa a los botones.
+void PedalSocketServer::onModeRequested(uint8_t mode, uint8_t overlapPercent) {
+  if (!config_) {
+    return;
+  }
+
+  PedalBehaviorConfig &behavior = config_->behavior();
+
+  const PedalMode newMode =
+      mode == static_cast<uint8_t>(PedalSyncModel::Mode::SECTIONS)
+          ? PedalMode::SECTIONS
+          : PedalMode::LINES;
+
+  const bool modeChanged = behavior.mode != newMode;
+
+  behavior.mode = newMode;
+  behavior.overlapPercent = overlapPercent;
+
+  config_->clamp();
+  config_->save();
+
+  PedalDiag::add(PedalDiag::Cat::SYNC, "modo cambiado desde una app: %s, contexto %u%%",
+                 newMode == PedalMode::SECTIONS ? "secciones" : "líneas",
+                 static_cast<unsigned>(behavior.overlapPercent));
+
+  if (modeChanged && modeChangedCallback_) {
+    modeChangedCallback_();
   }
 }
 
@@ -338,6 +407,7 @@ bool PedalSocketServer::deviceDiag(uint8_t slot, DeviceDiag &out) {
   out.rxLines = rxLines_[slot];
 
   out.hasSong = sync_.clientSong(slot, out.key, out.visible, out.total);
+  out.proto = sync_.clientProto(slot);
 
   if (!out.hasSong) {
     out.key[0] = '\0';
@@ -349,8 +419,21 @@ bool PedalSocketServer::deviceDiag(uint8_t slot, DeviceDiag &out) {
 }
 
 bool PedalSocketServer::songDiag(uint8_t index, SongDiag &out) const {
-  return sync_.songAt(index, out.key, out.pos, out.total, out.clients,
-                      out.minVisible);
+  if (!sync_.songAt(index, out.key, out.pos, out.total, out.clients,
+                    out.minVisible)) {
+    return false;
+  }
+
+  out.sectionIndex = -1;
+  out.sectionCount = 0;
+  out.seq = 0;
+  out.checksum = 0;
+  out.label[0] = '\0';
+
+  sync_.songSections(index, out.sectionIndex, out.sectionCount, out.seq,
+                     out.checksum, out.label, sizeof(out.label));
+
+  return true;
 }
 
 bool PedalSocketServer::motionActive() const { return sync_.isMoving(); }

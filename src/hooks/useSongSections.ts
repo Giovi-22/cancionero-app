@@ -36,6 +36,7 @@ import {
     useState,
 } from 'react';
 import { SongLineParsed } from '../utils/chordUtils';
+import { WifiSectionMessage } from '../types/pedal';
 import { SongSection, buildSections } from '../utils/sectionUtils';
 
 /** Tolerancia (px) al comparar la posición de una etiqueta con la referencia. */
@@ -90,6 +91,17 @@ export interface UseSongSectionsReturn {
     activeRange: { start: number; end: number } | null;
     /** Recalcula la sección enfocada para un scrollY (llamar desde onScroll). */
     updateActiveSection: (scrollY: number) => void;
+    /**
+     * Pone la pantalla en la sección que dicta el pedal Wi-Fi (mensaje `sec`
+     * del ESP32). Es el único que decide: acá no se calcula ninguna sección.
+     * `overlapFraction` es opcional para usar un valor recién recibido que
+     * todavía no llegó por props. Devuelve false si todavía no hay mapa de
+     * líneas (conviene reintentar cuando esté).
+     */
+    applyServerSection: (
+        message: WifiSectionMessage,
+        overlapFraction?: number
+    ) => boolean;
     jumpToNextSection: () => void;
     jumpToPrevSection: () => void;
     /** HOME: va al inicio y deja el foco "antes de la primera sección". */
@@ -283,6 +295,74 @@ export const useSongSections = ({
         goToSection(prev);
     }, [indexAtScroll, getScrollY, goToSection, jumpToStart]);
 
+    /**
+     * Aplica un estado de secciones del ESP32.
+     *
+     *  - home / end:        inicio o final de la canción
+     *  - page / count == 0: canción sin secciones, se va a `pos`
+     *  - el resto:          se alinea la sección `cur` al punto de contexto
+     *
+     * join / resync / mode / reset reposicionan sin animación: no son un
+     * pisotón del pedal sino una puesta al día.
+     */
+    const applyServerSection = useCallback(
+        (message: WifiSectionMessage, overlap?: number): boolean => {
+            const animated = !(
+                message.cause === 'join' ||
+                message.cause === 'resync' ||
+                message.cause === 'mode' ||
+                message.cause === 'reset'
+            );
+
+            if (message.cause === 'home') {
+                jumpToStart();
+                return true;
+            }
+
+            if (message.cause === 'end') {
+                jumpToEnd();
+                return true;
+            }
+
+            // Sin secciones: se navega por páginas con la posición en líneas.
+            if (message.cause === 'page' || message.count === 0) {
+                lastJumpRef.current = null;
+                scrollToLinePos(message.pos, animated);
+                commitActive(-1);
+                return true;
+            }
+
+            const fraction = overlap ?? overlapRef.current;
+
+            // Antes de la primera sección: arriba de todo.
+            if (message.index < 0 || !message.cur) {
+                scrollToLinePos(0, animated);
+                rememberJump(-1, 0);
+                return true;
+            }
+
+            // La línea manda el ESP32; si faltara, se usa la lista local.
+            const line =
+                message.cur.line ??
+                sectionsRef.current[message.index]?.line;
+
+            const y = scrollToSectionLine(line, fraction, animated);
+
+            if (y === null) return false;
+
+            rememberJump(message.index, y);
+            return true;
+        },
+        [
+            jumpToStart,
+            jumpToEnd,
+            scrollToLinePos,
+            scrollToSectionLine,
+            commitActive,
+            rememberJump,
+        ]
+    );
+
     const activeRange = useMemo(() => {
         if (activeIndex < 0 || activeIndex >= sections.length) return null;
 
@@ -304,6 +384,7 @@ export const useSongSections = ({
         activeLabel,
         activeRange,
         updateActiveSection,
+        applyServerSection,
         jumpToNextSection,
         jumpToPrevSection,
         jumpToStart,

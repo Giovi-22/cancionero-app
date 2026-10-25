@@ -48,7 +48,10 @@ button.on{background:#2563eb}
 .ln{white-space:pre-wrap;word-break:break-word;padding:1px 0}
 .ln .t{color:#6b7280}
 .ln .c{display:inline-block;min-width:44px;text-align:center;border-radius:5px;padding:0 4px;margin:0 6px;font-size:11px;font-weight:700;color:#0b0b0b}
-.c-BTN{background:#f59e0b}.c-EVT{background:#34d399}.c-TCP{background:#60a5fa}.c-SYNC{background:#a78bfa}.c-BLE{background:#22d3ee}.c-WIFI{background:#f472b6}.c-SYS{background:#9ca3af}
+.c-BTN{background:#f59e0b}.c-EVT{background:#34d399}.c-TCP{background:#60a5fa}.c-SYNC{background:#a78bfa}.c-BLE{background:#22d3ee}.c-WIFI{background:#f472b6}.c-SYS{background:#9ca3af}.c-SEC{background:#fb7185}
+.pill.sec{background:#4c0519;color:#fecdd3}
+.pill.v1{background:#052e16;color:#bbf7d0}
+.pill.old{background:#422006;color:#fde68a}
 .ln.rebote .m{color:#fbbf24}
 .ln.evt .m{color:#a7f3d0}
 </style>
@@ -103,7 +106,7 @@ button.on{background:#2563eb}
 </main>
 <script>
 (function(){
-var CATS=["BTN","EVT","TCP","SYNC","BLE","WIFI","SYS"];
+var CATS=["BTN","EVT","TCP","SYNC","SEC","BLE","WIFI","SYS"];
 var since=0, busy=false, paused=false, fails=0, rows=[], queue=[], filters={}, lastLogSeq=0;
 CATS.forEach(function(c){filters[c]=true;});
 var $=function(id){return document.getElementById(id);};
@@ -139,6 +142,7 @@ function drawDevices(d){
     c.appendChild(el("span","pill","conectado hace "+ago(x.connectedMs)));
     c.appendChild(el("span","pill",x.spoke?"último mensaje hace "+ago(x.lastRxMs):"todavía no mandó mensajes"));
     c.appendChild(el("span","pill",x.rxLines+" mensajes"));
+    c.appendChild(x.proto===1?el("span","pill v1","protocolo v1 (JSON)"):el("span","pill old","protocolo de texto (app vieja)"));
     var s=el("div","small muted");s.style.marginTop="6px";
     s.textContent=x.hasSong?("Canción: "+x.song+" · pantalla: "+x.visible+" líneas visibles de "+x.total):"Sin canción abierta (la app manda HELLO al abrir una en modo escenario)";
     c.appendChild(s);box.appendChild(c);
@@ -157,6 +161,14 @@ function drawSongs(d){
     var bar=el("div","bar");var i=el("i");i.style.width=(g.total?Math.min(100,g.pos/g.total*100):0)+"%";bar.appendChild(i);c.appendChild(bar);
     c.appendChild(el("span","pill",g.clients+" dispositivo(s)"));
     c.appendChild(el("span","pill","pantalla más chica: "+(g.minVisible||"?")+" líneas"));
+    if(g.sectionCount>0){
+      var cur=g.sectionIndex>=0?(g.sectionIndex+1)+"/"+g.sectionCount+(g.label?" · "+g.label:""):"antes de la 1ª de "+g.sectionCount;
+      c.appendChild(el("span","pill sec","sección "+cur));
+      c.appendChild(el("span","pill","#"+g.seq));
+      c.appendChild(el("span","pill","lista "+g.checksum));
+    }else{
+      c.appendChild(el("span","pill","sin lista de secciones"+(d.cfg.mode==="sections"?" (avanza por páginas)":"")));
+    }
     box.appendChild(c);
   });
 }
@@ -167,6 +179,7 @@ function drawSys(d){
   box.appendChild(kv("RAM libre",Math.round(s.heapFree/1024)+" KB (mínimo "+Math.round(s.heapMin/1024)+" KB)"));
   box.appendChild(kv("WiFi",s.ap?"punto de acceso (configuración)":(s.wifi?("conectado a "+(s.ssid||"-")):"sin conexión")));
   box.appendChild(kv("IP",s.ip||"-"));
+  box.appendChild(kv("Modo del pedal",d.cfg.mode==="sections"?("salto por secciones · contexto "+d.cfg.overlapPercent+" %"):"scroll por líneas"));
   if(s.wifi&&!s.ap)box.appendChild(kv("Señal",s.rssi+" dBm",s.rssi<-80?"warn":""));
   box.appendChild(kv("Servidor TCP",!c.tcpEnabled?"desactivado":(c.tcpRunning?("activo, puerto "+c.port+", "+c.clients+" cliente(s)"):"detenido (sin WiFi)")));
 }
@@ -202,7 +215,9 @@ function renderLog(full){
 
 function onData(d){
   fails=0;$("link").innerHTML='<span class="dot ok"></span>en vivo';
-  $("cfgline").textContent="antirrebote "+d.cfg.debounceMs+" ms · hold "+d.cfg.holdMs+" ms · doble "+d.cfg.doubleMs+" ms";
+  $("cfgline").textContent=d.cfg.mode==="sections"
+    ?"antirrebote "+d.cfg.debounceMs+" ms · modo secciones: mantener "+d.cfg.sectionHoldMs+" ms = inicio/final"
+    :"antirrebote "+d.cfg.debounceMs+" ms · hold "+d.cfg.holdMs+" ms · doble "+d.cfg.doubleMs+" ms";
   drawBtn("b-up","UP",d.btn.up);drawBtn("b-down","DOWN",d.btn.down);
   $("bothbanner").style.display=d.btn.both?"block":"none";
   drawDevices(d);drawSongs(d);drawSys(d);

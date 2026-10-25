@@ -25,7 +25,7 @@ import {
 import { PdfService } from '../services/PdfService';
 import { BluetoothInputBridge } from './BluetoothInputBridge';
 import { usePedal } from '../hooks/usePedal';
-import { PedalEvent, PedalMode } from '../types/pedal';
+import { PedalEvent, PedalMode, WifiSectionMessage } from '../types/pedal';
 import { GestureDetector } from 'react-native-gesture-handler';
 
 // Hooks
@@ -461,9 +461,11 @@ export const SongViewer: React.FC<
     // scroll (no hay un índice propio que se desincronice), y el título de la
     // canción no cuenta como sección.
     const {
+      sections,
       sectionCount,
       activeRange,
       updateActiveSection,
+      applyServerSection,
       jumpToNextSection,
       jumpToPrevSection,
       jumpToStart,
@@ -566,9 +568,85 @@ export const SongViewer: React.FC<
       sendHello,
       sendLeave,
       onPosition,
+      onWifiSection,
+      sendWifiSetMode,
+      requestWifiResync,
       onWifiMinVisible,
       onWifiConfig,
     } = usePedal();
+
+    // ─────────────────────────────────────────────
+    // Modo del pedal: se sincroniza con el pedal Wi-Fi
+    //
+    //  - Si el usuario cambia el modo (o el contexto) acá, se le manda al
+    //    pedal: él lo aplica, lo guarda en su memoria y se lo avisa a todas
+    //    las apps. No hace falta entrar a la web del pedal.
+    //  - Si el modo se cambia en la web del pedal (o en otra app), llega
+    //    en el `cfg` y esta app lo adopta. El pedal es quien manda.
+    //  - Con un pedal de firmware viejo (o solo Bluetooth) el modo queda
+    //    local, como antes.
+    // ─────────────────────────────────────────────
+
+    const pushModeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // true cuando el pedal habla el protocolo nuevo: él decide la sección activa.
+    const pedalDrivesSectionsRef = useRef(false);
+
+    const pushModeToPedal = useCallback(
+      (mode: PedalMode, pct: number, immediate: boolean) => {
+        if (pushModeTimerRef.current) {
+          clearTimeout(pushModeTimerRef.current);
+          pushModeTimerRef.current = null;
+        }
+
+        const send = () => {
+          pushModeTimerRef.current = null;
+          sendWifiSetMode(mode === 'sections' ? 'sections' : 'lines', pct);
+        };
+
+        // El contexto se manda 0,5 s después del último toque en +/-: el
+        // pedal guarda cada cambio en su memoria y no conviene saturarla.
+        if (immediate) {
+          send();
+        } else {
+          pushModeTimerRef.current = setTimeout(send, 500);
+        }
+      },
+      [sendWifiSetMode]
+    );
+
+    const handlePedalModeChange = useCallback(
+      (mode: PedalMode) => {
+        pedalModeRef.current = mode;
+        setPedalMode(mode);
+        pushModeToPedal(mode, overlapPercentRef.current, true);
+      },
+      [setPedalMode, pushModeToPedal]
+    );
+
+    const handleOverlapPercentChange = useCallback(
+      (pct: number) => {
+        overlapPercentRef.current = pct;
+        setOverlapPercent(pct);
+        pushModeToPedal(pedalModeRef.current, pct, false);
+      },
+      [setOverlapPercent, pushModeToPedal]
+    );
+
+    useEffect(() => {
+      return () => {
+        if (pushModeTimerRef.current) {
+          clearTimeout(pushModeTimerRef.current);
+        }
+      };
+    }, []);
+
+    // Sin conexión Wi-Fi ya no hay un pedal que maneje las secciones.
+    useEffect(() => {
+      if (!wifiConnected) {
+        pedalDrivesSectionsRef.current = false;
+      }
+    }, [wifiConnected]);
 
     // Descubrimiento pasivo en segundo plano si no hay pedal conectado/detectado
     useEffect(() => {
@@ -631,6 +709,13 @@ export const SongViewer: React.FC<
         // Modo "Salto por secciones": un pulso = saltar a la siguiente/anterior sección.
         // No se usa scroll continuo en este modo.
         if (pedalModeRef.current === 'sections') {
+          // Con un pedal de protocolo nuevo el movimiento llega en el mensaje
+          // `sec` (el ESP32 lleva la sección compartida): los eventos crudos
+          // por Wi-Fi son solo informativos. Reaccionar a los dos saltaría dos veces.
+          if (event.source === 'wifi' && pedalDrivesSectionsRef.current) {
+            return;
+          }
+
           switch (event.type) {
             case 'DOWN_PRESS':
               jumpToNextSection();
@@ -739,11 +824,13 @@ export const SongViewer: React.FC<
           visibleLines: report.visible,
           totalLines: report.total,
           pos: report.pos,
+          // El ESP32 lleva la sección activa; necesita saber cuáles hay.
+          sections,
         });
       }, 100);
 
       return () => clearTimeout(timer);
-    }, [syncWithPedal, songKey, lineMapVersion, getLineReport, sendHello]);
+    }, [syncWithPedal, songKey, lineMapVersion, getLineReport, sendHello, sections]);
 
     // "Cerré esta canción."
     useEffect(() => {
@@ -753,6 +840,50 @@ export const SongViewer: React.FC<
         sendLeave(songKey);
       };
     }, [syncWithPedal, songKey, sendLeave]);
+
+    // Sección activa publicada por el ESP32 (modo "por secciones").
+    // Si todavía no hay mapa de líneas (la pantalla recién se está midiendo),
+    // se guarda el último mensaje y se aplica cuando esté listo.
+    const pendingSectionRef = useRef<WifiSectionMessage | null>(null);
+
+    useEffect(() => {
+      return onWifiSection(message => {
+        if (!pedalEnabledRef.current) return;
+        if (message.songKey !== songKeyRef.current) return;
+
+        // El `cfg` con el modo siempre llega antes que el `sec`.
+        if (pedalModeRef.current !== 'sections') return;
+
+        pendingSectionRef.current = applyServerSection(
+          message,
+          overlapPercentRef.current / 100
+        )
+          ? null
+          : message;
+      });
+    }, [onWifiSection, applyServerSection]);
+
+    useEffect(() => {
+      const pending = pendingSectionRef.current;
+
+      if (!pending) return;
+
+      if (applyServerSection(pending, overlapPercentRef.current / 100)) {
+        pendingSectionRef.current = null;
+      }
+    }, [lineMapVersion, applyServerSection]);
+
+    // Al volver a habilitarse el pedal (se cerró la configuración, volvió la
+    // app a primer plano) se pide el estado vigente: pudo haber cambiado mientras tanto.
+    const wasPedalEnabledRef = useRef(pedalEnabled);
+
+    useEffect(() => {
+      if (pedalEnabled && !wasPedalEnabledRef.current && syncWithPedal) {
+        requestWifiResync(songKeyRef.current);
+      }
+
+      wasPedalEnabledRef.current = pedalEnabled;
+    }, [pedalEnabled, syncWithPedal, requestWifiResync]);
 
     // Posición publicada por el ESP32
     useEffect(() => {
@@ -795,6 +926,39 @@ export const SongViewer: React.FC<
     useEffect(() => {
       return onWifiConfig(config => {
         setLinePedalConfig(config.linesPerSec, config.rampMs);
+
+        // Solo un pedal con protocolo nuevo manda su modo.
+        if (!config.mode) return;
+
+        pedalDrivesSectionsRef.current = true;
+
+        // El pedal manda: su modo y su contexto pasan a ser los de la app.
+        // Las referencias se actualizan ya mismo porque el `sec` / `POS`
+        // que sigue se interpreta con el modo nuevo.
+        const appMode: PedalMode =
+          config.mode === 'sections' ? 'sections' : 'scroll';
+
+        if (pedalModeRef.current !== appMode) {
+          pedalModeRef.current = appMode;
+          setPedalModeState(appMode);
+          StorageService.saveSetting('pedal_mode', appMode).catch(e =>
+            console.error('[SongViewer] Error saving pedal_mode:', e)
+          );
+        }
+
+        if (
+          typeof config.overlapPercent === 'number' &&
+          config.overlapPercent !== overlapPercentRef.current
+        ) {
+          overlapPercentRef.current = config.overlapPercent;
+          setOverlapPercentState(config.overlapPercent);
+          StorageService.saveSetting(
+            'pedal_overlap_percent',
+            config.overlapPercent
+          ).catch(e =>
+            console.error('[SongViewer] Error saving pedal_overlap_percent:', e)
+          );
+        }
       });
     }, [onWifiConfig, setLinePedalConfig]);
 
@@ -1043,9 +1207,9 @@ export const SongViewer: React.FC<
           onConnectPedal={handleConnectPedal}
           onDisconnectPedal={handleDisconnectPedal}
           pedalMode={pedalMode}
-          onPedalModeChange={setPedalMode}
+          onPedalModeChange={handlePedalModeChange}
           overlapPercent={overlapPercent}
-          onOverlapPercentChange={setOverlapPercent}
+          onOverlapPercentChange={handleOverlapPercentChange}
           hasSections={hasSections}
         />
 

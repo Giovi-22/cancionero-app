@@ -32,6 +32,12 @@ export type PedalTransportType = 'bluetooth' | 'wifi' | 'none';
  * (o cuando cambia su pantalla / tamaño de letra).
  */
 export interface WifiHelloReport {
+    /**
+     * Secciones de la canción (sin el título). `line` es el índice de línea
+     * lógica (parsedLines). Las usa el ESP32 para llevar la sección activa
+     * compartida entre todos los dispositivos.
+     */
+    sections?: { line: number; label: string }[];
     /** Identifica la canción y su contenido (ver utils/songKey). */
     songKey: string;
     /** Líneas lógicas que entran enteras en esta pantalla (peor caso). */
@@ -59,10 +65,58 @@ export interface WifiMinVisibleMessage {
     minVisible: number;
 }
 
-/** Velocidad del pedal definida por el ESP32. */
+/** Nombre del modo en el firmware ('lines' equivale a 'scroll' en la app). */
+export type PedalFirmwareMode = 'lines' | 'sections';
+
+/**
+ * Configuración del pedal. `mode` y `overlapPercent` solo llegan de un
+ * firmware con protocolo v1: son la configuración REAL del pedal y mandan
+ * sobre lo que haya guardado la app.
+ */
 export interface WifiConfigMessage {
     linesPerSec: number;
     rampMs: number;
+    mode?: PedalFirmwareMode;
+    overlapPercent?: number;
+}
+
+/** Una sección tal como la describe el ESP32. */
+export interface WifiSectionRef {
+    /** Índice de la sección dentro de la lista que mandó la app. */
+    index: number;
+    /** Índice de línea lógica donde está la etiqueta. */
+    line: number;
+    label: string;
+}
+
+/** Por qué el ESP32 mandó un estado de secciones. */
+export type WifiSectionCause =
+    | 'next'
+    | 'prev'
+    | 'home'
+    | 'end'
+    | 'join'
+    | 'resync'
+    | 'mode'
+    | 'reset'
+    | 'page';
+
+/**
+ * Estado de secciones publicado por el ESP32 (mensaje `sec`).
+ * `index` = -1 significa "antes de la primera sección".
+ * `count` = 0 es una canción sin secciones: se navega por páginas con `pos`.
+ */
+export interface WifiSectionMessage {
+    songKey: string;
+    seq: number;
+    cause: WifiSectionCause;
+    changed: boolean;
+    index: number;
+    count: number;
+    pos: number;
+    prev: WifiSectionRef | null;
+    cur: WifiSectionRef | null;
+    next: WifiSectionRef | null;
 }
 
 export interface PedalDevice {

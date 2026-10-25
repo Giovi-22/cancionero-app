@@ -8,9 +8,11 @@ import {
     PedalDevice,
     PedalEvent,
     WifiConfigMessage,
+    PedalFirmwareMode,
     WifiHelloReport,
     WifiMinVisibleMessage,
     WifiPositionMessage,
+    WifiSectionMessage,
 } from '../types/pedal';
 
 import {
@@ -66,6 +68,23 @@ interface UsePedalResult {
     onPosition: (
         listener: (message: WifiPositionMessage) => void
     ) => () => void;
+
+    /** Estado de secciones del ESP32 (firmware con protocolo v1). */
+    onWifiSection: (
+        listener: (message: WifiSectionMessage) => void
+    ) => () => void;
+
+    /**
+     * Cambia el modo del pedal: el pedal lo guarda y se lo avisa a todas las
+     * apps. Devuelve false si el pedal tiene firmware viejo o no hay Wi-Fi.
+     */
+    sendWifiSetMode: (
+        mode: PedalFirmwareMode,
+        overlapPercent: number
+    ) => boolean;
+
+    /** Pide al pedal el estado vigente de la canción. */
+    requestWifiResync: (songKey: string) => boolean;
 
     /** Líneas visibles de la pantalla más chica con esta canción abierta. */
     onWifiMinVisible: (
@@ -217,6 +236,23 @@ export const usePedal = (): UsePedalResult => {
         []
     );
 
+    const onWifiSection = useCallback(
+        (listener: (message: WifiSectionMessage) => void): (() => void) =>
+            PedalService.onWifiSection(listener),
+        []
+    );
+
+    const sendWifiSetMode = useCallback(
+        (mode: PedalFirmwareMode, overlapPercent: number): boolean =>
+            PedalService.sendWifiSetMode(mode, overlapPercent),
+        []
+    );
+
+    const requestWifiResync = useCallback(
+        (songKey: string): boolean => PedalService.requestWifiResync(songKey),
+        []
+    );
+
     const onWifiMinVisible = useCallback(
         (listener: (message: WifiMinVisibleMessage) => void): (() => void) =>
             PedalService.onWifiMinVisible(listener),
@@ -245,6 +281,9 @@ export const usePedal = (): UsePedalResult => {
         sendHello,
         sendLeave,
         onPosition,
+        onWifiSection,
+        sendWifiSetMode,
+        requestWifiResync,
         onWifiMinVisible,
         onWifiConfig,
     };

@@ -37,6 +37,11 @@ struct DiagSnapshot {
     uint32_t doubleMs = 0;
     uint32_t resetMs = 0;
 
+    // Modo del pedal
+    bool sectionsMode = false;
+    uint8_t overlapPercent = 0;
+    uint32_t sectionHoldMs = 0;
+
     // Pulsadores
     ButtonSnapshot buttons;
     uint8_t pinUp = 0;

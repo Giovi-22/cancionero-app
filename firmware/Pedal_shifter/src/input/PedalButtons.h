@@ -3,6 +3,8 @@
 #include <Arduino.h>
 #include <functional>
 
+#include "SectionGesture.h"
+
 class PedalConfig;
 
 enum class PedalEvent {
@@ -11,7 +13,11 @@ enum class PedalEvent {
   DOWN_PRESS,
   DOWN_RELEASE,
   HOME,
-  END
+  END,
+
+  // Solo en modo "por secciones": un toque corto (se emite al soltar).
+  UP_TAP,
+  DOWN_TAP
 };
 
 /**
@@ -54,6 +60,13 @@ public:
   void setWifiResetCallback(WifiResetCallback callback);
 
   bool bothButtonsActive() const;
+
+  /**
+   * Avisar que cambió el modo del pedal (líneas <-> secciones).
+   * Cierra cualquier scroll por líneas en curso (así no queda trabado con el
+   * botón apretado) y reinicia los gestos de los dos botones.
+   */
+  void onModeChanged();
 
   ButtonSnapshot snapshot(unsigned long now) const;
 
@@ -122,6 +135,19 @@ private:
   unsigned long downStateSince_ = 0;
 
   static const char *stateName(State state);
+
+  // Modo "por secciones": en lugar de la máquina de estados de arriba,
+  // cada botón usa un SectionGesture (toque / mantener, sin doble toque).
+  SectionGesture upGesture_;
+  SectionGesture downGesture_;
+
+  // Tras un cambio de modo, un botón que sigue apretado se ignora hasta que
+  // se suelte (no debe contar como un toque ni como un mantener del modo nuevo).
+  bool ignoreUpUntilRelease_ = false;
+  bool ignoreDownUntilRelease_ = false;
+
+  void updateSectionsMode(bool upPressed, bool downPressed,
+                          unsigned long now);
   void logStableChange(const char *name, uint8_t pin, bool pressed,
                        EdgeTracker &edges, unsigned long now);
 

@@ -26,7 +26,8 @@ int main() {
     m.onClientConnected(0);
     m.onClientLine(0, "HELLO songA.x1 7 40 3.5");
     auto r0 = sink.forSlot(0);
-    CHECK(r0.size()==2); CHECK(r0.size()>=2 && r0[0]=="CFG 2.00 150\n"); CHECK(r0.size()>=2 && r0[1]=="POS songA.x1 3.50 0\n");
+    // Un cliente de texto recibe CFG + POS + MINV (el MINV avisa la pantalla más chica)
+    CHECK(r0.size()==3); CHECK(r0.size()>=3 && r0[0]=="CFG 2.00 150\n"); CHECK(r0.size()>=3 && r0[1]=="POS songA.x1 3.50 0\n"); CHECK(r0.size()>=3 && r0[2]=="MINV songA.x1 7\n");
 
     // 2) Segundo cliente, misma canción: recibe la pos del SERVIDOR, no la suya
     sink.clear(); m.onClientConnected(1);
@@ -34,9 +35,11 @@ int main() {
     CHECK(lastPos(sink,1)==3.5f);
     CHECK(m.minVisibleLines("songA.x1")==7);
 
-    // 3) Re-HELLO (cambió la letra): actualiza datos, NO responde
+    // 3) Re-HELLO (cambió la letra): actualiza datos y solo avisa el nuevo MINV (ni CFG ni POS)
     sink.clear(); m.onClientLine(0, "HELLO songA.x1 5 40 3.5");
-    CHECK(sink.out.empty()); CHECK(m.minVisibleLines("songA.x1")==5);
+    CHECK(!sink.out.empty());
+    for (auto& mm : sink.out) CHECK(startsWith(mm.line, "MINV "));
+    CHECK(m.minVisibleLines("songA.x1")==5);
 
     // 4) Movimiento: apretar ABAJO 1.0 s, soltar, esperar frenado. Esperado: 0.15+1.7+0.15 = 2.0 líneas
     sink.clear(); uint32_t t = 1000; m.motionStart(+1, t);

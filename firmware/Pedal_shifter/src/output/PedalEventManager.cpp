@@ -33,6 +33,10 @@ void PedalEventManager::logDelivery(const char *tcpMessage) {
   memcpy(name, tcpMessage, length);
   name[length] = '\0';
 
+  logDeliveryNamed(name);
+}
+
+void PedalEventManager::logDeliveryNamed(const char *name) {
   char tcp[24];
 
   if (!config_->connections().tcpEnabled) {
@@ -88,8 +92,35 @@ void PedalEventManager::sendWrite(const char *tcpMessage, char bleKey) {
   }
 }
 
+void PedalEventManager::sendTap(const char *name, const char *tcpMessages,
+                                char bleKey) {
+  logDeliveryNamed(name);
+
+  if (config_->connections().tcpEnabled && socketServer_->hasClients()) {
+    socketServer_->broadcast(tcpMessages);
+  }
+
+  if (config_->connections().bluetoothEnabled && bluetooth_->isConnected()) {
+    bluetooth_->write(bleKey);
+  }
+}
+
 void PedalEventManager::handle(PedalEvent event) {
   switch (event) {
+  // ── Modo por secciones: un toque = una sección ──
+  // No se llama a syncMotionStart/Stop: en este modo el ESP32 no mueve la
+  // posición continua, así no se manda ningún POS que le pise el salto a la app.
+  case PedalEvent::UP_TAP:
+    sendTap("UP_TAP", "UP_PRESS\nUP_RELEASE\n", '1');
+    socketServer_->syncSectionStep(-1);
+    break;
+
+  case PedalEvent::DOWN_TAP:
+    sendTap("DOWN_TAP", "DOWN_PRESS\nDOWN_RELEASE\n", '2');
+    socketServer_->syncSectionStep(+1);
+    break;
+
+  // ── Modo por líneas ──
   case PedalEvent::UP_PRESS:
     sendPress("UP_PRESS\n", '1');
     socketServer_->syncMotionStart(-1);

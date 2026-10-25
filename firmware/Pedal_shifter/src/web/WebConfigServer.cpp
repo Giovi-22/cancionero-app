@@ -83,6 +83,7 @@ void WebConfigServer::handleRoot() {
                 server_.client().remoteIP().toString().c_str());
   const auto &timing = config_->timing();
   const auto &connections = config_->connections();
+  const auto &behavior = config_->behavior();
 
   server_.send(
       200, "text/html",
@@ -91,7 +92,9 @@ void WebConfigServer::handleRoot() {
                           bluetooth_->isConnected(), connections.tcpEnabled,
                           socketServer_->connectedClients(), wifi_->ipAddress(),
                           wifi_->storedSSID(), timing.doublePressWindowMs,
-                          timing.holdThresholdMs, timing.wifiResetHoldMs));
+                          timing.holdThresholdMs, timing.wifiResetHoldMs,
+                          behavior.mode == PedalMode::SECTIONS,
+                          behavior.overlapPercent, behavior.sectionHoldMs));
 }
 
 void WebConfigServer::handleStatus() {
@@ -102,7 +105,8 @@ void WebConfigServer::handleStatus() {
                    wifi_->isApMode(), wifi_->isConnected(),
                    connections.bluetoothEnabled, bluetooth_->isConnected(),
                    connections.tcpEnabled, socketServer_->connectedClients(),
-                   wifi_->ipAddress(), wifi_->storedSSID()));
+                   wifi_->ipAddress(), wifi_->storedSSID(),
+                   config_->behavior().mode == PedalMode::SECTIONS));
 }
 
 String WebConfigServer::requestBody() {
@@ -150,11 +154,15 @@ void WebConfigServer::handleConfig() {
 
   auto &timing = config_->timing();
   auto &connections = config_->connections();
+  auto &behavior = config_->behavior();
 
   if (body.isEmpty()) {
     server_.send(400, "text/plain", "JSON requerido");
     return;
   }
+
+  const PedalMode previousMode = behavior.mode;
+  const uint8_t previousOverlap = behavior.overlapPercent;
 
   timing.doublePressWindowMs =
       readUInt(body, "doublePressWindowMs", timing.doublePressWindowMs);
@@ -170,8 +178,39 @@ void WebConfigServer::handleConfig() {
 
   connections.tcpEnabled = readBool(body, "tcpEnabled", connections.tcpEnabled);
 
+  // Modo del pedal. Un texto desconocido o ausente deja el modo actual.
+  const String mode = readString(body, "mode");
+
+  if (mode == "lines") {
+    behavior.mode = PedalMode::LINES;
+  } else if (mode == "sections") {
+    behavior.mode = PedalMode::SECTIONS;
+  }
+
+  const unsigned long overlap =
+      readUInt(body, "overlapPercent", behavior.overlapPercent);
+
+  behavior.overlapPercent = static_cast<uint8_t>(
+      overlap > PedalConfig::MAX_OVERLAP_PERCENT
+          ? PedalConfig::MAX_OVERLAP_PERCENT
+          : overlap);
+
+  behavior.sectionHoldMs =
+      readUInt(body, "sectionHoldMs", behavior.sectionHoldMs);
+
   config_->clamp();
   config_->save();
+
+  // Si cambió el modo, se cortan los gestos en curso (por ejemplo, un scroll
+  // por líneas con el botón apretado) para que no queden trabados.
+  if (behavior.mode != previousMode) {
+    buttons_->onModeChanged();
+  }
+
+  // Avisa a las apps conectadas (modo y contexto) sin reiniciar nada.
+  if (behavior.mode != previousMode || behavior.overlapPercent != previousOverlap) {
+    socketServer_->applyBehavior();
+  }
 
   bluetooth_->setEnabled(connections.bluetoothEnabled);
   socketServer_->setEnabled(connections.tcpEnabled);
@@ -180,7 +219,15 @@ void WebConfigServer::handleConfig() {
 }
 
 void WebConfigServer::handleConfigReset() {
+  const PedalMode previousMode = config_->behavior().mode;
+
   config_->reset();
+
+  if (config_->behavior().mode != previousMode) {
+    buttons_->onModeChanged();
+  }
+
+  socketServer_->applyBehavior();
 
   bluetooth_->setEnabled(config_->connections().bluetoothEnabled);
   socketServer_->setEnabled(config_->connections().tcpEnabled);
@@ -300,6 +347,11 @@ void WebConfigServer::handleDiagData() {
   snap.holdMs = timing.holdThresholdMs;
   snap.doubleMs = timing.doublePressWindowMs;
   snap.resetMs = timing.wifiResetHoldMs;
+
+  const auto &behavior = config_->behavior();
+  snap.sectionsMode = behavior.mode == PedalMode::SECTIONS;
+  snap.overlapPercent = behavior.overlapPercent;
+  snap.sectionHoldMs = static_cast<uint32_t>(behavior.sectionHoldMs);
 
   snap.buttons = buttons_->snapshot(now);
   snap.pinUp = PedalButtons::PIN_UP;

@@ -23,6 +23,7 @@ struct DeviceDiag {
   char key[PedalSyncModel::KEY_MAX];
   uint16_t visible;
   uint16_t total;
+  uint8_t proto; // 0 = texto (app vieja), 1 = JSON v1
 };
 
 /** Posición compartida de una canción abierta, para el diagnóstico. */
@@ -32,6 +33,13 @@ struct SongDiag {
   uint16_t total;
   uint8_t clients;
   uint16_t minVisible;
+
+  // Secciones
+  int8_t sectionIndex;  // -1 = antes de la primera
+  uint8_t sectionCount;
+  uint32_t seq;
+  uint16_t checksum;
+  char label[PedalSyncModel::LABEL_MAX]; // sección activa ("" si ninguna)
 };
 
 class PedalSocketServer : private ISyncSink {
@@ -60,6 +68,23 @@ public:
   void syncHome();
   void syncEnd();
 
+  // Modo secciones: un toque del pedal. dir: -1 = sección anterior,
+  // +1 = sección siguiente. En modo líneas no hace nada.
+  void syncSectionStep(int8_t dir);
+
+  /**
+   * Lee el modo guardado en la configuración (modo, contexto) y se lo pasa
+   * al modelo, que avisa a todas las apps con un cfg. Se llama al arrancar y
+   * cada vez que se cambia el modo desde la web del pedal.
+   */
+  void applyBehavior();
+
+  /**
+   * Aviso para cuando una APP cambia el modo (mensaje setmode): ya se guardó
+   * en la configuración; main.cpp lo usa para avisar a los botones.
+   */
+  void setModeChangedCallback(void (*callback)());
+
   // ── Diagnóstico ──
   bool deviceDiag(uint8_t slot, DeviceDiag &out);
   bool songDiag(uint8_t index, SongDiag &out) const;
@@ -73,10 +98,11 @@ private:
   WiFiUDP udp_;
   WiFiClient clients_[MAX_CLIENTS];
 
-  // Buffer de recepción por cliente (los mensajes del cliente son líneas
-  // cortas).
-  static constexpr size_t RX_MAX = 128;
-  static constexpr size_t RX_BYTES_PER_UPDATE = 256;
+  // Buffer de recepción por cliente. El `hello` JSON con la lista de
+  // secciones es la línea más larga: 32 secciones con etiquetas de 20 bytes
+  // miden ~1050 bytes.
+  static constexpr size_t RX_MAX = 1280;
+  static constexpr size_t RX_BYTES_PER_UPDATE = 512;
   char rx_[MAX_CLIENTS][RX_MAX];
   size_t rxLen_[MAX_CLIENTS] = {0};
   bool rxOverflow_[MAX_CLIENTS] = {false};
@@ -87,6 +113,8 @@ private:
   uint32_t rxLines_[MAX_CLIENTS] = {0};
 
   PedalSyncModel sync_;
+
+  void (*modeChangedCallback_)() = nullptr;
 
   bool running_ = false;
   unsigned long lastBroadcast_ = 0;
@@ -102,4 +130,6 @@ private:
   // ISyncSink
   void sendToSlot(uint8_t slot, const char *line) override;
   void log(const char *message) override;
+  void logSec(const char *message) override;
+  void onModeRequested(uint8_t mode, uint8_t overlapPercent) override;
 };

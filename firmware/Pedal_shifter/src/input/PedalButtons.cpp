@@ -64,10 +64,33 @@ void PedalButtons::update(unsigned long now) {
     }
   }
 
-  const bool upPressed = debouncedUp_ == LOW;
-  const bool downPressed = debouncedDown_ == LOW;
+  bool upPressed = debouncedUp_ == LOW;
+  bool downPressed = debouncedDown_ == LOW;
+
+  // Pulsación heredada de antes de un cambio de modo: se hace de cuenta que
+  // el botón está suelto hasta que realmente se suelte.
+  if (ignoreUpUntilRelease_) {
+    if (upPressed) {
+      upPressed = false;
+    } else {
+      ignoreUpUntilRelease_ = false;
+    }
+  }
+
+  if (ignoreDownUntilRelease_) {
+    if (downPressed) {
+      downPressed = false;
+    } else {
+      ignoreDownUntilRelease_ = false;
+    }
+  }
 
   if (checkWifiReset(upPressed, downPressed, now)) {
+    return;
+  }
+
+  if (config_->behavior().mode == PedalMode::SECTIONS) {
+    updateSectionsMode(upPressed, downPressed, now);
     return;
   }
 
@@ -96,6 +119,11 @@ bool PedalButtons::checkWifiReset(bool upPressed, bool downPressed,
     if (!bothButtonsActive_) {
       bothButtonsActive_ = true;
       bothButtonsStart_ = now;
+
+      // En modo secciones, lo que quede de estas pulsaciones no debe
+      // convertirse en un toque ni en un mantener al soltar.
+      upGesture_.ignoreUntilRelease();
+      downGesture_.ignoreUntilRelease();
 
       PedalDiag::add(PedalDiag::Cat::BTN,
                      "UP y DOWN a la vez: se pausa la lógica de botones "
@@ -140,6 +168,95 @@ void PedalButtons::cancelButtonStates() {
 
   upFirstRelease_ = 0;
   downFirstRelease_ = 0;
+
+  upGesture_.reset();
+  downGesture_.reset();
+}
+
+void PedalButtons::onModeChanged() {
+  // Si había un scroll por líneas en curso (botón apretado), se cierra: sin
+  // el RELEASE el movimiento compartido y el scroll de las apps seguirían.
+  if (upState_ == State::SCROLLING) {
+    emit(PedalEvent::UP_RELEASE);
+  }
+
+  if (downState_ == State::SCROLLING) {
+    emit(PedalEvent::DOWN_RELEASE);
+  }
+
+  cancelButtonStates();
+
+  // Si algún botón sigue apretado en este momento, no cuenta para el modo nuevo.
+  ignoreUpUntilRelease_ = (debouncedUp_ == LOW);
+  ignoreDownUntilRelease_ = (debouncedDown_ == LOW);
+
+  const unsigned long now = millis();
+  upStateSince_ = now;
+  downStateSince_ = now;
+
+  const bool sections =
+      config_ != nullptr && config_->behavior().mode == PedalMode::SECTIONS;
+
+  PedalDiag::add(PedalDiag::Cat::BTN, "Modo de botones: %s",
+                 sections ? "SECCIONES (toque = sección)"
+                          : "LÍNEAS (mantener = scroll)");
+
+  Serial.printf("[Buttons] Modo: %s\n", sections ? "SECCIONES" : "LINEAS");
+}
+
+/**
+ * Modo "por secciones".
+ *
+ *   toque corto  -> UP_TAP / DOWN_TAP   (al soltar, sin esperar doble toque)
+ *   mantener     -> HOME (arriba) / END (abajo), una vez, mientras apretado
+ *
+ * Tiempos: toque = se suelta antes de sectionHoldMs.
+ */
+void PedalButtons::updateSectionsMode(bool upPressed, bool downPressed,
+                                      unsigned long now) {
+  const uint32_t holdMs =
+      static_cast<uint32_t>(config_->behavior().sectionHoldMs);
+
+  const SectionGesture::State upBefore = upGesture_.state();
+  const SectionGesture::State downBefore = downGesture_.state();
+
+  const SectionGesture::Result upResult = upGesture_.update(
+      upPressed, static_cast<uint32_t>(now), holdMs);
+
+  const SectionGesture::Result downResult = downGesture_.update(
+      downPressed, static_cast<uint32_t>(now), holdMs);
+
+  if (upGesture_.state() != upBefore) {
+    upStateSince_ = now;
+    PedalDiag::add(PedalDiag::Cat::BTN, "UP: %s -> %s",
+                   SectionGesture::stateName(upBefore),
+                   SectionGesture::stateName(upGesture_.state()));
+  }
+
+  if (downGesture_.state() != downBefore) {
+    downStateSince_ = now;
+    PedalDiag::add(PedalDiag::Cat::BTN, "DOWN: %s -> %s",
+                   SectionGesture::stateName(downBefore),
+                   SectionGesture::stateName(downGesture_.state()));
+  }
+
+  if (upResult == SectionGesture::Result::TAP) {
+    PedalDiag::add(PedalDiag::Cat::BTN, "UP: toque -> sección anterior");
+    emit(PedalEvent::UP_TAP);
+  } else if (upResult == SectionGesture::Result::HOLD) {
+    PedalDiag::add(PedalDiag::Cat::BTN, "UP: mantenido %lu ms -> inicio",
+                   static_cast<unsigned long>(holdMs));
+    emit(PedalEvent::HOME);
+  }
+
+  if (downResult == SectionGesture::Result::TAP) {
+    PedalDiag::add(PedalDiag::Cat::BTN, "DOWN: toque -> sección siguiente");
+    emit(PedalEvent::DOWN_TAP);
+  } else if (downResult == SectionGesture::Result::HOLD) {
+    PedalDiag::add(PedalDiag::Cat::BTN, "DOWN: mantenido %lu ms -> final",
+                   static_cast<unsigned long>(holdMs));
+    emit(PedalEvent::END);
+  }
 }
 
 void PedalButtons::updateUp(bool pressed, unsigned long now) {
@@ -398,8 +515,13 @@ ButtonSnapshot PedalButtons::snapshot(unsigned long now) const {
   s.upStable = debouncedUp_ == LOW;
   s.downStable = debouncedDown_ == LOW;
 
-  s.upState = stateName(upState_);
-  s.downState = stateName(downState_);
+  const bool sections =
+      config_ != nullptr && config_->behavior().mode == PedalMode::SECTIONS;
+
+  s.upState = sections ? SectionGesture::stateName(upGesture_.state())
+                       : stateName(upState_);
+  s.downState = sections ? SectionGesture::stateName(downGesture_.state())
+                         : stateName(downState_);
   s.upStateMs = static_cast<uint32_t>(now - upStateSince_);
   s.downStateMs = static_cast<uint32_t>(now - downStateSince_);
 

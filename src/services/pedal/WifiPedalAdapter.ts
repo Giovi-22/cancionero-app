@@ -5,11 +5,15 @@ import {
     PedalDevice,
     PedalEvent,
     PedalEventType,
+    PedalFirmwareMode,
     PedalTransportType,
     WifiConfigMessage,
     WifiHelloReport,
     WifiMinVisibleMessage,
     WifiPositionMessage,
+    WifiSectionCause,
+    WifiSectionMessage,
+    WifiSectionRef,
 } from '../../types/pedal';
 import { IPedalAdapter } from './IPedalAdapter';
 
@@ -17,6 +21,67 @@ const DISCOVERY_PORT = 4444;
 const TCP_PORT = 8080;
 const DEFAULT_DISCOVERY_TIMEOUT = 5000;
 const CONNECT_TIMEOUT = 5000;
+
+/** Si el pedal no contesta el `getcfg` en este tiempo, se lo trata como firmware viejo. */
+const PROTOCOL_DETECT_TIMEOUT = 1500;
+
+/** Límites del protocolo v1 (tienen que coincidir con el firmware). */
+const MAX_SECTIONS = 32;
+const MAX_LABEL_BYTES = 20;
+
+const SECTION_CAUSES: WifiSectionCause[] = [
+    'next',
+    'prev',
+    'home',
+    'end',
+    'join',
+    'resync',
+    'mode',
+    'reset',
+    'page',
+];
+
+/** Estos mensajes repiten el seq vigente (no son un cambio nuevo). */
+const SNAPSHOT_CAUSES: WifiSectionCause[] = ['join', 'resync'];
+
+/**
+ * 'unknown': recién conectado, todavía no se sabe qué entiende el pedal.
+ * 'v1':      firmware nuevo, habla JSON (cfg, sec, setmode...).
+ * 'legacy':  firmware viejo: solo el protocolo de texto (HELLO/POS/CFG).
+ */
+type WifiProtocol = 'unknown' | 'v1' | 'legacy';
+
+/** Recorta un texto a `maxBytes` bytes de UTF-8 sin partir un carácter. */
+const truncateUtf8 = (text: string, maxBytes: number): string => {
+    const bytes = new TextEncoder().encode(text);
+
+    if (bytes.length <= maxBytes) return text;
+
+    let end = maxBytes;
+
+    // Si el byte que queda afuera es de continuación, el carácter anterior
+    // quedaría cortado: se retrocede hasta un byte de inicio.
+    while (end > 0 && (bytes[end] & 0xc0) === 0x80) {
+        end--;
+    }
+
+    return new TextDecoder().decode(bytes.slice(0, end));
+};
+
+const toSectionRef = (value: any): WifiSectionRef | null => {
+    if (!value || typeof value !== 'object') return null;
+
+    const index = Number(value.i);
+    const line = Number(value.line);
+
+    if (!Number.isFinite(index) || !Number.isFinite(line)) return null;
+
+    return {
+        index,
+        line,
+        label: typeof value.label === 'string' ? value.label : '',
+    };
+};
 
 const VALID_EVENTS: PedalEventType[] = [
     'UP_PRESS',
@@ -43,6 +108,21 @@ export class WifiPedalAdapter implements IPedalAdapter {
     private minVisibleListeners = new Set<
         (message: WifiMinVisibleMessage) => void
     >();
+    private sectionListeners = new Set<
+        (message: WifiSectionMessage) => void
+    >();
+
+    // ── Negociación de protocolo ──
+    private protocol: WifiProtocol = 'unknown';
+    private protocolTimer: ReturnType<typeof setTimeout> | null = null;
+    private pendingHello: WifiHelloReport | null = null;
+    private pendingMode: {
+        mode: PedalFirmwareMode;
+        overlapPercent: number;
+    } | null = null;
+
+    /** Último `seq` de secciones recibido por canción (detecta pérdidas). */
+    private lastSeq = new Map<string, number>();
 
     isConnected(): boolean {
         return this.tcpClient !== null;
@@ -210,6 +290,7 @@ export class WifiPedalAdapter implements IPedalAdapter {
                     console.log('[WifiPedalAdapter] TCP conectado con éxito.');
                     this.tcpClient = client;
                     this.connecting = false;
+                    this.beginProtocolDetection();
                     this.notifyConnection(true);
                     resolve();
                 }
@@ -263,6 +344,74 @@ export class WifiPedalAdapter implements IPedalAdapter {
             this.tcpClient = null;
         }
         this.connecting = false;
+        this.resetProtocol();
+    }
+
+    // ─────────────────────────────────────────────
+    // Negociación de protocolo
+    //
+    // Al conectar se pide la configuración (`getcfg`). Un pedal con firmware
+    // nuevo contesta un JSON `cfg`; uno viejo ignora el mensaje. Hasta saber
+    // cuál es, el `hello` y el cambio de modo quedan en espera.
+    // ─────────────────────────────────────────────
+
+    private beginProtocolDetection(): void {
+        this.resetProtocol();
+
+        this.sendRaw(JSON.stringify({ t: 'getcfg', v: 1 }));
+
+        this.protocolTimer = setTimeout(() => {
+            this.protocolTimer = null;
+            console.log(
+                '[WifiPedalAdapter] El pedal no contestó getcfg: firmware viejo, se usa el protocolo de texto.'
+            );
+            this.setProtocol('legacy');
+        }, PROTOCOL_DETECT_TIMEOUT);
+    }
+
+    private resetProtocol(): void {
+        if (this.protocolTimer) {
+            clearTimeout(this.protocolTimer);
+            this.protocolTimer = null;
+        }
+
+        this.protocol = 'unknown';
+        this.pendingHello = null;
+        this.pendingMode = null;
+        this.lastSeq.clear();
+    }
+
+    private setProtocol(protocol: WifiProtocol): void {
+        if (this.protocol === protocol) return;
+
+        if (this.protocolTimer) {
+            clearTimeout(this.protocolTimer);
+            this.protocolTimer = null;
+        }
+
+        this.protocol = protocol;
+
+        console.log('[WifiPedalAdapter] Protocolo del pedal:', protocol);
+
+        // Se envía lo que estaba esperando.
+        const hello = this.pendingHello;
+        const mode = this.pendingMode;
+
+        this.pendingHello = null;
+        this.pendingMode = null;
+
+        if (mode && protocol === 'v1') {
+            this.sendSetMode(mode.mode, mode.overlapPercent);
+        }
+
+        if (hello) {
+            this.sendHello(hello);
+        }
+    }
+
+    /** Protocolo detectado: lo usa la app para saber si el modo se sincroniza. */
+    getProtocol(): WifiProtocol {
+        return this.protocol;
     }
 
     /**
@@ -287,6 +436,12 @@ export class WifiPedalAdapter implements IPedalAdapter {
     }
 
     private handleLine(value: string): void {
+        // Protocolo v1: una línea que empieza con '{' es JSON.
+        if (value.charCodeAt(0) === 123) {
+            this.handleJson(value);
+            return;
+        }
+
         // Mensajes de sincronización del ESP32 (no son eventos de botón).
         // POS llega varias veces por segundo: no se loguea.
         if (value.startsWith('POS ')) {
@@ -318,6 +473,124 @@ export class WifiPedalAdapter implements IPedalAdapter {
         console.log('[WifiPedalAdapter] Evento normalizado emitido:', event);
 
         this.eventListeners.forEach(listener => listener(event));
+    }
+
+    private handleJson(value: string): void {
+        let message: any;
+
+        try {
+            message = JSON.parse(value);
+        } catch (error) {
+            console.warn('[WifiPedalAdapter] JSON inválido ignorado:', value);
+            return;
+        }
+
+        if (!message || message.v !== 1 || typeof message.t !== 'string') {
+            return;
+        }
+
+        // Cualquier mensaje v1 válido confirma que el pedal habla JSON.
+        this.setProtocol('v1');
+
+        switch (message.t) {
+            case 'cfg':
+                this.handleJsonConfig(message);
+                break;
+            case 'sec':
+                this.handleJsonSection(message);
+                break;
+            default:
+                console.log('[WifiPedalAdapter] Mensaje v1 desconocido:', message.t);
+        }
+    }
+
+    private handleJsonConfig(message: any): void {
+        const linesPerSec = Number(message.linesPerSec);
+        const rampMs = Number(message.rampMs);
+
+        if (!Number.isFinite(linesPerSec) || !Number.isFinite(rampMs)) return;
+
+        const config: WifiConfigMessage = { linesPerSec, rampMs };
+
+        if (message.mode === 'lines' || message.mode === 'sections') {
+            config.mode = message.mode;
+        }
+
+        const overlap = Number(message.overlapPercent);
+
+        if (Number.isFinite(overlap) && overlap >= 0 && overlap <= 100) {
+            config.overlapPercent = Math.round(overlap);
+        }
+
+        console.log('[WifiPedalAdapter] Config del pedal (v1):', config);
+
+        this.configListeners.forEach(listener => listener(config));
+    }
+
+    private handleJsonSection(message: any): void {
+        const cause = message.cause as WifiSectionCause;
+
+        if (
+            typeof message.song !== 'string' ||
+            !SECTION_CAUSES.includes(cause)
+        ) {
+            return;
+        }
+
+        const seq = Number(message.seq);
+        const index = Number(message.index);
+        const count = Number(message.count);
+        const pos = Number(message.pos);
+
+        if (
+            !Number.isFinite(seq) ||
+            !Number.isFinite(index) ||
+            !Number.isFinite(count) ||
+            !Number.isFinite(pos)
+        ) {
+            return;
+        }
+
+        const songKey: string = message.song;
+        const last = this.lastSeq.get(songKey);
+        let gap = false;
+
+        if (SNAPSHOT_CAUSES.includes(cause)) {
+            // join / resync repiten el seq vigente: se toman siempre.
+            this.lastSeq.set(songKey, seq);
+        } else if (last !== undefined && seq <= last) {
+            // Mensaje repetido o viejo.
+            console.log('[WifiPedalAdapter] sec viejo ignorado:', seq, '<=', last);
+            return;
+        } else {
+            gap = last !== undefined && seq > last + 1;
+            this.lastSeq.set(songKey, seq);
+        }
+
+        const parsed: WifiSectionMessage = {
+            songKey,
+            seq,
+            cause,
+            changed: message.changed === true,
+            index,
+            count,
+            pos,
+            prev: toSectionRef(message.prev),
+            cur: toSectionRef(message.cur),
+            next: toSectionRef(message.next),
+        };
+
+        console.log(
+            `[WifiPedalAdapter] sec #${seq} ${cause} ${index + 1}/${count}`
+        );
+
+        this.sectionListeners.forEach(listener => listener(parsed));
+
+        // Se perdió algún mensaje: se pide el estado vigente.
+        if (gap) {
+            console.warn('[WifiPedalAdapter] Hueco en seq, pidiendo resync.');
+            this.requestResync(songKey);
+        }
     }
 
     /** POS <songKey> <pos> <moving> */
@@ -400,11 +673,49 @@ export class WifiPedalAdapter implements IPedalAdapter {
             return false;
         }
 
+        if (!this.tcpClient) {
+            return false;
+        }
+
+        // Todavía no se sabe qué entiende el pedal: queda en espera.
+        if (this.protocol === 'unknown') {
+            this.pendingHello = report;
+            return true;
+        }
+
         const visible = Math.max(0, Math.round(report.visibleLines));
         const pos = Number.isFinite(report.pos) ? report.pos : 0;
 
-        return this.sendLine(
-            `HELLO ${report.songKey} ${visible} ${total} ${pos.toFixed(2)}`
+        if (this.protocol === 'legacy') {
+            return this.sendLine(
+                `HELLO ${report.songKey} ${visible} ${total} ${pos.toFixed(2)}`
+            );
+        }
+
+        // v1: JSON con la lista de secciones.
+        const sections = (report.sections ?? [])
+            .filter(
+                section =>
+                    Number.isInteger(section.line) &&
+                    section.line >= 0 &&
+                    section.line < total
+            )
+            .slice(0, MAX_SECTIONS)
+            .map(section => [
+                section.line,
+                truncateUtf8(section.label, MAX_LABEL_BYTES),
+            ]);
+
+        return this.sendRaw(
+            JSON.stringify({
+                t: 'hello',
+                v: 1,
+                song: report.songKey,
+                visible,
+                total,
+                pos: Number(pos.toFixed(2)),
+                sections,
+            })
         );
     }
 
@@ -414,7 +725,72 @@ export class WifiPedalAdapter implements IPedalAdapter {
             return false;
         }
 
-        return this.sendLine(`LEAVE ${songKey}`);
+        this.lastSeq.delete(songKey);
+
+        if (this.pendingHello?.songKey === songKey) {
+            this.pendingHello = null;
+        }
+
+        if (this.protocol === 'unknown') {
+            return true;
+        }
+
+        if (this.protocol === 'legacy') {
+            return this.sendLine(`LEAVE ${songKey}`);
+        }
+
+        return this.sendRaw(JSON.stringify({ t: 'leave', v: 1, song: songKey }));
+    }
+
+    /**
+     * Cambia el modo del pedal. El ESP32 lo aplica, lo guarda en su memoria y
+     * avisa a TODAS las apps conectadas con un `cfg` (también a esta).
+     * Devuelve false si el pedal tiene firmware viejo (no entiende el mensaje).
+     */
+    sendSetMode(mode: PedalFirmwareMode, overlapPercent: number): boolean {
+        if (!this.tcpClient || this.protocol === 'legacy') {
+            return false;
+        }
+
+        const overlap = Math.min(60, Math.max(0, Math.round(overlapPercent)));
+
+        if (this.protocol === 'unknown') {
+            this.pendingMode = { mode, overlapPercent: overlap };
+            return true;
+        }
+
+        return this.sendRaw(
+            JSON.stringify({
+                t: 'setmode',
+                v: 1,
+                mode,
+                overlapPercent: overlap,
+            })
+        );
+    }
+
+    /** Pide el estado vigente de la canción (por ejemplo, tras una pérdida). */
+    requestResync(songKey: string): boolean {
+        if (this.protocol !== 'v1' || /\s/.test(songKey)) {
+            return false;
+        }
+
+        return this.sendRaw(
+            JSON.stringify({ t: 'resync', v: 1, song: songKey })
+        );
+    }
+
+    /** Estado de secciones publicado por el ESP32 (protocolo v1). */
+    onSection(listener: (message: WifiSectionMessage) => void): () => void {
+        this.sectionListeners.add(listener);
+        return () => {
+            this.sectionListeners.delete(listener);
+        };
+    }
+
+    /** Envía una línea ya armada (sin esperar a saber el protocolo). */
+    private sendRaw(line: string): boolean {
+        return this.sendLine(line);
     }
 
     onPosition(listener: (message: WifiPositionMessage) => void): () => void {
