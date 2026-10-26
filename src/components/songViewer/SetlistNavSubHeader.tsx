@@ -4,6 +4,7 @@ import { Radio, ChevronLeft, ChevronRight, FileText, X } from 'lucide-react-nati
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SongMetadata } from '../../types';
 import { useAppContext } from '../../context/AppContext';
+import { useResponsive } from '../../hooks/useResponsive';
 
 const COLORS = {
   background: '#0a0a0a',
@@ -37,6 +38,7 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
 }) => {
   const { activeSetlist } = useAppContext();
   const insets = useSafeAreaInsets();
+  const { isTablet } = useResponsive();
 
   const [showNotesModal, setShowNotesModal] = useState(false);
   const [showSongNoteModal, setShowSongNoteModal] = useState(false);
@@ -64,19 +66,20 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
 
   return (
     <View style={{ flexDirection: 'column' }}>
-      <View style={styles.subHeader}>
+      <View style={[styles.subHeader, isTablet && styles.subHeaderTablet]}>
         {/* Badge de modo */}
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 6,
+            gap: isTablet ? 10 : 6,
             flexWrap: 'wrap',
           }}
         >
           <View
             style={[
               styles.subHeaderBadge,
+              isTablet && styles.subHeaderBadgeTablet,
               isFollower
                 ? styles.followerBadge
                 : isDirector
@@ -84,9 +87,9 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
                   : styles.localBadge,
             ]}
           >
-            <Radio size={10} color="#fff" />
+            <Radio size={isTablet ? 14 : 10} color="#fff" />
 
-            <Text style={styles.subHeaderBadgeText}>
+            <Text style={[styles.subHeaderBadgeText, isTablet && styles.subHeaderBadgeTextTablet]}>
               {isFollower
                 ? 'SEGUIDOR'
                 : isDirector
@@ -97,12 +100,13 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
 
           {hasSongNote && (
             <TouchableOpacity
-              style={styles.songNoteButton}
+              style={[styles.songNoteButton, isTablet && styles.songNoteButtonTablet]}
               onPress={() => setShowSongNoteModal(true)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <FileText size={12} color="#fbbf24" />
+              <FileText size={isTablet ? 15 : 12} color="#fbbf24" />
 
-              <Text style={styles.songNoteButtonText}>
+              <Text style={[styles.songNoteButtonText, isTablet && styles.songNoteButtonTextTablet]}>
                 Nota Canción
               </Text>
             </TouchableOpacity>
@@ -110,12 +114,13 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
 
           {hasNotes && (
             <TouchableOpacity
-              style={styles.notesButton}
+              style={[styles.notesButton, isTablet && styles.notesButtonTablet]}
               onPress={() => setShowNotesModal(true)}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <FileText size={12} color="#fff" />
+              <FileText size={isTablet ? 15 : 12} color="#fff" />
 
-              <Text style={styles.notesButtonText}>
+              <Text style={[styles.notesButtonText, isTablet && styles.notesButtonTextTablet]}>
                 Notas Lista
               </Text>
             </TouchableOpacity>
@@ -127,21 +132,23 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            gap: 10,
+            gap: isTablet ? 14 : 10,
           }}
         >
           <TouchableOpacity
             onPress={onDirectorPrev}
             style={[
               styles.subNavBtn,
+              isTablet && styles.subNavBtnTablet,
               idx <= 0 && styles.subNavBtnDisabled,
             ]}
             disabled={idx <= 0 || isFollower}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ChevronLeft size={20} color="#fff" />
+            <ChevronLeft size={isTablet ? 26 : 20} color="#fff" />
           </TouchableOpacity>
 
-          <Text style={styles.subHeaderCounter}>
+          <Text style={[styles.subHeaderCounter, isTablet && styles.subHeaderCounterTablet]}>
             {idx + 1} / {setlistSongs.length}
           </Text>
 
@@ -149,6 +156,7 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
             onPress={onDirectorNext}
             style={[
               styles.subNavBtn,
+              isTablet && styles.subNavBtnTablet,
               idx >= setlistSongs.length - 1 &&
               styles.subNavBtnDisabled,
             ]}
@@ -156,8 +164,9 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
               idx >= setlistSongs.length - 1 ||
               isFollower
             }
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
           >
-            <ChevronRight size={20} color="#fff" />
+            <ChevronRight size={isTablet ? 26 : 20} color="#fff" />
           </TouchableOpacity>
         </View>
       </View>
@@ -165,14 +174,14 @@ export const SetlistNavSubHeader: React.FC<SetlistNavSubHeaderProps> = ({
       {/* Banner Informativo de Nota de Canción si existe */}
       {hasSongNote && (
         <TouchableOpacity
-          style={styles.songNoteBanner}
+          style={[styles.songNoteBanner, isTablet && styles.songNoteBannerTablet]}
           onPress={() => setShowSongNoteModal(true)}
           activeOpacity={0.8}
         >
-          <FileText size={14} color="#fbbf24" />
+          <FileText size={isTablet ? 17 : 14} color="#fbbf24" />
 
           <Text
-            style={styles.songNoteBannerText}
+            style={[styles.songNoteBannerText, isTablet && styles.songNoteBannerTextTablet]}
             numberOfLines={1}
           >
             <Text
@@ -464,5 +473,53 @@ const styles = StyleSheet.create({
     color: COLORS.foreground,
     fontSize: 12,
     flex: 1,
+  },
+
+  /* Adaptaciones para Tablet */
+  subHeaderTablet: {
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+  },
+  subHeaderBadgeTablet: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 6,
+  },
+  subHeaderBadgeTextTablet: {
+    fontSize: 12,
+  },
+  subNavBtnTablet: {
+    padding: 10,
+    borderRadius: 12,
+  },
+  subHeaderCounterTablet: {
+    fontSize: 16,
+  },
+  notesButtonTablet: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 6,
+  },
+  notesButtonTextTablet: {
+    fontSize: 13,
+  },
+  songNoteButtonTablet: {
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    gap: 6,
+  },
+  songNoteButtonTextTablet: {
+    fontSize: 13,
+  },
+  songNoteBannerTablet: {
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  songNoteBannerTextTablet: {
+    fontSize: 14,
   },
 });

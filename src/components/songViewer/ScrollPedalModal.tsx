@@ -13,6 +13,7 @@ import {
   Plus,
   X,
 } from 'lucide-react-native';
+import { useResponsive } from '../../hooks/useResponsive';
 
 // ============================================================
 // COLORES
@@ -68,7 +69,11 @@ export const ScrollPedalModal: React.FC<ScrollPedalModalProps> = ({
   pedalSpeed,
   setPedalSpeed,
 }) => {
+  const { isTablet } = useResponsive();
+
   if (!visible) return null;
+
+  const stepIconSize = isTablet ? 20 : 14;
 
   return (
     <Modal
@@ -84,71 +89,75 @@ export const ScrollPedalModal: React.FC<ScrollPedalModalProps> = ({
       >
         <TouchableOpacity
           activeOpacity={1}
-          style={styles.card}
+          style={[styles.card, isTablet && styles.cardTablet]}
         >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
-              <FastForward size={16} color={COLORS.accent} />
-              <Text style={styles.title}>Scroll y Pedal</Text>
+              <FastForward size={isTablet ? 20 : 16} color={COLORS.accent} />
+              <Text style={[styles.title, isTablet && styles.titleTablet]}>Scroll y Pedal</Text>
             </View>
 
-            <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-              <X size={16} color={COLORS.mutedForeground} />
+            <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <X size={isTablet ? 20 : 16} color={COLORS.mutedForeground} />
             </TouchableOpacity>
           </View>
 
           {/* Auto-scroll */}
-          <Text style={styles.sectionLabel}>Velocidad Auto-scroll</Text>
+          <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>Velocidad Auto-scroll</Text>
 
           <View style={styles.speedRow}>
             <TouchableOpacity
               onPress={() => setScrollSpeed(p => stepSpeed(p, -0.1))}
-              style={styles.stepBtn}
+              style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Minus size={14} color="#fff" />
+              <Minus size={stepIconSize} color="#fff" />
             </TouchableOpacity>
 
             <View style={styles.speedDisplay}>
-              <Text style={styles.speedValue}>{scrollSpeed.toFixed(1)}</Text>
-              <Text style={styles.speedUnit}>× velocidad</Text>
+              <Text style={[styles.speedValue, isTablet && styles.speedValueTablet]}>{scrollSpeed.toFixed(1)}</Text>
+              <Text style={[styles.speedUnit, isTablet && styles.speedUnitTablet]}>× velocidad</Text>
             </View>
 
             <TouchableOpacity
               onPress={() => setScrollSpeed(p => stepSpeed(p, 0.1))}
-              style={styles.stepBtn}
+              style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Plus size={14} color="#fff" />
+              <Plus size={stepIconSize} color="#fff" />
             </TouchableOpacity>
           </View>
 
           {/* Separador */}
-          <View style={styles.divider} />
+          <View style={[styles.divider, isTablet && styles.dividerTablet]} />
 
           {/* Pedal */}
-          <Text style={styles.sectionLabel}>
-            <Footprints size={11} color={COLORS.mutedForeground} />
+          <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>
+            <Footprints size={isTablet ? 14 : 11} color={COLORS.mutedForeground} />
             {'  '}Velocidad Pedal
           </Text>
 
           <View style={styles.speedRow}>
             <TouchableOpacity
               onPress={() => setPedalSpeed(p => stepSpeed(p, -0.1))}
-              style={styles.stepBtn}
+              style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Minus size={14} color="#fff" />
+              <Minus size={stepIconSize} color="#fff" />
             </TouchableOpacity>
 
             <View style={styles.speedDisplay}>
-              <Text style={styles.speedValue}>{pedalSpeed.toFixed(1)}</Text>
-              <Text style={styles.speedUnit}>× velocidad</Text>
+              <Text style={[styles.speedValue, isTablet && styles.speedValueTablet]}>{pedalSpeed.toFixed(1)}</Text>
+              <Text style={[styles.speedUnit, isTablet && styles.speedUnitTablet]}>× velocidad</Text>
             </View>
 
             <TouchableOpacity
               onPress={() => setPedalSpeed(p => stepSpeed(p, 0.1))}
-              style={styles.stepBtn}
+              style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Plus size={14} color="#fff" />
+              <Plus size={stepIconSize} color="#fff" />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -185,6 +194,12 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 
+  cardTablet: {
+    maxWidth: 440,
+    padding: 24,
+    borderRadius: 20,
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -204,6 +219,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  titleTablet: {
+    fontSize: 18,
+  },
+
   closeBtn: {
     padding: 4,
   },
@@ -214,6 +233,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textTransform: 'uppercase',
     marginBottom: 10,
+  },
+
+  sectionLabelTablet: {
+    fontSize: 13,
+    marginBottom: 14,
   },
 
   speedRow: {
@@ -235,9 +259,18 @@ const styles = StyleSheet.create({
     lineHeight: 32,
   },
 
+  speedValueTablet: {
+    fontSize: 36,
+    lineHeight: 40,
+  },
+
   speedUnit: {
     color: COLORS.mutedForeground,
     fontSize: 11,
+  },
+
+  speedUnitTablet: {
+    fontSize: 13,
   },
 
   stepBtn: {
@@ -251,9 +284,19 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
   },
 
+  stepBtnTablet: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+  },
+
   divider: {
     height: 1,
     backgroundColor: COLORS.cardBorder,
     marginVertical: 14,
+  },
+
+  dividerTablet: {
+    marginVertical: 18,
   },
 });

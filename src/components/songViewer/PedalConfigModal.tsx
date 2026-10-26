@@ -34,6 +34,7 @@ import {
 import { router } from 'expo-router';
 import { PedalMode } from '../../types/pedal';
 import { PedalDevice } from '../../types/pedal';
+import { useResponsive } from '../../hooks/useResponsive';
 
 // ─────────────────────────────────────────────────────────────────
 // COLORES
@@ -97,6 +98,7 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
     onOverlapPercentChange,
     hasSections,
 }) => {
+    const { isTablet } = useResponsive();
     const deviceLabel = pedalDevice?.name ?? pedalDevice?.ip ?? 'Pedal WiFi';
 
     const clampedOverlap = Math.min(60, Math.max(0, overlapPercent));
@@ -121,35 +123,36 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
             >
                 <TouchableOpacity
                     activeOpacity={1}
-                    style={styles.card}
+                    style={[styles.card, isTablet && styles.cardTablet]}
                 >
                     {/* ── Header ── */}
                     <View style={styles.header}>
                         <View style={styles.headerLeft}>
-                            <Footprints size={15} color={C.accent} />
-                            <Text style={styles.title}>Configuración del Pedal</Text>
+                            <Footprints size={isTablet ? 19 : 15} color={C.accent} />
+                            <Text style={[styles.title, isTablet && styles.titleTablet]}>Configuración del Pedal</Text>
                         </View>
-                        <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                            <X size={15} color={C.muted} />
+                        <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                            <X size={isTablet ? 19 : 15} color={C.muted} />
                         </TouchableOpacity>
                     </View>
 
                     {/* ── Conexión ── */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionLabel}>Conexión WiFi</Text>
+                        <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>Conexión WiFi</Text>
 
                         <View style={styles.connectionRow}>
                             <View style={styles.connectionInfo}>
                                 {pedalConnecting ? (
-                                    <ActivityIndicator size={14} color={C.accent} />
+                                    <ActivityIndicator size={isTablet ? 17 : 14} color={C.accent} />
                                 ) : wifiConnected ? (
-                                    <Wifi size={14} color={C.green} />
+                                    <Wifi size={isTablet ? 17 : 14} color={C.green} />
                                 ) : (
-                                    <WifiOff size={14} color={C.muted} />
+                                    <WifiOff size={isTablet ? 17 : 14} color={C.muted} />
                                 )}
                                 <Text
                                     style={[
                                         styles.connectionText,
+                                        isTablet && styles.connectionTextTablet,
                                         wifiConnected && { color: C.green },
                                         !wifiConnected && !pedalConnecting && { color: C.muted },
                                     ]}
@@ -169,6 +172,7 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
                                 <TouchableOpacity
                                     style={[
                                         styles.connectBtn,
+                                        isTablet && styles.connectBtnTablet,
                                         wifiConnected && styles.connectBtnDanger,
                                         pedalConnecting && styles.connectBtnDisabled,
                                     ]}
@@ -178,6 +182,7 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
                                     <Text
                                         style={[
                                             styles.connectBtnText,
+                                            isTablet && styles.connectBtnTextTablet,
                                             wifiConnected && { color: '#f87171' },
                                         ]}
                                     >
@@ -192,38 +197,40 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
 
                     {/* ── Modo ── */}
                     <View style={styles.section}>
-                        <Text style={styles.sectionLabel}>Modo del Pedal</Text>
+                        <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>Modo del Pedal</Text>
 
                         {/* Opción: Scroll continuo */}
                         <TouchableOpacity
                             style={[
                                 styles.modeOption,
+                                isTablet && styles.modeOptionTablet,
                                 pedalMode === 'scroll' && styles.modeOptionActive,
                             ]}
                             onPress={() => onPedalModeChange('scroll')}
                             activeOpacity={0.75}
                         >
-                            <View style={styles.modeRadio}>
+                            <View style={[styles.modeRadio, isTablet && styles.modeRadioTablet]}>
                                 {pedalMode === 'scroll' && (
-                                    <View style={styles.modeRadioDot} />
+                                    <View style={[styles.modeRadioDot, isTablet && styles.modeRadioDotTablet]} />
                                 )}
                             </View>
                             <View style={styles.modeTextGroup}>
                                 <View style={styles.modeRow}>
                                     <ArrowDownUp
-                                        size={13}
+                                        size={isTablet ? 16 : 13}
                                         color={pedalMode === 'scroll' ? C.accent : C.muted}
                                     />
                                     <Text
                                         style={[
                                             styles.modeName,
+                                            isTablet && styles.modeNameTablet,
                                             pedalMode === 'scroll' && { color: C.accent },
                                         ]}
                                     >
                                         Scroll continuo
                                     </Text>
                                 </View>
-                                <Text style={styles.modeDesc}>
+                                <Text style={[styles.modeDesc, isTablet && styles.modeDescTablet]}>
                                     Desplaza la canción mientras mantenés presionado.
                                 </Text>
                             </View>
@@ -233,37 +240,39 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
                         <TouchableOpacity
                             style={[
                                 styles.modeOption,
+                                isTablet && styles.modeOptionTablet,
                                 pedalMode === 'sections' && styles.modeOptionActive,
-                                { marginTop: 8 },
+                                { marginTop: isTablet ? 10 : 8 },
                             ]}
                             onPress={() => onPedalModeChange('sections')}
                             activeOpacity={0.75}
                         >
-                            <View style={styles.modeRadio}>
+                            <View style={[styles.modeRadio, isTablet && styles.modeRadioTablet]}>
                                 {pedalMode === 'sections' && (
-                                    <View style={styles.modeRadioDot} />
+                                    <View style={[styles.modeRadioDot, isTablet && styles.modeRadioDotTablet]} />
                                 )}
                             </View>
                             <View style={styles.modeTextGroup}>
                                 <View style={styles.modeRow}>
                                     <BookMarked
-                                        size={13}
+                                        size={isTablet ? 16 : 13}
                                         color={pedalMode === 'sections' ? C.accent : C.muted}
                                     />
                                     <Text
                                         style={[
                                             styles.modeName,
+                                            isTablet && styles.modeNameTablet,
                                             pedalMode === 'sections' && { color: C.accent },
                                         ]}
                                     >
                                         Salto por secciones
                                     </Text>
                                 </View>
-                                <Text style={styles.modeDesc}>
+                                <Text style={[styles.modeDesc, isTablet && styles.modeDescTablet]}>
                                     Cada pulso salta a la siguiente sección (Verso, Coro…).
                                 </Text>
                                 {pedalMode === 'sections' && !hasSections && (
-                                    <Text style={styles.modeWarning}>
+                                    <Text style={[styles.modeWarning, isTablet && { fontSize: 13 }]}>
                                         ⚠ Esta canción no tiene secciones definidas.
                                     </Text>
                                 )}
@@ -276,53 +285,55 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
                         <>
                             <View style={styles.divider} />
                             <View style={styles.section}>
-                                <Text style={styles.sectionLabel}>Contexto anterior</Text>
-                                <Text style={styles.overlapHint}>
+                                <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>Contexto anterior</Text>
+                                <Text style={[styles.overlapHint, isTablet && styles.overlapHintTablet]}>
                                     Fracción del viewport que muestra el final del verso anterior.
                                 </Text>
 
                                 <View style={styles.stepperRow}>
                                     <TouchableOpacity
-                                        style={styles.stepBtn}
+                                        style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
                                         onPress={() => stepOverlap(-5)}
                                         disabled={clampedOverlap <= 0}
+                                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                     >
                                         <Minus
-                                            size={14}
+                                            size={isTablet ? 18 : 14}
                                             color={clampedOverlap <= 0 ? C.muted : C.fg}
                                         />
                                     </TouchableOpacity>
 
-                                    <View style={styles.overlapValueBox}>
-                                        <Text style={styles.overlapValue}>
+                                    <View style={[styles.overlapValueBox, isTablet && styles.overlapValueBoxTablet]}>
+                                        <Text style={[styles.overlapValue, isTablet && styles.overlapValueTablet]}>
                                             {clampedOverlap}%
                                         </Text>
-                                        <Text style={styles.overlapSub}>
+                                        <Text style={[styles.overlapSub, isTablet && styles.overlapSubTablet]}>
                                             contexto
                                         </Text>
                                     </View>
 
                                     <TouchableOpacity
-                                        style={styles.stepBtn}
+                                        style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
                                         onPress={() => stepOverlap(5)}
                                         disabled={clampedOverlap >= 60}
+                                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
                                     >
                                         <Plus
-                                            size={14}
+                                            size={isTablet ? 18 : 14}
                                             color={clampedOverlap >= 60 ? C.muted : C.fg}
                                         />
                                     </TouchableOpacity>
                                 </View>
 
                                 {/* Visualización 70/30 */}
-                                <View style={styles.previewBar}>
+                                <View style={[styles.previewBar, isTablet && styles.previewBarTablet]}>
                                     <View
                                         style={[
                                             styles.previewTop,
                                             { flex: clampedOverlap },
                                         ]}
                                     >
-                                        <Text style={styles.previewTopText} numberOfLines={1}>
+                                        <Text style={[styles.previewTopText, isTablet && { fontSize: 12 }]} numberOfLines={1}>
                                             ↑ {clampedOverlap}% anterior
                                         </Text>
                                     </View>
@@ -332,7 +343,7 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
                                             { flex: 100 - clampedOverlap },
                                         ]}
                                     >
-                                        <Text style={styles.previewBottomText} numberOfLines={1}>
+                                        <Text style={[styles.previewBottomText, isTablet && { fontSize: 12 }]} numberOfLines={1}>
                                             ↓ {100 - clampedOverlap}% nueva sección
                                         </Text>
                                     </View>
@@ -343,7 +354,7 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
                     {/* ── Acceso a mapeo Bluetooth ── */}
                     <View style={styles.divider} />
                     <TouchableOpacity
-                        style={styles.btLinkRow}
+                        style={[styles.btLinkRow, isTablet && styles.btLinkRowTablet]}
                         onPress={() => {
                             onClose();
                             router.push('/pedal-config');
@@ -351,12 +362,12 @@ export const PedalConfigModal: React.FC<PedalConfigModalProps> = ({
                         activeOpacity={0.7}
                     >
                         <View style={styles.btLinkLeft}>
-                            <Bluetooth size={14} color={C.muted} />
-                            <Text style={styles.btLinkText}>
+                            <Bluetooth size={isTablet ? 18 : 14} color={C.muted} />
+                            <Text style={[styles.btLinkText, isTablet && styles.btLinkTextTablet]}>
                                 Mapeo de teclas Bluetooth (HID)
                             </Text>
                         </View>
-                        <ChevronRight size={14} color={C.muted} />
+                        <ChevronRight size={isTablet ? 18 : 14} color={C.muted} />
                     </TouchableOpacity>
                 </TouchableOpacity>
             </TouchableOpacity>
@@ -634,5 +645,82 @@ const styles = StyleSheet.create({
     btLinkText: {
         fontSize: 12,
         color: C.muted,
+    },
+
+    /* Adaptaciones para Tablet */
+    cardTablet: {
+        maxWidth: 460,
+        padding: 24,
+        borderRadius: 22,
+    },
+    titleTablet: {
+        fontSize: 17,
+    },
+    sectionLabelTablet: {
+        fontSize: 12,
+        marginBottom: 12,
+    },
+    connectionTextTablet: {
+        fontSize: 15,
+    },
+    connectBtnTablet: {
+        paddingHorizontal: 16,
+        paddingVertical: 9,
+        borderRadius: 10,
+    },
+    connectBtnTextTablet: {
+        fontSize: 14,
+    },
+    modeOptionTablet: {
+        padding: 14,
+        borderRadius: 12,
+        gap: 12,
+    },
+    modeRadioTablet: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        marginTop: 2,
+    },
+    modeRadioDotTablet: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+    },
+    modeNameTablet: {
+        fontSize: 15,
+    },
+    modeDescTablet: {
+        fontSize: 13,
+        lineHeight: 18,
+    },
+    overlapHintTablet: {
+        fontSize: 13,
+        marginBottom: 8,
+    },
+    stepBtnTablet: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+    },
+    overlapValueBoxTablet: {
+        minWidth: 90,
+    },
+    overlapValueTablet: {
+        fontSize: 26,
+        lineHeight: 30,
+    },
+    overlapSubTablet: {
+        fontSize: 12,
+    },
+    previewBarTablet: {
+        height: 36,
+        borderRadius: 8,
+    },
+    btLinkRowTablet: {
+        paddingVertical: 12,
+    },
+    btLinkTextTablet: {
+        fontSize: 14,
     },
 });

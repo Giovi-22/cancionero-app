@@ -13,6 +13,7 @@ import {
   Plus,
   X,
 } from 'lucide-react-native';
+import { useResponsive } from '../../hooks/useResponsive';
 
 // ============================================================
 // COLORES
@@ -66,7 +67,11 @@ export const MetronomeModal: React.FC<MetronomeModalProps> = ({
   metronomeMuted,
   setMetronomeMuted,
 }) => {
+  const { isTablet } = useResponsive();
+
   if (!visible) return null;
+
+  const stepIconSize = isTablet ? 20 : 14;
 
   return (
     <Modal
@@ -82,17 +87,17 @@ export const MetronomeModal: React.FC<MetronomeModalProps> = ({
       >
         <TouchableOpacity
           activeOpacity={1}
-          style={styles.card}
+          style={[styles.card, isTablet && styles.cardTablet]}
         >
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <Activity
-                size={16}
+                size={isTablet ? 20 : 16}
                 color={COLORS.accent}
               />
 
-              <Text style={styles.title}>
+              <Text style={[styles.title, isTablet && styles.titleTablet]}>
                 Metrónomo
               </Text>
             </View>
@@ -105,17 +110,19 @@ export const MetronomeModal: React.FC<MetronomeModalProps> = ({
                 }
                 style={[
                   styles.toggleBtn,
+                  isTablet && styles.toggleBtnTablet,
                   isMetronomeActive && styles.toggleBtnOn,
                 ]}
               >
                 <Clock
-                  size={14}
+                  size={isTablet ? 16 : 14}
                   color={isMetronomeActive ? '#fff' : COLORS.mutedForeground}
                 />
 
                 <Text
                   style={[
                     styles.toggleText,
+                    isTablet && styles.toggleTextTablet,
                     isMetronomeActive && styles.toggleTextOn,
                   ]}
                 >
@@ -126,54 +133,67 @@ export const MetronomeModal: React.FC<MetronomeModalProps> = ({
               <TouchableOpacity
                 onPress={onClose}
                 style={styles.closeBtn}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
               >
-                <X size={16} color={COLORS.mutedForeground} />
+                <X size={isTablet ? 20 : 16} color={COLORS.mutedForeground} />
               </TouchableOpacity>
             </View>
           </View>
 
           {/* BPM */}
-          <Text style={styles.sectionLabel}>Tempo</Text>
+          <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>Tempo</Text>
 
-          <View style={styles.bpmRow}>
+          <View style={[styles.bpmRow, isTablet && styles.bpmRowTablet]}>
             <TouchableOpacity
               onPress={() => setBpm(p => Math.max(40, p - 5))}
-              style={styles.stepBtn}
+              style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Minus size={14} color="#fff" />
+              <Minus size={stepIconSize} color="#fff" />
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setBpm(p => Math.max(40, p - 1))}
-              style={[styles.stepBtn, styles.stepBtnSmall]}
+              style={[
+                styles.stepBtn,
+                styles.stepBtnSmall,
+                isTablet && styles.stepBtnSmallTablet,
+              ]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Text style={styles.stepBtnSmallText}>-1</Text>
+              <Text style={[styles.stepBtnSmallText, isTablet && styles.stepBtnSmallTextTablet]}>-1</Text>
             </TouchableOpacity>
 
-            <View style={styles.bpmDisplay}>
-              <Text style={styles.bpmValue}>{bpm}</Text>
-              <Text style={styles.bpmUnit}>BPM</Text>
+            <View style={[styles.bpmDisplay, isTablet && styles.bpmDisplayTablet]}>
+              <Text style={[styles.bpmValue, isTablet && styles.bpmValueTablet]}>{bpm}</Text>
+              <Text style={[styles.bpmUnit, isTablet && styles.bpmUnitTablet]}>BPM</Text>
             </View>
 
             <TouchableOpacity
               onPress={() => setBpm(p => Math.min(250, p + 1))}
-              style={[styles.stepBtn, styles.stepBtnSmall]}
+              style={[
+                styles.stepBtn,
+                styles.stepBtnSmall,
+                isTablet && styles.stepBtnSmallTablet,
+              ]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Text style={styles.stepBtnSmallText}>+1</Text>
+              <Text style={[styles.stepBtnSmallText, isTablet && styles.stepBtnSmallTextTablet]}>+1</Text>
             </TouchableOpacity>
 
             <TouchableOpacity
               onPress={() => setBpm(p => Math.min(250, p + 5))}
-              style={styles.stepBtn}
+              style={[styles.stepBtn, isTablet && styles.stepBtnTablet]}
+              hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
             >
-              <Plus size={14} color="#fff" />
+              <Plus size={stepIconSize} color="#fff" />
             </TouchableOpacity>
           </View>
 
           {/* Compás + Silencio */}
-          <View style={styles.bottomRow}>
+          <View style={[styles.bottomRow, isTablet && styles.bottomRowTablet]}>
             <View style={styles.timeSignatureGroup}>
-              <Text style={styles.sectionLabel}>Compás</Text>
+              <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>Compás</Text>
 
               <View style={styles.tsRow}>
                 {[2, 3, 4, 6].map(ts => (
@@ -182,12 +202,14 @@ export const MetronomeModal: React.FC<MetronomeModalProps> = ({
                     onPress={() => setTimeSignature(ts)}
                     style={[
                       styles.tsBtn,
+                      isTablet && styles.tsBtnTablet,
                       timeSignature === ts && styles.tsBtnActive,
                     ]}
                   >
                     <Text
                       style={[
                         styles.tsBtnText,
+                        isTablet && styles.tsBtnTextTablet,
                         timeSignature === ts && styles.tsBtnTextActive,
                       ]}
                     >
@@ -199,16 +221,17 @@ export const MetronomeModal: React.FC<MetronomeModalProps> = ({
             </View>
 
             <View style={styles.muteGroup}>
-              <Text style={styles.sectionLabel}>Audio</Text>
+              <Text style={[styles.sectionLabel, isTablet && styles.sectionLabelTablet]}>Audio</Text>
 
               <TouchableOpacity
                 onPress={() => setMetronomeMuted(m => !m)}
                 style={[
                   styles.muteBtn,
+                  isTablet && styles.muteBtnTablet,
                   metronomeMuted && styles.muteBtnActive,
                 ]}
               >
-                <Text style={styles.muteBtnText}>
+                <Text style={[styles.muteBtnText, isTablet && styles.muteBtnTextTablet]}>
                   {metronomeMuted ? '🔇 Mudo' : '🔊 Activo'}
                 </Text>
               </TouchableOpacity>
@@ -248,6 +271,12 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
 
+  cardTablet: {
+    maxWidth: 440,
+    padding: 24,
+    borderRadius: 20,
+  },
+
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -273,6 +302,10 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  titleTablet: {
+    fontSize: 18,
+  },
+
   toggleBtn: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -285,6 +318,13 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
   },
 
+  toggleBtnTablet: {
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 12,
+    gap: 6,
+  },
+
   toggleBtnOn: {
     backgroundColor: COLORS.accent,
     borderColor: COLORS.accent,
@@ -294,6 +334,10 @@ const styles = StyleSheet.create({
     color: COLORS.mutedForeground,
     fontSize: 11,
     fontWeight: 'bold',
+  },
+
+  toggleTextTablet: {
+    fontSize: 13,
   },
 
   toggleTextOn: {
@@ -312,6 +356,11 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
 
+  sectionLabelTablet: {
+    fontSize: 13,
+    marginBottom: 12,
+  },
+
   bpmRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -320,9 +369,18 @@ const styles = StyleSheet.create({
     marginBottom: 18,
   },
 
+  bpmRowTablet: {
+    gap: 10,
+    marginBottom: 24,
+  },
+
   bpmDisplay: {
     alignItems: 'center',
     minWidth: 80,
+  },
+
+  bpmDisplayTablet: {
+    minWidth: 110,
   },
 
   bpmValue: {
@@ -332,10 +390,19 @@ const styles = StyleSheet.create({
     lineHeight: 36,
   },
 
+  bpmValueTablet: {
+    fontSize: 44,
+    lineHeight: 48,
+  },
+
   bpmUnit: {
     color: COLORS.mutedForeground,
     fontSize: 11,
     fontWeight: 'bold',
+  },
+
+  bpmUnitTablet: {
+    fontSize: 13,
   },
 
   stepBtn: {
@@ -349,10 +416,22 @@ const styles = StyleSheet.create({
     borderColor: COLORS.cardBorder,
   },
 
+  stepBtnTablet: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+  },
+
   stepBtnSmall: {
     width: 30,
     height: 30,
     borderRadius: 15,
+  },
+
+  stepBtnSmallTablet: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
   },
 
   stepBtnSmallText: {
@@ -361,12 +440,21 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
 
+  stepBtnSmallTextTablet: {
+    fontSize: 13,
+  },
+
   bottomRow: {
     flexDirection: 'row',
     gap: 12,
     paddingTop: 14,
     borderTopWidth: 1,
     borderTopColor: COLORS.cardBorder,
+  },
+
+  bottomRowTablet: {
+    gap: 16,
+    paddingTop: 18,
   },
 
   timeSignatureGroup: {
@@ -388,6 +476,11 @@ const styles = StyleSheet.create({
     borderColor: '#3f3f46',
   },
 
+  tsBtnTablet: {
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+
   tsBtnActive: {
     backgroundColor: '#f59e0b',
     borderColor: '#f59e0b',
@@ -397,6 +490,10 @@ const styles = StyleSheet.create({
     color: COLORS.foreground,
     fontSize: 12,
     fontWeight: 'bold',
+  },
+
+  tsBtnTextTablet: {
+    fontSize: 14,
   },
 
   tsBtnTextActive: {
@@ -416,6 +513,12 @@ const styles = StyleSheet.create({
     borderColor: '#3f3f46',
   },
 
+  muteBtnTablet: {
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+
   muteBtnActive: {
     backgroundColor: 'rgba(239, 68, 68, 0.2)',
     borderColor: '#ef4444',
@@ -425,5 +528,9 @@ const styles = StyleSheet.create({
     color: COLORS.foreground,
     fontSize: 12,
     fontWeight: 'bold',
+  },
+
+  muteBtnTextTablet: {
+    fontSize: 14,
   },
 });

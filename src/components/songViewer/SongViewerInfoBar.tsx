@@ -24,6 +24,7 @@ import {
 } from 'lucide-react-native';
 import { PedalDevice } from '../../types/pedal';
 import { PedalMode } from '../../types/pedal';
+import { useResponsive } from '../../hooks/useResponsive';
 import { MetronomeModal } from './MetronomeModal';
 import { ScrollPedalModal } from './ScrollPedalModal';
 import { PedalConfigModal } from './PedalConfigModal';
@@ -245,6 +246,10 @@ export const SongViewerInfoBar: React.FC<
     const [isPedalConfigOpen, setIsPedalConfigOpen] =
       useState(false);
 
+    const { isTablet } = useResponsive();
+    const iconSize = isTablet ? 18 : 12;
+    const chevronSize = isTablet ? 14 : 10;
+
     const selectCapo = (fret: number) => {
       onCapoChange?.(fret);
       setIsCapoPickerOpen(false);
@@ -255,7 +260,7 @@ export const SongViewerInfoBar: React.FC<
 
     return (
       <>
-        <View style={styles.infoBar}>
+        <View style={[styles.infoBar, isTablet && styles.infoBarTablet]}>
           {/* Tono */}
           <TouchableOpacity
             activeOpacity={0.7}
@@ -265,6 +270,7 @@ export const SongViewerInfoBar: React.FC<
             }
             style={[
               styles.infoBadge,
+              isTablet && styles.infoBadgeTablet,
               !originalTone &&
               transpose === 0 &&
               styles.infoBadgeInactive,
@@ -277,7 +283,7 @@ export const SongViewerInfoBar: React.FC<
             ]}
           >
             <Music
-              size={12}
+              size={iconSize}
               color={
                 transpose !== 0
                   ? COLORS.accent
@@ -290,6 +296,7 @@ export const SongViewerInfoBar: React.FC<
             <Text
               style={[
                 styles.infoBadgeText,
+                isTablet && styles.infoBadgeTextTablet,
                 !originalTone &&
                 transpose === 0 &&
                 styles.infoBadgeTextInactive,
@@ -313,7 +320,7 @@ export const SongViewerInfoBar: React.FC<
 
             {onTransposeChange && (
               <ChevronDown
-                size={10}
+                size={chevronSize}
                 color={
                   transpose !== 0
                     ? COLORS.accent
@@ -336,12 +343,13 @@ export const SongViewerInfoBar: React.FC<
             }
             style={[
               styles.infoBadge,
+              isTablet && styles.infoBadgeTablet,
               capo === 0 &&
               styles.infoBadgeInactive,
             ]}
           >
             <Hash
-              size={12}
+              size={iconSize}
               color={
                 capo > 0
                   ? COLORS.foreground
@@ -352,6 +360,7 @@ export const SongViewerInfoBar: React.FC<
             <Text
               style={[
                 styles.infoBadgeText,
+                isTablet && styles.infoBadgeTextTablet,
                 capo === 0 &&
                 styles.infoBadgeTextInactive,
               ]}
@@ -363,7 +372,7 @@ export const SongViewerInfoBar: React.FC<
 
             {onCapoChange && (
               <ChevronDown
-                size={10}
+                size={chevronSize}
                 color={
                   capo > 0
                     ? COLORS.foreground
@@ -382,12 +391,13 @@ export const SongViewerInfoBar: React.FC<
             delayLongPress={400}
             style={[
               styles.infoBadge,
+              isTablet && styles.infoBadgeTablet,
               !isScrolling &&
               styles.infoBadgeInactive,
             ]}
           >
             <FastForward
-              size={12}
+              size={iconSize}
               color={
                 isScrolling
                   ? COLORS.foreground
@@ -398,6 +408,7 @@ export const SongViewerInfoBar: React.FC<
             <Text
               style={[
                 styles.infoBadgeText,
+                isTablet && styles.infoBadgeTextTablet,
                 !isScrolling &&
                 styles.infoBadgeTextInactive,
               ]}
@@ -408,7 +419,7 @@ export const SongViewerInfoBar: React.FC<
             </Text>
 
             <ChevronDown
-              size={10}
+              size={chevronSize}
               color={
                 isScrolling
                   ? COLORS.foreground
@@ -430,6 +441,7 @@ export const SongViewerInfoBar: React.FC<
             delayLongPress={400}
             style={[
               styles.infoBadge,
+              isTablet && styles.infoBadgeTablet,
               !isMetronomeActive &&
               styles.infoBadgeInactive,
               isDownbeat && {
@@ -441,7 +453,7 @@ export const SongViewerInfoBar: React.FC<
             ]}
           >
             <Activity
-              size={12}
+              size={iconSize}
               color={
                 !isMetronomeActive
                   ? COLORS.mutedForeground
@@ -454,6 +466,7 @@ export const SongViewerInfoBar: React.FC<
             <Text
               style={[
                 styles.infoBadgeText,
+                isTablet && styles.infoBadgeTextTablet,
                 !isMetronomeActive &&
                 styles.infoBadgeTextInactive,
               ]}
@@ -464,7 +477,7 @@ export const SongViewerInfoBar: React.FC<
             </Text>
 
             <ChevronDown
-              size={10}
+              size={chevronSize}
               color={
                 !isMetronomeActive
                   ? COLORS.mutedForeground
@@ -506,6 +519,7 @@ export const SongViewerInfoBar: React.FC<
               delayLongPress={400}
               style={[
                 styles.infoBadge,
+                isTablet && styles.infoBadgeTablet,
                 (wifiConnected || connected) && {
                   borderColor: '#22c55e',
                   borderWidth: 1,
@@ -519,10 +533,10 @@ export const SongViewerInfoBar: React.FC<
               ]}
             >
               {pedalConnecting ? (
-                <ActivityIndicator size={12} color={COLORS.accent} />
+                <ActivityIndicator size={iconSize} color={COLORS.accent} />
               ) : (
                 <Footprints
-                  size={12}
+                  size={iconSize}
                   color={
                     (wifiConnected || connected)
                       ? '#22c55e'
@@ -534,6 +548,7 @@ export const SongViewerInfoBar: React.FC<
               <Text
                 style={[
                   styles.infoBadgeText,
+                  isTablet && styles.infoBadgeTextTablet,
                   (wifiConnected || connected) && {
                     color: '#4ade80',
                   },
@@ -597,7 +612,10 @@ export const SongViewerInfoBar: React.FC<
             >
               <TouchableOpacity
                 activeOpacity={1}
-                style={styles.modalContent}
+                style={[
+                  styles.modalContent,
+                  isTablet && styles.modalContentTablet,
+                ]}
               >
                 <View
                   style={styles.modalHeader}
@@ -606,16 +624,19 @@ export const SongViewerInfoBar: React.FC<
                     style={{
                       flexDirection: 'row',
                       alignItems: 'center',
-                      gap: 6,
+                      gap: isTablet ? 8 : 6,
                     }}
                   >
                     <Music
-                      size={16}
+                      size={isTablet ? 20 : 16}
                       color={COLORS.accent}
                     />
 
                     <Text
-                      style={styles.modalTitle}
+                      style={[
+                        styles.modalTitle,
+                        isTablet && styles.modalTitleTablet,
+                      ]}
                     >
                       Tonalidad de la canción
                     </Text>
@@ -634,21 +655,23 @@ export const SongViewerInfoBar: React.FC<
                           onTransposeChange(0);
                           setIsPickerOpen(false);
                         }}
-                        style={
-                          styles.resetButton
-                        }
+                        style={[
+                          styles.resetButton,
+                          isTablet && styles.resetButtonTablet,
+                        ]}
                       >
                         <RotateCcw
-                          size={12}
+                          size={isTablet ? 15 : 12}
                           color={
                             COLORS.accent
                           }
                         />
 
                         <Text
-                          style={
-                            styles.resetText
-                          }
+                          style={[
+                            styles.resetText,
+                            isTablet && styles.resetTextTablet,
+                          ]}
                         >
                           Original
                         </Text>
@@ -664,7 +687,7 @@ export const SongViewerInfoBar: React.FC<
                       }
                     >
                       <X
-                        size={16}
+                        size={isTablet ? 20 : 16}
                         color={
                           COLORS.mutedForeground
                         }
@@ -674,9 +697,10 @@ export const SongViewerInfoBar: React.FC<
                 </View>
 
                 <Text
-                  style={
-                    styles.modalSubtitle
-                  }
+                  style={[
+                    styles.modalSubtitle,
+                    isTablet && styles.modalSubtitleTablet,
+                  ]}
                 >
                   {originalTone
                     ? `Original: ${originalTone}${transposedTone &&
@@ -758,6 +782,7 @@ export const SongViewerInfoBar: React.FC<
                           }}
                           style={[
                             styles.keyCard,
+                            isTablet && styles.keyCardTablet,
                             isSelected &&
                             styles.keyCardSelected,
                           ]}
@@ -765,6 +790,7 @@ export const SongViewerInfoBar: React.FC<
                           <Text
                             style={[
                               styles.keyText,
+                              isTablet && styles.keyTextTablet,
                               isSelected &&
                               styles.keyTextSelected,
                             ]}
@@ -776,6 +802,7 @@ export const SongViewerInfoBar: React.FC<
                             <Text
                               style={[
                                 styles.offsetText,
+                                isTablet && styles.offsetTextTablet,
                                 isSelected &&
                                 styles.offsetTextSelected,
                               ]}
@@ -793,9 +820,10 @@ export const SongViewerInfoBar: React.FC<
                   style={styles.stepperRow}
                 >
                   <Text
-                    style={
-                      styles.stepperLabel
-                    }
+                    style={[
+                      styles.stepperLabel,
+                      isTablet && styles.stepperLabelTablet,
+                    ]}
                   >
                     Ajuste por semitonos:
                   </Text>
@@ -811,12 +839,13 @@ export const SongViewerInfoBar: React.FC<
                           transpose - 1
                         )
                       }
-                      style={
-                        styles.stepperBtn
-                      }
+                      style={[
+                        styles.stepperBtn,
+                        isTablet && styles.stepperBtnTablet,
+                      ]}
                     >
                       <Minus
-                        size={14}
+                        size={isTablet ? 18 : 14}
                         color={
                           COLORS.foreground
                         }
@@ -824,9 +853,10 @@ export const SongViewerInfoBar: React.FC<
                     </TouchableOpacity>
 
                     <Text
-                      style={
-                        styles.stepperValue
-                      }
+                      style={[
+                        styles.stepperValue,
+                        isTablet && styles.stepperValueTablet,
+                      ]}
                     >
                       {transpose > 0
                         ? `+${transpose}`
@@ -840,12 +870,13 @@ export const SongViewerInfoBar: React.FC<
                           transpose + 1
                         )
                       }
-                      style={
-                        styles.stepperBtn
-                      }
+                      style={[
+                        styles.stepperBtn,
+                        isTablet && styles.stepperBtnTablet,
+                      ]}
                     >
                       <Plus
-                        size={14}
+                        size={isTablet ? 18 : 14}
                         color={
                           COLORS.foreground
                         }
@@ -880,6 +911,7 @@ export const SongViewerInfoBar: React.FC<
                 style={[
                   styles.modalContent,
                   styles.capoModalContent,
+                  isTablet && styles.modalContentTablet,
                 ]}
               >
                 <View style={styles.modalHeader}>
@@ -887,15 +919,15 @@ export const SongViewerInfoBar: React.FC<
                     style={{
                       flexDirection: 'row',
                       alignItems: 'center',
-                      gap: 6,
+                      gap: isTablet ? 8 : 6,
                     }}
                   >
                     <Hash
-                      size={16}
+                      size={isTablet ? 20 : 16}
                       color={COLORS.accent}
                     />
 
-                    <Text style={styles.modalTitle}>
+                    <Text style={[styles.modalTitle, isTablet && styles.modalTitleTablet]}>
                       Capodastro
                     </Text>
                   </View>
@@ -910,14 +942,14 @@ export const SongViewerInfoBar: React.FC<
                     {capo !== 0 && (
                       <TouchableOpacity
                         onPress={() => selectCapo(0)}
-                        style={styles.resetButton}
+                        style={[styles.resetButton, isTablet && styles.resetButtonTablet]}
                       >
                         <RotateCcw
-                          size={12}
+                          size={isTablet ? 15 : 12}
                           color={COLORS.accent}
                         />
 
-                        <Text style={styles.resetText}>
+                        <Text style={[styles.resetText, isTablet && styles.resetTextTablet]}>
                           Quitar
                         </Text>
                       </TouchableOpacity>
@@ -930,7 +962,7 @@ export const SongViewerInfoBar: React.FC<
                       style={styles.closeButton}
                     >
                       <X
-                        size={16}
+                        size={isTablet ? 20 : 16}
                         color={COLORS.mutedForeground}
                       />
                     </TouchableOpacity>
@@ -940,7 +972,7 @@ export const SongViewerInfoBar: React.FC<
                 <ScrollView
                   showsVerticalScrollIndicator={false}
                 >
-                  <Text style={styles.modalSubtitle}>
+                  <Text style={[styles.modalSubtitle, isTablet && styles.modalSubtitleTablet]}>
                     Elegí el traste donde va el capo:
                   </Text>
 
@@ -950,6 +982,7 @@ export const SongViewerInfoBar: React.FC<
                         key={val}
                         style={[
                           styles.capoBtn,
+                          isTablet && styles.capoBtnTablet,
                           capo === val &&
                           styles.capoBtnActive,
                         ]}
@@ -958,6 +991,7 @@ export const SongViewerInfoBar: React.FC<
                         <Text
                           style={[
                             styles.capoText,
+                            isTablet && styles.capoTextTablet,
                             capo === val &&
                             styles.capoTextActive,
                           ]}
@@ -972,7 +1006,7 @@ export const SongViewerInfoBar: React.FC<
                   {soundingKeySemitone !== null ? (
                     <>
                       <View style={styles.capoCalcHeader}>
-                        <Text style={styles.capoCalcTitle}>
+                        <Text style={[styles.capoCalcTitle, isTablet && styles.capoCalcTitleTablet]}>
                           Calculadora de capo
                         </Text>
 
@@ -987,7 +1021,7 @@ export const SongViewerInfoBar: React.FC<
                         </View>
                       </View>
 
-                      <Text style={styles.capoCalcSubtitle}>
+                      <Text style={[styles.capoCalcSubtitle, isTablet && styles.capoCalcSubtitleTablet]}>
                         Tocá en la tonalidad que quieras —
                         el capo se ajusta solo.
                       </Text>
@@ -1016,6 +1050,7 @@ export const SongViewerInfoBar: React.FC<
                                 key={note}
                                 style={[
                                   styles.capoCalcBtn,
+                                  isTablet && styles.capoCalcBtnTablet,
                                   isCurrent &&
                                   styles.capoCalcBtnCurrent,
                                   isActive &&
@@ -1031,6 +1066,7 @@ export const SongViewerInfoBar: React.FC<
                                 <Text
                                   style={[
                                     styles.capoCalcNote,
+                                    isTablet && styles.capoCalcNoteTablet,
                                     isCurrent && {
                                       color: COLORS.accent,
                                     },
@@ -1051,6 +1087,7 @@ export const SongViewerInfoBar: React.FC<
                                 <Text
                                   style={[
                                     styles.capoCalcFret,
+                                    isTablet && styles.capoCalcFretTablet,
                                     isPractical &&
                                     !isCurrent && {
                                       color: '#4ade80',
@@ -1447,5 +1484,108 @@ const styles = StyleSheet.create({
     color: '#fbbf24',
     fontSize: 12,
     flex: 1,
+  },
+
+  /* Adaptaciones para Tablet */
+  infoBarTablet: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 12,
+    gap: 12,
+  },
+
+  infoBadgeTablet: {
+    paddingHorizontal: 16,
+    paddingVertical: 9,
+    borderRadius: 16,
+    gap: 8,
+    minHeight: 44,
+  },
+
+  infoBadgeTextTablet: {
+    fontSize: 14,
+  },
+
+  modalContentTablet: {
+    maxWidth: 520,
+    padding: 24,
+    borderRadius: 20,
+  },
+
+  modalTitleTablet: {
+    fontSize: 18,
+  },
+
+  modalSubtitleTablet: {
+    fontSize: 14,
+    marginBottom: 16,
+  },
+
+  resetButtonTablet: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+    gap: 6,
+  },
+
+  resetTextTablet: {
+    fontSize: 13,
+  },
+
+  keyCardTablet: {
+    paddingVertical: 14,
+    borderRadius: 12,
+  },
+
+  keyTextTablet: {
+    fontSize: 17,
+  },
+
+  offsetTextTablet: {
+    fontSize: 12,
+  },
+
+  stepperBtnTablet: {
+    padding: 10,
+    borderRadius: 10,
+  },
+
+  stepperValueTablet: {
+    fontSize: 16,
+    minWidth: 55,
+  },
+
+  stepperLabelTablet: {
+    fontSize: 14,
+  },
+
+  capoBtnTablet: {
+    paddingVertical: 14,
+    borderRadius: 10,
+  },
+
+  capoTextTablet: {
+    fontSize: 16,
+  },
+
+  capoCalcTitleTablet: {
+    fontSize: 16,
+  },
+
+  capoCalcSubtitleTablet: {
+    fontSize: 14,
+  },
+
+  capoCalcBtnTablet: {
+    paddingVertical: 12,
+    borderRadius: 10,
+  },
+
+  capoCalcNoteTablet: {
+    fontSize: 16,
+  },
+
+  capoCalcFretTablet: {
+    fontSize: 12,
   },
 });

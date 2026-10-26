@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 
 import { COLORS } from '../../constants/theme';
+import { useResponsive } from '../../hooks/useResponsive';
 
 type ButtonVariant = 'primary' | 'secondary' | 'danger';
 
@@ -37,6 +38,7 @@ export function Button({
     style,
     textStyle,
 }: ButtonProps) {
+    const { isTablet } = useResponsive();
     const isDisabled = disabled || loading;
     const isVisuallyDisabled = disabled && !loading;
 
@@ -49,6 +51,7 @@ export function Button({
         <TouchableOpacity
             style={[
                 styles.button,
+                isTablet && styles.buttonTablet,
                 styles[`${variant}Button`],
                 isVisuallyDisabled && styles.disabledButton,
                 style,
@@ -59,7 +62,7 @@ export function Button({
         >
             {loading ? (
                 <ActivityIndicator
-                    size="small"
+                    size={isTablet ? 'small' : 'small'}
                     color={contentColor}
                 />
             ) : (
@@ -78,6 +81,7 @@ export function Button({
             <Text
                 style={[
                     styles.text,
+                    isTablet && styles.textTablet,
                     { color: contentColor },
                     textStyle,
                 ]}
@@ -121,6 +125,14 @@ const styles = StyleSheet.create({
         gap: 8,
     },
 
+    buttonTablet: {
+        minHeight: 52,
+        paddingVertical: 14,
+        paddingHorizontal: 22,
+        borderRadius: 14,
+        gap: 10,
+    },
+
     primaryButton: {
         backgroundColor: COLORS.primary,
     },
@@ -148,5 +160,9 @@ const styles = StyleSheet.create({
     text: {
         fontSize: 14,
         fontWeight: '700',
+    },
+
+    textTablet: {
+        fontSize: 16,
     },
 });

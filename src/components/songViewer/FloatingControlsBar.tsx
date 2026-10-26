@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Minus, Plus, Play, Pause, Settings } from 'lucide-react-native';
+import { useResponsive } from '../../hooks/useResponsive';
 
 const COLORS = {
   background: '#0a0a0a', surface: '#1a1a1a', foreground: '#ffffff',
@@ -28,35 +29,80 @@ export const FloatingControlsBar: React.FC<FloatingControlsBarProps> = ({
   onOpenSettings,
   bottomInset,
 }) => {
+  const { isTablet } = useResponsive();
+
+  const stepIconSize = isTablet ? 22 : 18;
+  const playIconSize = isTablet ? 24 : 20;
+  const settingsIconSize = isTablet ? 28 : 24;
+
   return (
-    <View style={[styles.floatingBar, { bottom: Math.max(bottomInset, 20) + 10 }]}>
+    <View
+      style={[
+        styles.floatingBar,
+        isTablet && styles.floatingBarTablet,
+        { bottom: Math.max(bottomInset, 20) + (isTablet ? 16 : 10) },
+      ]}
+    >
       <View style={styles.controlGroup}>
-        <TouchableOpacity onPress={onTransposeDecrease} style={styles.smallBtn}>
-          <Minus size={18} color="#fff" />
+        <TouchableOpacity
+          onPress={onTransposeDecrease}
+          style={[styles.smallBtn, isTablet && styles.smallBtnTablet]}
+          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+        >
+          <Minus size={stepIconSize} color="#fff" />
         </TouchableOpacity>
         <View style={{ alignItems: 'center' }}>
-          <Text style={{ color: COLORS.mutedForeground, fontSize: 9, fontWeight: 'bold', marginBottom: 1 }}>TONO</Text>
-          <Text style={[styles.ctrlText, { minWidth: 30, fontSize: 14 }]}>{transpose > 0 ? `+${transpose}` : transpose}</Text>
+          <Text
+            style={[
+              { color: COLORS.mutedForeground, fontSize: isTablet ? 11 : 9, fontWeight: 'bold', marginBottom: 1 },
+            ]}
+          >
+            TONO
+          </Text>
+          <Text
+            style={[
+              styles.ctrlText,
+              isTablet && styles.ctrlTextTablet,
+              { minWidth: isTablet ? 36 : 30 },
+            ]}
+          >
+            {transpose > 0 ? `+${transpose}` : transpose}
+          </Text>
         </View>
-        <TouchableOpacity onPress={onTransposeIncrease} style={styles.smallBtn}>
-          <Plus size={18} color="#fff" />
+        <TouchableOpacity
+          onPress={onTransposeIncrease}
+          style={[styles.smallBtn, isTablet && styles.smallBtnTablet]}
+          hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+        >
+          <Plus size={stepIconSize} color="#fff" />
         </TouchableOpacity>
       </View>
 
-      <View style={styles.divider} />
+      <View style={[styles.divider, isTablet && styles.dividerTablet]} />
 
       <TouchableOpacity
-        style={[styles.playBtn, isScrolling && styles.playBtnActive]}
+        style={[
+          styles.playBtn,
+          isTablet && styles.playBtnTablet,
+          isScrolling && styles.playBtnActive,
+        ]}
         onPress={onToggleScroll}
+        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
       >
-        {isScrolling ? <Pause size={20} color="#fff" /> : <Play size={20} color="#fff" />}
-        <Text style={styles.playText}>{isScrolling ? `${scrollSpeed}x` : 'Scroll'}</Text>
+        {isScrolling ? <Pause size={playIconSize} color="#fff" /> : <Play size={playIconSize} color="#fff" />}
+        <Text style={[styles.playText, isTablet && styles.playTextTablet]}>
+          {isScrolling ? `${scrollSpeed}x` : 'Scroll'}
+        </Text>
       </TouchableOpacity>
 
-      <View style={styles.divider} />
+      <View style={[styles.divider, isTablet && styles.dividerTablet]} />
 
-      <TouchableOpacity onPress={onOpenSettings} style={styles.headerBtn}>
-        <Settings size={24} color={COLORS.foreground} />
+      <TouchableOpacity
+        onPress={onOpenSettings}
+        style={[styles.headerBtn, isTablet && styles.headerBtnTablet]}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Settings size={settingsIconSize} color={COLORS.foreground} />
       </TouchableOpacity>
     </View>
   );
@@ -81,6 +127,11 @@ const styles = StyleSheet.create({
     elevation: 8,
     zIndex: 90,
   },
+  floatingBarTablet: {
+    borderRadius: 38,
+    paddingHorizontal: 22,
+    paddingVertical: 13,
+  },
   controlGroup: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -94,17 +145,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginHorizontal: 4,
   },
+  smallBtnTablet: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    marginHorizontal: 6,
+  },
   ctrlText: {
     color: COLORS.foreground,
     fontWeight: 'bold',
     fontSize: 14,
     textAlign: 'center',
   },
+  ctrlTextTablet: {
+    fontSize: 16,
+  },
   divider: {
     width: 1,
     height: 24,
     backgroundColor: COLORS.border,
     marginHorizontal: 12,
+  },
+  dividerTablet: {
+    height: 30,
+    marginHorizontal: 16,
   },
   playBtn: {
     flexDirection: 'row',
@@ -113,6 +177,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 20,
+  },
+  playBtnTablet: {
+    paddingHorizontal: 22,
+    paddingVertical: 11,
+    borderRadius: 24,
   },
   playBtnActive: {
     backgroundColor: '#ef4444',
@@ -123,11 +192,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     marginLeft: 6,
   },
+  playTextTablet: {
+    fontSize: 15,
+    marginLeft: 8,
+  },
   headerBtn: {
     width: 36,
     height: 36,
     borderRadius: 18,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerBtnTablet: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
 });
