@@ -15,7 +15,10 @@ public:
         const String& ssid,
         unsigned long doubleWindow,
         unsigned long holdThreshold,
-        unsigned long wifiResetHold
+        unsigned long wifiResetHold,
+        bool sectionsMode,
+        uint8_t overlapPercent,
+        unsigned long sectionHold
     );
 
     static String savedPage();
@@ -27,6 +30,7 @@ public:
         bool tcpEnabled,
         uint8_t tcpClients,
         const String& ip,
-        const String& ssid
+        const String& ssid,
+        bool sectionsMode
     );
 };

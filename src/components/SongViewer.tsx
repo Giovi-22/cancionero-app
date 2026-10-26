@@ -25,7 +25,8 @@ import {
 import { PdfService } from '../services/PdfService';
 import { BluetoothInputBridge } from './BluetoothInputBridge';
 import { usePedal } from '../hooks/usePedal';
-import { PedalEvent } from '../types/pedal';
+import { PedalEvent, PedalMode, WifiSectionMessage } from '../types/pedal';
+import { GestureDetector } from 'react-native-gesture-handler';
 
 // Hooks
 import { useSongScroll } from '../hooks/useSongScroll';
@@ -34,6 +35,8 @@ import { useSongSettings } from '../hooks/useSongSettings';
 import { useSongMetronome } from '../hooks/useSongMetronome';
 import { useSongNotes } from '../hooks/useSongNotes';
 import { useSongEditor } from '../hooks/useSongEditor';
+import { useSongPinchZoom } from '../hooks/useSongPinchZoom';
+import { useSongSections } from '../hooks/useSongSections';
 
 // Sub-componentes
 import { DraggableNote } from './songViewer/DraggableNote';
@@ -49,8 +52,12 @@ import { SongViewerHeader } from './songViewer/SongViewerHeader';
 import { SetlistNavSubHeader } from './songViewer/SetlistNavSubHeader';
 import { SettingsModal } from './SettingsModal';
 import { SongContent } from './songViewer/SongContent';
+import { FontSizeIndicator } from './songViewer/FontSizeIndicator';
 import { COLORS } from '../constants/theme';
 import { features } from '../config/features';
+import { makeSongKey } from '../utils/SongKey';
+import { StorageService } from '../services/StorageService';
+import { LINE_ANCHOR_FRACTION } from '../utils/lineMap';
 
 
 interface SongViewerProps {
@@ -121,7 +128,6 @@ export const SongViewer: React.FC<
 
   followDirector = true,
   onFollowDirectorChange,
-
   setlistSongs = [],
   onDirectorNext,
   onDirectorPrev,
@@ -211,6 +217,68 @@ export const SongViewer: React.FC<
       isDebugMode,
       setIsDebugMode,
     ] = useState(false);
+
+    // ─────────────────────────────────────────────
+    // Modo del Pedal
+    // ─────────────────────────────────────────────
+
+    const [
+      pedalMode,
+      setPedalModeState,
+    ] = useState<PedalMode>('scroll');
+
+    /**
+     * Porcentaje de superposición para el modo "secciones".
+     * Indica qué fracción del viewport (en %) muestra el final del
+     * verso anterior encima de la nueva sección.
+     * Default: 30%.
+     */
+    const [
+      overlapPercent,
+      setOverlapPercentState,
+    ] = useState(30);
+
+    // Cargar preferencias del pedal persistidas
+    useEffect(() => {
+      let isMounted = true;
+      StorageService.getSetting<PedalMode>('pedal_mode').then(savedMode => {
+        if (isMounted && savedMode && (savedMode === 'scroll' || savedMode === 'sections')) {
+          setPedalModeState(savedMode);
+        }
+      });
+      StorageService.getSetting<number>('pedal_overlap_percent').then(savedPct => {
+        if (isMounted && typeof savedPct === 'number' && savedPct >= 0 && savedPct <= 60) {
+          setOverlapPercentState(savedPct);
+        }
+      });
+      return () => {
+        isMounted = false;
+      };
+    }, []);
+
+    const setPedalMode = useCallback((mode: PedalMode) => {
+      setPedalModeState(mode);
+      StorageService.saveSetting('pedal_mode', mode).catch(e =>
+        console.error('[SongViewer] Error saving pedal_mode:', e)
+      );
+    }, []);
+
+    const setOverlapPercent = useCallback((pct: number) => {
+      setOverlapPercentState(pct);
+      StorageService.saveSetting('pedal_overlap_percent', pct).catch(e =>
+        console.error('[SongViewer] Error saving pedal_overlap_percent:', e)
+      );
+    }, []);
+
+    const pedalModeRef = useRef<PedalMode>(pedalMode);
+    useEffect(() => {
+      pedalModeRef.current = pedalMode;
+    }, [pedalMode]);
+
+    const overlapPercentRef = useRef(overlapPercent);
+    useEffect(() => {
+      overlapPercentRef.current = overlapPercent;
+    }, [overlapPercent]);
 
     const [
       theme,
@@ -350,6 +418,23 @@ export const SongViewer: React.FC<
 
       getScrollProgress,
       scrollToProgress,
+
+      hasLineMap,
+      handleLineLayout,
+      handleContainerLayout,
+      scrollToLinePos,
+      startLinePedalScroll,
+      stopLinePedalScroll,
+      lineMapVersion,
+      getLineReport,
+      applyServerLinePos,
+      setLinePedalConfig,
+      sharedLimitY,
+      setSharedMinVisible,
+      updateSharedLimit,
+      getTops,
+      getScrollY,
+      scrollToSectionLine,
     } = useSongScroll({
       scrollRef,
       scrollAreaRef,
@@ -359,12 +444,67 @@ export const SongViewer: React.FC<
 
       onScrollPositionChange:
         handleScrollPositionChange,
+
+      lineCount: parsedLines.length,
     });
 
     void scrollAreaPageX;
     void viewportHeightRef;
     void contentHeightRef;
     void getScrollProgress;
+
+    // ─────────────────────────────────────────────
+    // Salto por secciones (modo pedal)
+    // ─────────────────────────────────────────────
+
+    // La sección "actual" se calcula siempre desde la posición real del
+    // scroll (no hay un índice propio que se desincronice), y el título de la
+    // canción no cuenta como sección.
+    const {
+      sections,
+      sectionCount,
+      activeRange,
+      updateActiveSection,
+      applyServerSection,
+      jumpToNextSection,
+      jumpToPrevSection,
+      jumpToStart,
+      jumpToEnd,
+    } = useSongSections({
+      parsedLines,
+      getTops,
+      viewportHeightRef,
+      getScrollY,
+      scrollToSectionLine,
+      scrollToLinePos,
+      overlapFraction: overlapPercent / 100,
+      // Qué sección se resalta cuando no hubo un salto del pedal:
+      // en modo secciones, la que está en el punto del overlap;
+      // en modo líneas, la del punto de anclaje.
+      referenceFraction:
+        pedalMode === 'sections'
+          ? overlapPercent / 100
+          : LINE_ANCHOR_FRACTION,
+    });
+
+    const hasSections = sectionCount > 0;
+
+    // ─────────────────────────────────────────────
+    // Zoom con gesto de dos dedos (Pinch-to-zoom)
+    // ─────────────────────────────────────────────
+
+    const {
+      pinchGesture,
+      displayFontSize,
+      showIndicator: showZoomIndicator,
+    } = useSongPinchZoom({
+      fontSize,
+      setFontSize,
+      setIsScrollEnabled,
+      isScrolling,
+      setIsScrolling,
+      enabled: !isSongUnavailable,
+    });
 
     // ─────────────────────────────────────────────
     // Editor de notas
@@ -415,7 +555,138 @@ export const SongViewer: React.FC<
     // ─────────────────────────────────────────────
     // Pedal — suscripción a PedalEvent vía usePedal
     // ─────────────────────────────────────────────
-    const { onEvent: onPedalEvent } = usePedal();
+    const {
+      connected: pedalConnected,
+      device: pedalDevice,
+      connecting: pedalConnecting,
+      discovering: pedalDiscovering,
+      discover: discoverPedal,
+      connect: connectPedal,
+      disconnect: disconnectPedal,
+      onEvent: onPedalEvent,
+      wifiConnected,
+      sendHello,
+      sendLeave,
+      onPosition,
+      onWifiSection,
+      sendWifiSetMode,
+      requestWifiResync,
+      onWifiMinVisible,
+      onWifiConfig,
+    } = usePedal();
+
+    // ─────────────────────────────────────────────
+    // Modo del pedal: se sincroniza con el pedal Wi-Fi
+    //
+    //  - Si el usuario cambia el modo (o el contexto) acá, se le manda al
+    //    pedal: él lo aplica, lo guarda en su memoria y se lo avisa a todas
+    //    las apps. No hace falta entrar a la web del pedal.
+    //  - Si el modo se cambia en la web del pedal (o en otra app), llega
+    //    en el `cfg` y esta app lo adopta. El pedal es quien manda.
+    //  - Con un pedal de firmware viejo (o solo Bluetooth) el modo queda
+    //    local, como antes.
+    // ─────────────────────────────────────────────
+
+    const pushModeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+    // true cuando el pedal habla el protocolo nuevo: él decide la sección activa.
+    const pedalDrivesSectionsRef = useRef(false);
+
+    const pushModeToPedal = useCallback(
+      (mode: PedalMode, pct: number, immediate: boolean) => {
+        if (pushModeTimerRef.current) {
+          clearTimeout(pushModeTimerRef.current);
+          pushModeTimerRef.current = null;
+        }
+
+        const send = () => {
+          pushModeTimerRef.current = null;
+          sendWifiSetMode(mode === 'sections' ? 'sections' : 'lines', pct);
+        };
+
+        // El contexto se manda 0,5 s después del último toque en +/-: el
+        // pedal guarda cada cambio en su memoria y no conviene saturarla.
+        if (immediate) {
+          send();
+        } else {
+          pushModeTimerRef.current = setTimeout(send, 500);
+        }
+      },
+      [sendWifiSetMode]
+    );
+
+    const handlePedalModeChange = useCallback(
+      (mode: PedalMode) => {
+        pedalModeRef.current = mode;
+        setPedalMode(mode);
+        pushModeToPedal(mode, overlapPercentRef.current, true);
+      },
+      [setPedalMode, pushModeToPedal]
+    );
+
+    const handleOverlapPercentChange = useCallback(
+      (pct: number) => {
+        overlapPercentRef.current = pct;
+        setOverlapPercent(pct);
+        pushModeToPedal(pedalModeRef.current, pct, false);
+      },
+      [setOverlapPercent, pushModeToPedal]
+    );
+
+    useEffect(() => {
+      return () => {
+        if (pushModeTimerRef.current) {
+          clearTimeout(pushModeTimerRef.current);
+        }
+      };
+    }, []);
+
+    // Sin conexión Wi-Fi ya no hay un pedal que maneje las secciones.
+    useEffect(() => {
+      if (!wifiConnected) {
+        pedalDrivesSectionsRef.current = false;
+      }
+    }, [wifiConnected]);
+
+    // Descubrimiento pasivo en segundo plano si no hay pedal conectado/detectado
+    useEffect(() => {
+      if (!isActive || wifiConnected || pedalDevice) return;
+
+      let isMounted = true;
+      const runDiscover = async () => {
+        if (!isMounted || wifiConnected || pedalDevice) return;
+        try {
+          await discoverPedal(6000);
+        } catch {
+          // Silencioso
+        }
+      };
+
+      runDiscover();
+      const interval = setInterval(runDiscover, 10000);
+
+      return () => {
+        isMounted = false;
+        clearInterval(interval);
+      };
+    }, [isActive, wifiConnected, pedalDevice, discoverPedal]);
+
+    const handleConnectPedal = useCallback(async () => {
+      if (!pedalDevice || pedalConnecting) return;
+      try {
+        await connectPedal(pedalDevice);
+      } catch (err: any) {
+        console.error('[SongViewer] Error connecting to pedal:', err);
+        Alert.alert(
+          'Error al conectar',
+          err?.message || 'No se pudo conectar al pedal WiFi.'
+        );
+      }
+    }, [pedalDevice, pedalConnecting, connectPedal]);
+
+    const handleDisconnectPedal = useCallback(() => {
+      disconnectPedal();
+    }, [disconnectPedal]);
 
     /**
      * Indica si el pedal está activo en este momento.
@@ -435,33 +706,261 @@ export const SongViewer: React.FC<
       (event: PedalEvent) => {
         if (!pedalEnabledRef.current) return;
 
+        // Modo "Salto por secciones": un pulso = saltar a la siguiente/anterior sección.
+        // No se usa scroll continuo en este modo.
+        if (pedalModeRef.current === 'sections') {
+          // Con un pedal de protocolo nuevo el movimiento llega en el mensaje
+          // `sec` (el ESP32 lleva la sección compartida): los eventos crudos
+          // por Wi-Fi son solo informativos. Reaccionar a los dos saltaría dos veces.
+          if (event.source === 'wifi' && pedalDrivesSectionsRef.current) {
+            return;
+          }
+
+          switch (event.type) {
+            case 'DOWN_PRESS':
+              jumpToNextSection();
+              break;
+            case 'UP_PRESS':
+              jumpToPrevSection();
+              break;
+            case 'HOME':
+              jumpToStart();
+              break;
+            case 'END':
+              jumpToEnd();
+              break;
+            // RELEASE events are ignored in sections mode
+          }
+          return;
+        }
+
+        // Modo "Scroll continuo" (comportamiento original)
+        // El pedal WiFi se comparte entre varios dispositivos: se mueve
+        // por líneas lógicas para que todos vean la misma zona.
+        // El pedal Bluetooth es de un solo usuario: sigue continuo en píxeles.
+        const byLines =
+          event.source === 'wifi' && hasLineMap();
+
         switch (event.type) {
           case 'UP_PRESS':
-            startLocalPedalScrollUp();
+            if (byLines) {
+              startLinePedalScroll('up');
+            } else {
+              startLocalPedalScrollUp();
+            }
             break;
           case 'DOWN_PRESS':
-            startLocalPedalScrollDown();
+            if (byLines) {
+              startLinePedalScroll('down');
+            } else {
+              startLocalPedalScrollDown();
+            }
             break;
           case 'UP_RELEASE':
           case 'DOWN_RELEASE':
             stopPedalScroll();
+            stopLinePedalScroll();
             break;
           case 'HOME':
-            goToSongStart();
+            if (byLines) {
+              scrollToLinePos(0, true);
+            } else {
+              goToSongStart();
+            }
             break;
           case 'END':
-            goToSongEnd();
+            if (byLines) {
+              scrollToLinePos(Infinity, true);
+            } else {
+              goToSongEnd();
+            }
             break;
         }
       },
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd]
+      [startLocalPedalScrollUp, startLocalPedalScrollDown, stopPedalScroll, goToSongStart, goToSongEnd, hasLineMap, startLinePedalScroll, stopLinePedalScroll, scrollToLinePos, jumpToNextSection, jumpToPrevSection, jumpToStart, jumpToEnd]
     );
 
     // Suscribir a eventos normalizados del pedal unificado
     useEffect(() => {
       return onPedalEvent(handlePedalEvent);
     }, [onPedalEvent, handlePedalEvent]);
+
+    // ─────────────────────────────────────────────
+    // Pedal WiFi — posición compartida
+    //
+    // El ESP32 guarda la posición de cada canción (en líneas lógicas) y la
+    // publica; cada dispositivo la traduce a píxeles con su propia pantalla.
+    // El movimiento local se sigue prediciendo para que sea fluido y la
+    // posición del ESP32 lo corrige.
+    // ─────────────────────────────────────────────
+
+    // Basada en el contenido original: transponer no la cambia, pero dos
+    // versiones distintas de la letra no se mezclan.
+    const songKey = useMemo(
+      () => makeSongKey(songId, currentContent),
+      [songId, currentContent]
+    );
+
+    const songKeyRef = useRef(songKey);
+    useEffect(() => {
+      songKeyRef.current = songKey;
+    }, [songKey]);
+
+    const syncWithPedal =
+      isActive && isStageMode && wifiConnected && !isSongUnavailable;
+
+    // "Esta canción está abierta, y en mi pantalla entran N líneas."
+    // Se reenvía cuando cambia la letra, la pantalla o el contenido.
+    useEffect(() => {
+      if (!syncWithPedal) return;
+
+      const timer = setTimeout(() => {
+        const report = getLineReport();
+        if (!report) return;
+
+        sendHello({
+          songKey,
+          visibleLines: report.visible,
+          totalLines: report.total,
+          pos: report.pos,
+          // El ESP32 lleva la sección activa; necesita saber cuáles hay.
+          sections,
+        });
+      }, 100);
+
+      return () => clearTimeout(timer);
+    }, [syncWithPedal, songKey, lineMapVersion, getLineReport, sendHello, sections]);
+
+    // "Cerré esta canción."
+    useEffect(() => {
+      if (!syncWithPedal) return;
+
+      return () => {
+        sendLeave(songKey);
+      };
+    }, [syncWithPedal, songKey, sendLeave]);
+
+    // Sección activa publicada por el ESP32 (modo "por secciones").
+    // Si todavía no hay mapa de líneas (la pantalla recién se está midiendo),
+    // se guarda el último mensaje y se aplica cuando esté listo.
+    const pendingSectionRef = useRef<WifiSectionMessage | null>(null);
+
+    useEffect(() => {
+      return onWifiSection(message => {
+        if (!pedalEnabledRef.current) return;
+        if (message.songKey !== songKeyRef.current) return;
+
+        // El `cfg` con el modo siempre llega antes que el `sec`.
+        if (pedalModeRef.current !== 'sections') return;
+
+        pendingSectionRef.current = applyServerSection(
+          message,
+          overlapPercentRef.current / 100
+        )
+          ? null
+          : message;
+      });
+    }, [onWifiSection, applyServerSection]);
+
+    useEffect(() => {
+      const pending = pendingSectionRef.current;
+
+      if (!pending) return;
+
+      if (applyServerSection(pending, overlapPercentRef.current / 100)) {
+        pendingSectionRef.current = null;
+      }
+    }, [lineMapVersion, applyServerSection]);
+
+    // Al volver a habilitarse el pedal (se cerró la configuración, volvió la
+    // app a primer plano) se pide el estado vigente: pudo haber cambiado mientras tanto.
+    const wasPedalEnabledRef = useRef(pedalEnabled);
+
+    useEffect(() => {
+      if (pedalEnabled && !wasPedalEnabledRef.current && syncWithPedal) {
+        requestWifiResync(songKeyRef.current);
+      }
+
+      wasPedalEnabledRef.current = pedalEnabled;
+    }, [pedalEnabled, syncWithPedal, requestWifiResync]);
+
+    // Posición publicada por el ESP32
+    useEffect(() => {
+      return onPosition(message => {
+        if (!pedalEnabledRef.current) return;
+        if (message.songKey !== songKeyRef.current) return;
+
+        // En modo secciones el movimiento lo hacen los saltos por sección.
+        // Aplicar acá la posición en líneas del ESP32 haría que la pantalla
+        // "vuelva" a donde el ESP32 cree que está.
+        if (pedalModeRef.current === 'sections') return;
+
+        applyServerLinePos(message.pos, message.moving);
+      });
+    }, [onPosition, applyServerLinePos]);
+
+    // Líneas que entran en la pantalla más chica con esta canción abierta.
+    // Se usa para marcar hasta dónde llega lo que ve esa pantalla.
+    useEffect(() => {
+      if (!syncWithPedal) {
+        setSharedMinVisible(null);
+        return;
+      }
+
+      const unsubscribe = onWifiMinVisible(message => {
+        if (message.songKey !== songKeyRef.current) return;
+
+        setSharedMinVisible(
+          message.minVisible > 0 ? message.minVisible : null
+        );
+      });
+
+      return () => {
+        unsubscribe();
+        setSharedMinVisible(null);
+      };
+    }, [syncWithPedal, songKey, onWifiMinVisible, setSharedMinVisible]);
+
+    // Velocidad del pedal definida por el ESP32
+    useEffect(() => {
+      return onWifiConfig(config => {
+        setLinePedalConfig(config.linesPerSec, config.rampMs);
+
+        // Solo un pedal con protocolo nuevo manda su modo.
+        if (!config.mode) return;
+
+        pedalDrivesSectionsRef.current = true;
+
+        // El pedal manda: su modo y su contexto pasan a ser los de la app.
+        // Las referencias se actualizan ya mismo porque el `sec` / `POS`
+        // que sigue se interpreta con el modo nuevo.
+        const appMode: PedalMode =
+          config.mode === 'sections' ? 'sections' : 'scroll';
+
+        if (pedalModeRef.current !== appMode) {
+          pedalModeRef.current = appMode;
+          setPedalModeState(appMode);
+          StorageService.saveSetting('pedal_mode', appMode).catch(e =>
+            console.error('[SongViewer] Error saving pedal_mode:', e)
+          );
+        }
+
+        if (
+          typeof config.overlapPercent === 'number' &&
+          config.overlapPercent !== overlapPercentRef.current
+        ) {
+          overlapPercentRef.current = config.overlapPercent;
+          setOverlapPercentState(config.overlapPercent);
+          StorageService.saveSetting(
+            'pedal_overlap_percent',
+            config.overlapPercent
+          ).catch(e =>
+            console.error('[SongViewer] Error saving pedal_overlap_percent:', e)
+          );
+        }
+      });
+    }, [onWifiConfig, setLinePedalConfig]);
 
     // ─────────────────────────────────────────────
     // Helpers
@@ -701,6 +1200,17 @@ export const SongViewer: React.FC<
           metronomeMuted={metronomeMuted}
           setMetronomeMuted={setMetronomeMuted}
           beat={beat}
+          connected={pedalConnected}
+          wifiConnected={wifiConnected}
+          pedalConnecting={pedalConnecting}
+          pedalDevice={pedalDevice}
+          onConnectPedal={handleConnectPedal}
+          onDisconnectPedal={handleDisconnectPedal}
+          pedalMode={pedalMode}
+          onPedalModeChange={handlePedalModeChange}
+          overlapPercent={overlapPercent}
+          onOverlapPercentChange={handleOverlapPercentChange}
+          hasSections={hasSections}
         />
 
         {isEditToolActive && (
@@ -743,7 +1253,7 @@ export const SongViewer: React.FC<
           notes={setlistNotes}
           songNote={songNote}
         />
-
+        {/*follow director? */}
         {isFollower && (
           <View
             style={
@@ -801,6 +1311,7 @@ export const SongViewer: React.FC<
           </View>
         )}
 
+
         <View
           ref={scrollAreaRef}
           style={{
@@ -847,95 +1358,136 @@ export const SongViewer: React.FC<
               </Text>
             </View>
           ) : (
-            <ScrollView
-              ref={scrollRef}
-              style={styles.scroll}
-              contentContainerStyle={
-                styles.scrollContent
-              }
-              onContentSizeChange={
-                handleContentSizeChange
-              }
-              onScroll={e => {
-                handleScroll(
-                  e.nativeEvent
-                    .contentOffset.y
-                );
-              }}
-              scrollEventThrottle={1}
-              scrollEnabled={
-                isScrollEnabled
-              }
-            >
-              <SongContent
-                parsedLines={
-                  parsedLines
-                }
-                fontSize={
-                  fontSize
-                }
-                viewMode={
-                  viewMode
-                }
-                theme={theme}
-                isStageMode={
-                  isStageMode
-                }
-                isDebugMode={
-                  features.debugTools &&
-                  isDebugMode
-                }
-                isEditToolActive={
-                  isEditToolActive
-                }
-                onLinePress={(
-                  lineIndex,
-                  pageX,
-                  pageY
-                ) => {
-                  if (
-                    isEditToolActive
-                  ) {
-                    openLineEditModal(
-                      lineIndex
+            <GestureDetector gesture={pinchGesture}>
+              <View style={styles.scrollWrapper} collapsable={false}>
+                <ScrollView
+                  ref={scrollRef}
+                  style={styles.scroll}
+                  contentContainerStyle={
+                    styles.scrollContent
+                  }
+                  onContentSizeChange={
+                    handleContentSizeChange
+                  }
+                  onScroll={e => {
+                    handleScroll(
+                      e.nativeEvent
+                        .contentOffset.y
                     );
-                  } else {
-                    addFloatingNoteAtLine(
+
+                    updateSharedLimit(
+                      e.nativeEvent
+                        .contentOffset.y
+                    );
+
+                    updateActiveSection(
+                      e.nativeEvent
+                        .contentOffset.y
+                    );
+                  }}
+                  scrollEventThrottle={1}
+                  scrollEnabled={
+                    isScrollEnabled
+                  }
+                >
+                  <SongContent
+                    parsedLines={
+                      parsedLines
+                    }
+                    fontSize={
+                      fontSize
+                    }
+                    viewMode={
+                      viewMode
+                    }
+                    theme={theme}
+                    isStageMode={
+                      isStageMode
+                    }
+                    isDebugMode={
+                      features.debugTools &&
+                      isDebugMode
+                    }
+                    isEditToolActive={
+                      isEditToolActive
+                    }
+                    onLineLayout={
+                      handleLineLayout
+                    }
+                    onContainerLayout={
+                      handleContainerLayout
+                    }
+                    activeRange={
+                      syncWithPedal
+                        ? activeRange
+                        : null
+                    }
+                    onLinePress={(
+                      lineIndex,
                       pageX,
                       pageY
-                    );
-                  }
-                }}
-              />
-
-              {Object.entries(musicianNotes || {}).map(
-                ([noteId, noteData]: [string, any]) => {
-                  if (
-                    !noteData ||
-                    typeof noteData === 'string' ||
-                    !noteData.text
-                  ) {
-                    return null;
-                  }
-                  return (
-                    <DraggableNote
-                      key={noteId}
-                      id={noteId}
-                      initialText={noteData.text}
-                      initialX={noteData.x}
-                      initialY={noteData.y}
-                      isStageMode={isStageMode}
-                      onRequestEdit={(id, text) =>
-                        setEditingNote({ id, text })
+                    ) => {
+                      if (
+                        isEditToolActive
+                      ) {
+                        openLineEditModal(
+                          lineIndex
+                        );
+                      } else {
+                        addFloatingNoteAtLine(
+                          pageX,
+                          pageY
+                        );
                       }
-                      onUpdate={handleUpdateNote}
-                      onDelete={handleDeleteNote}
-                      setScrollEnabled={setIsScrollEnabled}
-                    />
-                  );
-                }
-              )}
-            </ScrollView>
+                    }}
+                  />
+
+                  {Object.entries(musicianNotes || {}).map(
+                    ([noteId, noteData]: [string, any]) => {
+                      if (
+                        !noteData ||
+                        typeof noteData === 'string' ||
+                        !noteData.text
+                      ) {
+                        return null;
+                      }
+                      return (
+                        <DraggableNote
+                          key={noteId}
+                          id={noteId}
+                          initialText={noteData.text}
+                          initialX={noteData.x}
+                          initialY={noteData.y}
+                          isStageMode={isStageMode}
+                          onRequestEdit={(id, text) =>
+                            setEditingNote({ id, text })
+                          }
+                          onUpdate={handleUpdateNote}
+                          onDelete={handleDeleteNote}
+                          setScrollEnabled={setIsScrollEnabled}
+                        />
+                      );
+                    }
+                  )}
+                </ScrollView>
+
+                {/* Hasta acá llega lo que ve la pantalla más chica */}
+                {sharedLimitY !== null && (
+                  <View
+                    pointerEvents="none"
+                    style={[
+                      styles.sharedLimit,
+                      { top: sharedLimitY },
+                    ]}
+                  />
+                )}
+
+                <FontSizeIndicator
+                  visible={showZoomIndicator}
+                  fontSize={displayFontSize}
+                />
+              </View>
+            </GestureDetector>
           )}
         </View>
 
@@ -1116,6 +1668,23 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor:
       COLORS.background,
+  },
+
+  scrollWrapper: {
+    flex: 1,
+    position: 'relative',
+  },
+
+  // Marca sutil: tinte neutro (sirve en fondo claro y oscuro) debajo
+  // de una línea fina, hasta donde llega la pantalla más chica.
+  sharedLimit: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(128, 128, 128, 0.10)',
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(128, 128, 128, 0.45)',
   },
 
   scroll: {

@@ -1,5 +1,6 @@
 import * as Print from 'expo-print';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { parseChordPro } from '../utils/chordpro';
 import type { SongLineParsed, SongBlock } from '../utils/chordUtils';
 
@@ -98,12 +99,54 @@ export class PdfService {
         height: PAGE_HEIGHT,
       });
 
-      await Sharing.shareAsync(uri, {
+      // Sanitizar el título para usarlo como nombre de archivo válido
+      const sanitizedTitle = (title?.trim() || 'Cancion')
+        .replace(/[/\\?%*:|"<>]/g, '')
+        .replace(/\s+/g, ' ')
+        .replace(/^\.+|\.+$/g, '')
+        .trim() || 'Cancion';
+
+      let shareUri = uri;
+
+      try {
+        const cacheDir = FileSystem.cacheDirectory;
+        if (cacheDir) {
+          const cleanCacheDir = cacheDir.endsWith('/') ? cacheDir : `${cacheDir}/`;
+          const targetUri = `${cleanCacheDir}${sanitizedTitle}.pdf`;
+
+          // Si ya existía un PDF anterior con ese nombre, lo eliminamos primero
+          await FileSystem.deleteAsync(targetUri, { idempotent: true });
+
+          // Copiamos el archivo temporal generado con el nombre de la canción
+          await FileSystem.copyAsync({
+            from: uri,
+            to: targetUri,
+          });
+
+          shareUri = targetUri;
+        }
+      } catch (copyError) {
+        console.warn('[PdfService] Error renombrando PDF para compartir:', copyError);
+        // Fallback: si falla la copia, se comparte la uri original de Print
+      }
+
+      await Sharing.shareAsync(shareUri, {
         mimeType: 'application/pdf',
         dialogTitle: `Compartir canción: ${title}`,
         UTI: 'com.adobe.pdf', // iOS
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Si el usuario canceló o cerró el diálogo de compartir, no es un error
+      const message = error?.message?.toLowerCase() || '';
+      if (
+        message.includes('dismiss') ||
+        message.includes('cancel') ||
+        message.includes('canceled') ||
+        message.includes('cancelled')
+      ) {
+        return;
+      }
+
       console.error('Error generating/sharing PDF:', error);
       throw new Error(
         'No se pudo generar o compartir el PDF. Intenta nuevamente.'

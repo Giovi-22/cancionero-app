@@ -19,6 +19,12 @@
 import {
     PedalDevice,
     PedalEvent,
+    WifiConfigMessage,
+    PedalFirmwareMode,
+    WifiHelloReport,
+    WifiMinVisibleMessage,
+    WifiPositionMessage,
+    WifiSectionMessage,
 } from '../types/pedal';
 
 import { bluetoothPedalAdapter } from './pedal/BluetoothPedalAdapter';
@@ -201,6 +207,68 @@ class PedalServiceClass {
 
     isDiscovering(): boolean {
         return wifiPedalAdapter.isDiscovering();
+    }
+
+    isWifiConnected(): boolean {
+        return wifiPedalAdapter.isConnected();
+    }
+
+    // ──────────────────────────────────────────────────────────
+    // WiFi — Posición compartida (ESP32 como fuente de verdad)
+    // ──────────────────────────────────────────────────────────
+
+    /** Informa al ESP32 que esta canción está abierta. false si no hay conexión WiFi. */
+    sendHello(report: WifiHelloReport): boolean {
+        return wifiPedalAdapter.sendHello(report);
+    }
+
+    /** Informa al ESP32 que se cerró la canción. */
+    sendLeave(songKey: string): boolean {
+        return wifiPedalAdapter.sendLeave(songKey);
+    }
+
+    /**
+     * Posición compartida publicada por el ESP32.
+     * Va por un canal aparte de onEvent a propósito: llega varias veces
+     * por segundo y no debe disparar re-renders.
+     */
+    onPosition(listener: (message: WifiPositionMessage) => void): () => void {
+        return wifiPedalAdapter.onPosition(listener);
+    }
+
+    /** Estado de secciones publicado por el ESP32 (firmware con protocolo v1). */
+    onWifiSection(
+        listener: (message: WifiSectionMessage) => void
+    ): () => void {
+        return wifiPedalAdapter.onSection(listener);
+    }
+
+    /**
+     * Cambia el modo del pedal (lo guarda el pedal y se lo avisa a todas las
+     * apps). false si el pedal tiene firmware viejo o no hay conexión Wi-Fi.
+     */
+    sendWifiSetMode(
+        mode: PedalFirmwareMode,
+        overlapPercent: number
+    ): boolean {
+        return wifiPedalAdapter.sendSetMode(mode, overlapPercent);
+    }
+
+    /** Pide al pedal el estado vigente de la canción. */
+    requestWifiResync(songKey: string): boolean {
+        return wifiPedalAdapter.requestResync(songKey);
+    }
+
+    /** Líneas visibles de la pantalla más chica que tiene abierta la canción. */
+    onWifiMinVisible(
+        listener: (message: WifiMinVisibleMessage) => void
+    ): () => void {
+        return wifiPedalAdapter.onMinVisible(listener);
+    }
+
+    /** Velocidad del pedal definida por el ESP32. */
+    onWifiConfig(listener: (message: WifiConfigMessage) => void): () => void {
+        return wifiPedalAdapter.onConfig(listener);
     }
 }
 

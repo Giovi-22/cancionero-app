@@ -1,12 +1,14 @@
 import {
     useCallback,
     useEffect,
+    useMemo,
     useState,
 } from 'react';
 
 import { useBandContext } from '../context/BandContext';
 import { DriveService } from '../services/DriveService';
 import { BandSong } from '../types/band';
+import { firestore } from '../lib/firebase';
 
 interface UseBandSongsResult {
     songs: BandSong[];
@@ -15,15 +17,31 @@ interface UseBandSongsResult {
     refresh: () => Promise<void>;
 }
 
-export const useBandSongs = (): UseBandSongsResult => {
-    const { selectedBand } = useBandContext();
+export const useBandSongs = (bandId?: string | null): UseBandSongsResult => {
+    const { selectedBand, bands } = useBandContext();
+
+    const targetBand = useMemo(() => {
+        if (!bandId) return selectedBand;
+        return bands.find(b => b.id === bandId) || selectedBand;
+    }, [bandId, bands, selectedBand]);
 
     const [songs, setSongs] = useState<BandSong[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
     const loadSongs = useCallback(async () => {
-        const folderId = selectedBand?.driveFolderId;
+        let folderId = targetBand?.driveFolderId;
+
+        if (!folderId && bandId) {
+            try {
+                const doc = await firestore().collection('bands').doc(bandId).get();
+                if (doc.exists) {
+                    folderId = doc.data()?.driveFolderId;
+                }
+            } catch (err) {
+                console.warn('[useBandSongs] No se pudo obtener la banda de Firestore:', err);
+            }
+        }
 
         if (!folderId) {
             setSongs([]);
@@ -68,7 +86,7 @@ export const useBandSongs = (): UseBandSongsResult => {
         } finally {
             setLoading(false);
         }
-    }, [selectedBand?.driveFolderId]);
+    }, [targetBand?.driveFolderId, bandId]);
 
     useEffect(() => {
         loadSongs();

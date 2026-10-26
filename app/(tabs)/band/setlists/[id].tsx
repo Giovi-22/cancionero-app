@@ -88,6 +88,12 @@ export default function BandSetlistDetailScreen() {
     const [isStartingDirector, setIsStartingDirector] =
         useState(false);
 
+    const [isEndingSession, setIsEndingSession] =
+        useState(false);
+
+    const [isEndSessionModalVisible, setIsEndSessionModalVisible] =
+        useState(false);
+
     const [songToRemove, setSongToRemove] =
         useState<SongMetadata | null>(null);
 
@@ -207,6 +213,7 @@ export default function BandSetlistDetailScreen() {
 
     const {
         startSession,
+        endSession,
         activeSession,
         isDirectorOfSession,
     } = useDirectorSession(activeBandId);
@@ -702,6 +709,65 @@ export default function BandSetlistDetailScreen() {
                 );
             }
         };
+
+    /**
+     * Abre el modal para confirmar la finalización
+     * de Director Mode.
+     */
+    const handleEndSessionPress = () => {
+        if (isEndingSession) {
+            return;
+        }
+
+        setIsEndSessionModalVisible(true);
+    };
+
+    /**
+     * Cancela la finalización de Director Mode.
+     */
+    const handleCancelEndSession = () => {
+        if (isEndingSession) {
+            return;
+        }
+
+        setIsEndSessionModalVisible(false);
+    };
+
+    /**
+     * Finaliza la sesión activa de Director Mode.
+     */
+    const handleConfirmEndSession = async () => {
+        if (
+            !activeSession ||
+            !isDirectorOfSession ||
+            isEndingSession
+        ) {
+            return;
+        }
+
+        try {
+            setIsEndingSession(true);
+
+            await endSession();
+
+            setIsEndSessionModalVisible(false);
+        } catch (error) {
+            console.error(
+                '[BandSetlistDetail] Error al finalizar sesión:',
+                error
+            );
+
+            setIsEndSessionModalVisible(false);
+
+            showFeedbackModal(
+                'danger',
+                'Error',
+                'No se pudo finalizar la sesión. Intentá nuevamente.'
+            );
+        } finally {
+            setIsEndingSession(false);
+        }
+    };
 
     /**
      * Abre la confirmación para quitar
@@ -1936,50 +2002,82 @@ export default function BandSetlistDetailScreen() {
             {/* Director Mode */}
             {isActiveSetlist &&
                 activeSession && (
-                    <TouchableOpacity
-                        style={[
-                            styles.directorButton,
-                            styles.directorButtonActive,
-                        ]}
-                        activeOpacity={0.8}
-                        onPress={
-                            handleGoToActiveSession
-                        }
-                    >
-                        <Radio
-                            size={19}
-                            color={
-                                COLORS.background
-                            }
-                        />
-
-                        <View
-                            style={
-                                styles.directorButtonContent
+                    <>
+                        <TouchableOpacity
+                            style={[
+                                styles.directorButton,
+                                styles.directorButtonActive,
+                            ]}
+                            activeOpacity={0.8}
+                            onPress={
+                                handleGoToActiveSession
                             }
                         >
-                            <Text
-                                style={
-                                    styles.directorButtonText
+                            <Radio
+                                size={19}
+                                color={
+                                    COLORS.background
                                 }
-                            >
-                                {isDirectorOfSession
-                                    ? 'Volver a Director Mode'
-                                    : 'Entrar a sesión activa'}
-                            </Text>
+                            />
 
-                            <Text
+                            <View
                                 style={
-                                    styles.directorButtonSubtitle
+                                    styles.directorButtonContent
                                 }
-                                numberOfLines={1}
                             >
-                                {activeSession.directorName
-                                    ? `Dirige ${activeSession.directorName}`
-                                    : 'Sesión activa'}
-                            </Text>
-                        </View>
-                    </TouchableOpacity>
+                                <Text
+                                    style={
+                                        styles.directorButtonText
+                                    }
+                                >
+                                    {isDirectorOfSession
+                                        ? 'Volver a Director Mode'
+                                        : 'Entrar a sesión activa'}
+                                </Text>
+
+                                <Text
+                                    style={
+                                        styles.directorButtonSubtitle
+                                    }
+                                    numberOfLines={1}
+                                >
+                                    {activeSession.directorName
+                                        ? `Dirige ${activeSession.directorName}`
+                                        : 'Sesión activa'}
+                                </Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        {isDirectorOfSession && (
+                            <TouchableOpacity
+                                style={
+                                    styles.endSessionButton
+                                }
+                                onPress={
+                                    handleEndSessionPress
+                                }
+                                disabled={
+                                    isEndingSession
+                                }
+                                activeOpacity={0.7}
+                            >
+                                {isEndingSession ? (
+                                    <ActivityIndicator
+                                        size="small"
+                                        color="#ef4444"
+                                    />
+                                ) : (
+                                    <Text
+                                        style={
+                                            styles.endSessionButtonText
+                                        }
+                                    >
+                                        Finalizar sesión
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        )}
+                    </>
                 )}
 
             {!activeSession &&
@@ -2148,6 +2246,24 @@ export default function BandSetlistDetailScreen() {
                 loading={
                     isRemovingSong
                 }
+            />
+
+            {/* Confirmación para finalizar Director Mode */}
+            <AppModal
+                visible={isEndSessionModalVisible}
+                type="danger"
+                title="Finalizar Director Mode"
+                message={
+                    setlist
+                        ? `¿Querés finalizar la sesión de "${setlist.name}"? Los miembros seguidores volverán al modo individual.`
+                        : '¿Querés finalizar la sesión de Director Mode?'
+                }
+                confirmText="Finalizar"
+                cancelText="Cancelar"
+                onConfirm={handleConfirmEndSession}
+                onCancel={handleCancelEndSession}
+                loading={isEndingSession}
+                dismissOnBackdrop={false}
             />
 
             {/* Feedback genérico */}
@@ -2337,6 +2453,24 @@ const styles = StyleSheet.create({
 
     directorButtonActive: {
         marginBottom: 8,
+    },
+
+    endSessionButton: {
+        marginHorizontal: 15,
+        marginBottom: 8,
+        minHeight: 40,
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'rgba(239, 68, 68, 0.4)',
+        backgroundColor: 'rgba(239, 68, 68, 0.08)',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+
+    endSessionButtonText: {
+        color: '#ef4444',
+        fontSize: 13,
+        fontWeight: '700',
     },
 
     directorButtonContent: {

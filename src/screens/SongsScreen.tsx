@@ -197,6 +197,7 @@ export const SongsScreen = () => {
                 songs={[]}
                 onSongPress={handleSongPress}
                 onSyncPress={handleSync}
+                onHowToCreatePress={() => router.push('/user/settings/help')}
                 isSetlistMode={false}
               />
             )

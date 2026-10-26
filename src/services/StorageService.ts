@@ -5,6 +5,7 @@ import { FileSystemService } from './FileSystemService';
 import { legacyToChordPro } from '../utils/legacyToChordPro';
 
 const DB_NAME = 'cancionero.db';
+export const LOCAL_ONLY_SETTING_KEYS = ['active_library_id', 'drive_folder_id'];
 
 export class StorageService {
   private static dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -108,66 +109,7 @@ export class StorageService {
     // Migración inicial de bibliotecas
     // -----------------------------------------------------------------------
 
-    try {
-      const libCount = await db.getFirstAsync<any>(
-        'SELECT COUNT(*) as count FROM libraries'
-      );
-
-      if (!libCount || libCount.count === 0) {
-        const driveFolderIdRow = await db.getFirstAsync<any>(
-          "SELECT value FROM settings WHERE key = 'drive_folder_id'"
-        );
-
-        let driveFolderId = '';
-
-        if (driveFolderIdRow) {
-          try {
-            driveFolderId = JSON.parse(driveFolderIdRow.value);
-          } catch (e) {
-            driveFolderId = driveFolderIdRow.value;
-          }
-        }
-
-        const now = Date.now();
-
-        await db.runAsync(
-          `INSERT INTO libraries
-            (id, name, driveFolderId, syncEnabled, icon, color, createdAt, updatedAt)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [
-            'default',
-            'Mi Biblioteca',
-            driveFolderId,
-            1,
-            'book-open',
-            '#3b82f6',
-            now,
-            now,
-          ]
-        );
-
-        await db.runAsync(
-          "UPDATE songs SET library_id = 'default' WHERE library_id IS NULL"
-        );
-
-        const activeLibRow = await db.getFirstAsync<any>(
-          "SELECT value FROM settings WHERE key = 'active_library_id'"
-        );
-
-        if (!activeLibRow) {
-          await db.runAsync(
-            `INSERT OR REPLACE INTO settings (key, value)
-             VALUES ('active_library_id', ?)`,
-            [JSON.stringify('default')]
-          );
-        }
-      }
-    } catch (e) {
-      console.error(
-        'Error during initial libraries migration:',
-        e
-      );
-    }
+    await this.ensureDefaultLibrary(db);
 
     // -----------------------------------------------------------------------
     // Migración de canciones legacy → ChordPro
@@ -324,6 +266,99 @@ export class StorageService {
     // IMPORTANTE:
     // StorageService ya no sincroniza ni elimina setlists de Firestore.
     // Esa responsabilidad corresponde a SetlistService.
+  }
+
+  static async reassignLibraryId(oldId: string, newId: string) {
+    const db = await this.getDb();
+
+    await db.runAsync(
+      'UPDATE songs SET library_id = ? WHERE library_id = ?',
+      [newId, oldId]
+    );
+
+    await db.runAsync(
+      'UPDATE setlists SET library_id = ? WHERE library_id = ?',
+      [newId, oldId]
+    );
+
+    await db.runAsync(
+      'DELETE FROM libraries WHERE id = ?',
+      [oldId]
+    );
+  }
+
+  static async deleteLibraryRowOnly(id: string) {
+    const db = await this.getDb();
+
+    await db.runAsync(
+      'DELETE FROM libraries WHERE id = ?',
+      [id]
+    );
+  }
+
+  static async ensureDefaultLibrary(database?: SQLite.SQLiteDatabase) {
+    try {
+      const db = database || (await this.getDb());
+
+      const libCount = await db.getFirstAsync<any>(
+        'SELECT COUNT(*) as count FROM libraries'
+      );
+
+      if (!libCount || libCount.count === 0) {
+        const driveFolderIdRow = await db.getFirstAsync<any>(
+          "SELECT value FROM settings WHERE key = 'drive_folder_id'"
+        );
+
+        let driveFolderId = '';
+
+        if (driveFolderIdRow) {
+          try {
+            driveFolderId = JSON.parse(driveFolderIdRow.value);
+          } catch (e) {
+            driveFolderId = driveFolderIdRow.value;
+          }
+        }
+
+        const now = Date.now();
+
+        await db.runAsync(
+          `INSERT INTO libraries
+            (id, name, driveFolderId, syncEnabled, icon, color, createdAt, updatedAt)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            'default',
+            'Mi Biblioteca',
+            driveFolderId,
+            1,
+            'book-open',
+            '#3b82f6',
+            now,
+            now,
+          ]
+        );
+
+        await db.runAsync(
+          "UPDATE songs SET library_id = 'default' WHERE library_id IS NULL"
+        );
+
+        const activeLibRow = await db.getFirstAsync<any>(
+          "SELECT value FROM settings WHERE key = 'active_library_id'"
+        );
+
+        if (!activeLibRow) {
+          await db.runAsync(
+            `INSERT OR REPLACE INTO settings (key, value)
+             VALUES ('active_library_id', ?)`,
+            [JSON.stringify('default')]
+          );
+        }
+      }
+    } catch (e) {
+      console.error(
+        'Error during initial libraries migration / ensureDefaultLibrary:',
+        e
+      );
+    }
   }
 
   // ===========================================================================
@@ -523,6 +558,9 @@ export class StorageService {
       const allSettings: Record<string, any> = {};
 
       for (const row of allSettingsRows) {
+        if (LOCAL_ONLY_SETTING_KEYS.includes(row.key)) {
+          continue;
+        }
         try {
           allSettings[row.key] = JSON.parse(row.value);
         } catch (e) {
@@ -792,6 +830,9 @@ export class StorageService {
         for (const [key, value] of Object.entries(
           settingsObj
         )) {
+          if (LOCAL_ONLY_SETTING_KEYS.includes(key)) {
+            continue;
+          }
           // Persistimos localmente sin necesidad de
           // volver a subir el dato a Firestore.
           const db = await this.getDb();

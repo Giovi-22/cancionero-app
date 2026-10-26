@@ -14,6 +14,7 @@ import {
 } from "lucide-react-native";
 
 import { COLORS } from '../../constants/theme';
+import { useResponsive } from '../../hooks/useResponsive';
 
 type Props = {
     title: string;
@@ -31,37 +32,42 @@ export function AppHeader({
     hasUser,
 }: Props) {
     const insets = useSafeAreaInsets();
+    const { isTablet } = useResponsive();
+
+    const iconSize = isTablet ? 28 : 24;
 
     return (
-        <View style={[styles.header, { paddingTop: insets.top + 15 }]}>
-            <Text style={styles.logo}>{title}</Text>
+        <View style={[styles.header, isTablet && styles.headerTablet, { paddingTop: insets.top + (isTablet ? 18 : 15) }]}>
+            <Text style={[styles.logo, isTablet && styles.logoTablet]}>{title}</Text>
 
             <View style={styles.headerActions}>
                 <TouchableOpacity
-                    style={styles.iconButton}
+                    style={[styles.iconButton, isTablet && styles.iconButtonTablet]}
                     onPress={onSync}
                     disabled={isSyncing}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                     {isSyncing ? (
-                        <ActivityIndicator size="small" color={COLORS.accent} />
+                        <ActivityIndicator size={isTablet ? "small" : "small"} color={COLORS.accent} />
                     ) : (
-                        <RefreshCcw size={24} color={COLORS.foreground} />
+                        <RefreshCcw size={iconSize} color={COLORS.foreground} />
                     )}
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                    style={styles.iconButton}
+                    style={[styles.iconButton, isTablet && styles.iconButtonTablet]}
                     onPress={() => {
                         Keyboard.dismiss();
                         onSettings && onSettings();
                     }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
                     {hasUser ? (
-                        <User size={24} color={COLORS.accent} />
+                        <User size={iconSize} color={COLORS.accent} />
                     ) : (
                         <View>
-                            <User size={24} color={COLORS.mutedForeground} />
-                            <View style={styles.alertDot} />
+                            <User size={iconSize} color={COLORS.mutedForeground} />
+                            <View style={[styles.alertDot, isTablet && styles.alertDotTablet]} />
                         </View>
                     )}
                 </TouchableOpacity>
@@ -69,7 +75,6 @@ export function AppHeader({
         </View>
     );
 }
-
 
 const styles = StyleSheet.create({
     container: {
@@ -84,18 +89,30 @@ const styles = StyleSheet.create({
         paddingVertical: 15,
         backgroundColor: COLORS.background,
     },
+    headerTablet: {
+        paddingHorizontal: 28,
+        paddingVertical: 18,
+    },
     logo: {
         fontSize: 22,
         fontWeight: 'bold',
         color: COLORS.foreground,
     },
+    logoTablet: {
+        fontSize: 26,
+    },
     headerActions: {
         flexDirection: 'row',
+        alignItems: 'center',
     },
     iconButton: {
         marginLeft: 15,
         padding: 5,
         position: 'relative',
+    },
+    iconButtonTablet: {
+        marginLeft: 20,
+        padding: 8,
     },
     alertDot: {
         position: 'absolute',
@@ -107,5 +124,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#ef4444',
         borderWidth: 1,
         borderColor: COLORS.background,
+    },
+    alertDotTablet: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
     },
 });

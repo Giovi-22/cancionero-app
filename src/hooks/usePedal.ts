@@ -7,6 +7,12 @@ import {
 import {
     PedalDevice,
     PedalEvent,
+    WifiConfigMessage,
+    PedalFirmwareMode,
+    WifiHelloReport,
+    WifiMinVisibleMessage,
+    WifiPositionMessage,
+    WifiSectionMessage,
 } from '../types/pedal';
 
 import {
@@ -48,6 +54,47 @@ interface UsePedalResult {
     connect: (device?: PedalDevice) => Promise<void>;
 
     disconnect: () => void;
+
+    /** true si hay conexión TCP con el pedal WiFi (a diferencia de `connected`, que incluye Bluetooth). */
+    wifiConnected: boolean;
+
+    /** Informa al ESP32 que esta canción está abierta. false si no hay conexión WiFi. */
+    sendHello: (report: WifiHelloReport) => boolean;
+
+    /** Informa al ESP32 que se cerró la canción. */
+    sendLeave: (songKey: string) => boolean;
+
+    /** Posición compartida del ESP32. Canal aparte de onEvent (no re-renderiza). */
+    onPosition: (
+        listener: (message: WifiPositionMessage) => void
+    ) => () => void;
+
+    /** Estado de secciones del ESP32 (firmware con protocolo v1). */
+    onWifiSection: (
+        listener: (message: WifiSectionMessage) => void
+    ) => () => void;
+
+    /**
+     * Cambia el modo del pedal: el pedal lo guarda y se lo avisa a todas las
+     * apps. Devuelve false si el pedal tiene firmware viejo o no hay Wi-Fi.
+     */
+    sendWifiSetMode: (
+        mode: PedalFirmwareMode,
+        overlapPercent: number
+    ) => boolean;
+
+    /** Pide al pedal el estado vigente de la canción. */
+    requestWifiResync: (songKey: string) => boolean;
+
+    /** Líneas visibles de la pantalla más chica con esta canción abierta. */
+    onWifiMinVisible: (
+        listener: (message: WifiMinVisibleMessage) => void
+    ) => () => void;
+
+    /** Velocidad del pedal definida por el ESP32. */
+    onWifiConfig: (
+        listener: (message: WifiConfigMessage) => void
+    ) => () => void;
 }
 
 export const usePedal = (): UsePedalResult => {
@@ -69,6 +116,10 @@ export const usePedal = (): UsePedalResult => {
 
     const [lastEvent, setLastEvent] = useState<PedalEvent | null>(null);
 
+    const [wifiConnected, setWifiConnected] = useState(
+        PedalService.isWifiConnected()
+    );
+
     // Actualiza lastEvent y sincroniza conexión
     useEffect(() => {
         const removeEventListener = PedalService.addEventListener(
@@ -79,6 +130,7 @@ export const usePedal = (): UsePedalResult => {
             isConnected => {
                 setConnected(isConnected);
                 setConnecting(false);
+                setWifiConnected(PedalService.isWifiConnected());
             }
         );
 
@@ -168,6 +220,51 @@ export const usePedal = (): UsePedalResult => {
         setConnecting(false);
     }, []);
 
+    const sendHello = useCallback(
+        (report: WifiHelloReport): boolean => PedalService.sendHello(report),
+        []
+    );
+
+    const sendLeave = useCallback(
+        (songKey: string): boolean => PedalService.sendLeave(songKey),
+        []
+    );
+
+    const onPosition = useCallback(
+        (listener: (message: WifiPositionMessage) => void): (() => void) =>
+            PedalService.onPosition(listener),
+        []
+    );
+
+    const onWifiSection = useCallback(
+        (listener: (message: WifiSectionMessage) => void): (() => void) =>
+            PedalService.onWifiSection(listener),
+        []
+    );
+
+    const sendWifiSetMode = useCallback(
+        (mode: PedalFirmwareMode, overlapPercent: number): boolean =>
+            PedalService.sendWifiSetMode(mode, overlapPercent),
+        []
+    );
+
+    const requestWifiResync = useCallback(
+        (songKey: string): boolean => PedalService.requestWifiResync(songKey),
+        []
+    );
+
+    const onWifiMinVisible = useCallback(
+        (listener: (message: WifiMinVisibleMessage) => void): (() => void) =>
+            PedalService.onWifiMinVisible(listener),
+        []
+    );
+
+    const onWifiConfig = useCallback(
+        (listener: (message: WifiConfigMessage) => void): (() => void) =>
+            PedalService.onWifiConfig(listener),
+        []
+    );
+
     return {
         connected,
         connecting,
@@ -180,5 +277,14 @@ export const usePedal = (): UsePedalResult => {
         stopDiscover,
         connect,
         disconnect,
+        wifiConnected,
+        sendHello,
+        sendLeave,
+        onPosition,
+        onWifiSection,
+        sendWifiSetMode,
+        requestWifiResync,
+        onWifiMinVisible,
+        onWifiConfig,
     };
 };

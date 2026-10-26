@@ -1,22 +1,18 @@
 #include "WebPages.h"
 
-String WebPages::dashboard(
-    bool apMode,
-    bool wifiConnected,
-    bool bluetoothEnabled,
-    bool bluetoothConnected,
-    bool tcpEnabled,
-    uint8_t tcpClients,
-    const String& ip,
-    const String& ssid,
-    unsigned long doubleWindow,
-    unsigned long holdThreshold,
-    unsigned long wifiResetHold
-) {
-    String page;
-    page.reserve(11000);
+String WebPages::dashboard(bool apMode, bool wifiConnected,
+                           bool bluetoothEnabled, bool bluetoothConnected,
+                           bool tcpEnabled, uint8_t tcpClients,
+                           const String &ip, const String &ssid,
+                           unsigned long doubleWindow,
+                           unsigned long holdThreshold,
+                           unsigned long wifiResetHold, bool sectionsMode,
+                           uint8_t overlapPercent,
+                           unsigned long sectionHold) {
+  String page;
+  page.reserve(14000);
 
-    page += R"rawliteral(
+  page += R"rawliteral(
 <!doctype html>
 <html lang="es">
 <head>
@@ -36,7 +32,7 @@ h1,h2{margin-top:0}
 .badge{padding:5px 9px;border-radius:999px;background:#292929;font-size:13px}
 .ok{color:#4ade80}
 .off{color:#aaa}
-input{width:100%;padding:12px;border-radius:10px;border:1px solid #444;background:#222;color:#fff;font-size:16px}
+input,select{width:100%;padding:12px;border-radius:10px;border:1px solid #444;background:#222;color:#fff;font-size:16px}
 button{border:0;border-radius:10px;padding:11px 15px;background:#3b82f6;color:#fff;font-size:15px;cursor:pointer}
 button.secondary{background:#333}
 button.danger{background:#7f1d1d}
@@ -50,6 +46,8 @@ small{color:#888}
 .slider:before{content:"";position:absolute;width:21px;height:21px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.15s}
 .switch input:checked+.slider{background:#2563eb}
 .switch input:checked+.slider:before{transform:translateX(21px)}
+a.link{display:block;text-decoration:none;color:inherit}
+a.link:hover{border-color:#3b82f6}
 </style>
 </head>
 <body>
@@ -62,12 +60,17 @@ small{color:#888}
 <div class="row"><span>Servidor TCP</span><span id="tcp" class="badge">...</span></div>
 <div class="row"><span>Clientes TCP</span><span id="clients" class="badge">0</span></div>
 <div class="row"><span>IP</span><span class="badge">)rawliteral";
-    page += ip;
-    page += R"rawliteral(</span></div>
+  page += ip;
+  page += R"rawliteral(</span></div>
 <div class="row"><span>SSID</span><span class="badge">)rawliteral";
-    page += ssid.isEmpty() ? "-" : ssid;
-    page += R"rawliteral(</span></div>
+  page += ssid.isEmpty() ? "-" : ssid;
+  page += R"rawliteral(</span></div>
 </div>
+
+<a class="card link" href="/diagnostico">
+<h2 style="margin-bottom:4px">Diagnóstico y registro de eventos</h2>
+<span class="muted">Pulsadores en vivo, dispositivos conectados y eventos enviados &rarr;</span>
+</a>
 
 <div class="card">
 <h2>Conexiones</h2>
@@ -76,8 +79,9 @@ small{color:#888}
 <span>Bluetooth HID</span>
 <label class="switch">
 <input id="bleToggle" type="checkbox" )rawliteral";
-    if (bluetoothEnabled) page += "checked";
-    page += R"rawliteral( onchange="saveConnection()">
+  if (bluetoothEnabled)
+    page += "checked";
+  page += R"rawliteral( onchange="saveConnection()">
 <span class="slider"></span>
 </label>
 </div>
@@ -86,8 +90,9 @@ small{color:#888}
 <span>Servidor TCP / eventos</span>
 <label class="switch">
 <input id="tcpToggle" type="checkbox" )rawliteral";
-    if (tcpEnabled) page += "checked";
-    page += R"rawliteral( onchange="saveConnection()">
+  if (tcpEnabled)
+    page += "checked";
+  page += R"rawliteral( onchange="saveConnection()">
 <span class="slider"></span>
 </label>
 </div>
@@ -99,13 +104,13 @@ small{color:#888}
 <h2>WiFi</h2>
 <label>Red</label>
 <input id="ssid" value=")rawliteral";
-    String escapedSSID = ssid;
-    escapedSSID.replace("&","&amp;");
-    escapedSSID.replace("\"","&quot;");
-    escapedSSID.replace("<","&lt;");
-    escapedSSID.replace(">","&gt;");
-    page += escapedSSID;
-    page += R"rawliteral(">
+  String escapedSSID = ssid;
+  escapedSSID.replace("&", "&amp;");
+  escapedSSID.replace("\"", "&quot;");
+  escapedSSID.replace("<", "&lt;");
+  escapedSSID.replace(">", "&gt;");
+  page += escapedSSID;
+  page += R"rawliteral(">
 
 <label>Contraseña</label>
 <input id="pass" type="password" placeholder="Dejar vacío para mantener la actual">
@@ -118,22 +123,58 @@ small{color:#888}
 </div>
 
 <div class="card">
+<h2>Modo del pedal</h2>
+
+<label>Funcionamiento</label>
+<select id="mode" onchange="toggleModeFields()">
+<option value="lines")rawliteral";
+  if (!sectionsMode)
+    page += " selected";
+  page += R"rawliteral(>Scroll por líneas (mantener apretado)</option>
+<option value="sections")rawliteral";
+  if (sectionsMode)
+    page += " selected";
+  page += R"rawliteral(>Salto por secciones (un toque = una sección)</option>
+</select>
+
+<div id="sectionFields">
+<label>Contexto de la sección anterior (%)</label>
+<input id="overlap" type="number" min="0" max="60" value=")rawliteral";
+  page += String(overlapPercent);
+  page += R"rawliteral(">
+
+<label>Mantener para ir al inicio / final (ms)</label>
+<input id="sectionHold" type="number" min="600" max="5000" value=")rawliteral";
+  page += String(sectionHold);
+  page += R"rawliteral(">
+
+<p class="muted"><small>Un toque corto en el botón de abajo avanza una sección y en el de arriba retrocede una.
+Mantener apretado lleva al final (abajo) o al inicio (arriba). Dos toques rápidos son dos secciones.</small></p>
+</div>
+
+<div class="actions">
+<button onclick="saveMode()">Guardar modo</button>
+</div>
+</div>
+
+<div class="card">
 <h2>Comportamiento</h2>
+<p class="muted"><small>Estos tiempos se usan en el modo "Scroll por líneas".</small></p>
 
 <label>Ventana de doble toque (ms)</label>
 <input id="doubleWindow" type="number" min="150" max="1500" value=")rawliteral";
-    page += String(doubleWindow);
-    page += R"rawliteral(">
+  page += String(doubleWindow);
+  page += R"rawliteral(">
 
 <label>Tiempo para comenzar scroll (ms)</label>
 <input id="holdThreshold" type="number" min="150" max="3000" value=")rawliteral";
-    page += String(holdThreshold);
-    page += R"rawliteral(">
+  page += String(holdThreshold);
+  page += R"rawliteral(">
 
 <label>Tiempo de reset WiFi (ms)</label>
 <input id="wifiResetHold" type="number" min="1000" max="10000" value=")rawliteral";
-    page += String(wifiResetHold);
-    page += R"rawliteral(">
+  page += String(wifiResetHold);
+  page += R"rawliteral(">
 
 <div class="actions">
 <button onclick="saveTiming()">Guardar comportamiento</button>
@@ -173,6 +214,19 @@ async function saveTiming(){
                               holdThresholdMs:Number(document.getElementById("holdThreshold").value),
                               wifiResetHoldMs:Number(document.getElementById("wifiResetHold").value)});
     alert("Configuración guardada");
+  }catch(e){alert(e.message)}
+}
+function toggleModeFields(){
+  document.getElementById("sectionFields").style.display=
+    document.getElementById("mode").value==="sections"?"block":"none";
+}
+async function saveMode(){
+  try{
+    await post("/api/config",{mode:document.getElementById("mode").value,
+                              overlapPercent:Number(document.getElementById("overlap").value),
+                              sectionHoldMs:Number(document.getElementById("sectionHold").value)});
+    alert("Modo guardado");
+    location.reload();
   }catch(e){alert(e.message)}
 }
 async function saveWifi(){
@@ -228,6 +282,7 @@ async function refresh(){
     document.getElementById("clients").textContent=s.tcpClients;
   }catch(e){}
 }
+toggleModeFields();
 refresh();
 setInterval(refresh,2000);
 </script>
@@ -235,11 +290,11 @@ setInterval(refresh,2000);
 </html>
 )rawliteral";
 
-    return page;
+  return page;
 }
 
 String WebPages::savedPage() {
-    return R"rawliteral(
+  return R"rawliteral(
 <!doctype html>
 <html lang="es">
 <head>
@@ -259,46 +314,45 @@ body{font-family:system-ui;background:#0b0b0b;color:#fff;display:grid;place-item
 )rawliteral";
 }
 
-String WebPages::jsonStatus(
-    bool apMode,
-    bool wifiConnected,
-    bool bluetoothEnabled,
-    bool bluetoothConnected,
-    bool tcpEnabled,
-    uint8_t tcpClients,
-    const String& ip,
-    const String& ssid
-) {
-    String json = "{";
+String WebPages::jsonStatus(bool apMode, bool wifiConnected,
+                            bool bluetoothEnabled, bool bluetoothConnected,
+                            bool tcpEnabled, uint8_t tcpClients,
+                            const String &ip, const String &ssid,
+                            bool sectionsMode) {
+  String json = "{";
 
-    json += "\"apMode\":";
-    json += apMode ? "true" : "false";
+  json += "\"apMode\":";
+  json += apMode ? "true" : "false";
 
-    json += ",\"wifiConnected\":";
-    json += wifiConnected ? "true" : "false";
+  json += ",\"wifiConnected\":";
+  json += wifiConnected ? "true" : "false";
 
-    json += ",\"bluetoothEnabled\":";
-    json += bluetoothEnabled ? "true" : "false";
+  json += ",\"bluetoothEnabled\":";
+  json += bluetoothEnabled ? "true" : "false";
 
-    json += ",\"bluetoothConnected\":";
-    json += bluetoothConnected ? "true" : "false";
+  json += ",\"bluetoothConnected\":";
+  json += bluetoothConnected ? "true" : "false";
 
-    json += ",\"tcpEnabled\":";
-    json += tcpEnabled ? "true" : "false";
+  json += ",\"tcpEnabled\":";
+  json += tcpEnabled ? "true" : "false";
 
-    json += ",\"tcpClients\":";
-    json += String(tcpClients);
+  json += ",\"tcpClients\":";
+  json += String(tcpClients);
 
-    json += ",\"ip\":\"";
-    json += ip;
-    json += "\"";
+  json += ",\"mode\":\"";
+  json += sectionsMode ? "sections" : "lines";
+  json += "\"";
 
-    json += ",\"ssid\":\"";
-    String safeSSID = ssid;
-    safeSSID.replace("\\", "\\\\");
-    safeSSID.replace("\"", "\\\"");
-    json += safeSSID;
-    json += "\"}";
+  json += ",\"ip\":\"";
+  json += ip;
+  json += "\"";
 
-    return json;
+  json += ",\"ssid\":\"";
+  String safeSSID = ssid;
+  safeSSID.replace("\\", "\\\\");
+  safeSSID.replace("\"", "\\\"");
+  json += safeSSID;
+  json += "\"}";
+
+  return json;
 }

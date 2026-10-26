@@ -5,7 +5,7 @@ import { BandSong } from '../types/band';
 export class BandSongService {
     static async getSongContent(
         bandId: string,
-        song: BandSong
+        song: { id: string; name: string; mimeType?: string }
     ): Promise<string | null> {
         // 1. Buscar primero en el almacenamiento local
         const localContent =
@@ -19,24 +19,33 @@ export class BandSongService {
         }
 
         // 2. Si no está localmente, obtenerla desde Google Drive
-        const content =
-            await driveService.getSongContent(
+        try {
+            const content =
+                await driveService.getSongContent(
+                    song.id,
+                    song.mimeType,
+                    song.name
+                );
+
+            if (!content) {
+                return null;
+            }
+
+            // 3. Guardarla localmente para futuras aperturas
+            await FileSystemService.saveBandSongContent(
+                bandId,
                 song.id,
-                song.mimeType,
-                song.name
+                content
             );
 
-        if (!content) {
+            return content;
+        } catch (err) {
+            console.warn(
+                '[BandSongService] Error al obtener canción de Google Drive:',
+                song.id,
+                err
+            );
             return null;
         }
-
-        // 3. Guardarla localmente para futuras aperturas
-        await FileSystemService.saveBandSongContent(
-            bandId,
-            song.id,
-            content
-        );
-
-        return content;
     }
 }

@@ -22,6 +22,12 @@ void onPedalEvent(PedalEvent event) {
     events.handle(event);
 }
 
+// Una app cambió el modo del pedal (ya quedó guardado): los botones tienen
+// que empezar a usar el modo nuevo.
+void onModeChangedByApp() {
+    buttons.onModeChanged();
+}
+
 void onWifiReset() {
     events.cancelActivePresses();
     wifi.resetCredentialsAndRestart();
@@ -47,11 +53,13 @@ void setup() {
 
     events.begin(config, bluetooth, socketServer);
 
-    web.begin(config, wifi, bluetooth, socketServer);
+    web.begin(config, wifi, bluetooth, socketServer, buttons);
 
     buttons.begin(config);
     buttons.setEventCallback(onPedalEvent);
     buttons.setWifiResetCallback(onWifiReset);
+
+    socketServer.setModeChangedCallback(onModeChangedByApp);
 
     Serial.println("[SETUP] Sistema listo.");
 }
